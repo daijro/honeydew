@@ -1,4 +1,4 @@
-# nih-plug's core crate, vendored for Honeydew (README.md): upstream's manifest without the VST3 and standalone
+# nih-plug's core crate, vendored for BanaForge (README.md): upstream's manifest without the VST3 and standalone
 # wrappers, the optional features and their dependencies, the dev-dependencies and the profiles.
 [package]
 name = "nih_plug"

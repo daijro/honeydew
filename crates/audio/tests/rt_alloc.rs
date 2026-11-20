@@ -4,8 +4,8 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use honeydew_audio::analysis::analyzer::Setting;
-use honeydew_audio::{AudioEffect, ProcessContext, effect_info};
+use banaforge_audio::analysis::analyzer::Setting;
+use banaforge_audio::{AudioEffect, ProcessContext, effect_info};
 
 struct Counting;
 
@@ -440,11 +440,11 @@ fn every_setting_of_every_effect_ends_without_subnormals() {
 fn gmsynth_never_allocates_on_the_audio_thread() {
     // Notes (steals, MONO legato and fallback), every param at 0, 0.5, 1 and 0.3, both controllers, the
     // `CSTM` settings on shapes the app thread built (and one past the menu), stop and play, all-notes-off and reset.
-    use honeydew_audio::gmsynth::{
+    use banaforge_audio::gmsynth::{
         GmSynth, MOD_WHEEL, MW_AMOUNT, MW_DEST, PARAMS, PB_RANGE, PITCH_BEND, WAVE_A, WAVE_B,
         prepare_setting,
     };
-    use honeydew_audio::instrument::Instrument;
+    use banaforge_audio::instrument::Instrument;
     let shapes = [3.0, 18.0, 26.0, 29.0];
     for slot in shapes {
         prepare_setting(WAVE_A, slot);
@@ -491,8 +491,8 @@ fn gmsynth_never_allocates_on_the_audio_thread() {
 fn gmsynth_fx_slots_never_allocate_on_the_audio_thread() {
     // FX 1–3 all on, each stepping through all ten kinds (so every processor runs, winds down and clears),
     // with X, Y, Sync, LFO shape and amount moving, Enable toggling, the song stopping and playing, and a reset.
-    use honeydew_audio::gmsynth::GmSynth;
-    use honeydew_audio::instrument::Instrument;
+    use banaforge_audio::gmsynth::GmSynth;
+    use banaforge_audio::instrument::Instrument;
     let mut synth = GmSynth::new(SAMPLE_RATE);
     for slot in 0..3 {
         synth.set_parameter(47 + 7 * slot, 1.0);
@@ -536,10 +536,10 @@ fn gmsynth_fx_slots_never_allocate_on_the_audio_thread() {
 /// zone and a one-shot mono one, with transport, bend, reset and all-notes-off between blocks.
 #[test]
 fn dw_sampler_never_allocates_on_the_audio_thread() {
-    use honeydew_audio::dw_sampler::{DwSampler, DwZone};
-    use honeydew_audio::dwp::{Midi, Zone};
-    use honeydew_audio::instrument::Instrument;
-    use honeydew_audio::sample::SampleData;
+    use banaforge_audio::dw_sampler::{DwSampler, DwZone};
+    use banaforge_audio::dwp::{Midi, Zone};
+    use banaforge_audio::instrument::Instrument;
+    use banaforge_audio::sample::SampleData;
     use std::sync::Arc;
 
     let wave: Arc<[f32]> = (0..20_000).map(|n| (n as f32 * 0.03).sin()).collect();
@@ -622,9 +622,9 @@ fn dw_sampler_never_allocates_on_the_audio_thread() {
 /// for 600 pending echoes and get [`ECHO_SLOTS`]; 40 keys on a fixed chord ask for 40 arps and get [`MAX_ARPS`].
 #[test]
 fn three_osc_pools_drop_extras_without_allocating() {
-    use honeydew_audio::three_osc::arp::{ArpEcho, MAX_ARPS};
-    use honeydew_audio::three_osc::echo::{ECHO_SLOTS, ECHO_TAGS};
-    use honeydew_audio::three_osc::{Params, Scheduler, Tick, VoiceEvent};
+    use banaforge_audio::three_osc::arp::{ArpEcho, MAX_ARPS};
+    use banaforge_audio::three_osc::echo::{ECHO_SLOTS, ECHO_TAGS};
+    use banaforge_audio::three_osc::{Params, Scheduler, Tick, VoiceEvent};
 
     let mut echo: Params = [0.5; 149];
     echo[120] = 0.0; // Mono off
@@ -681,7 +681,7 @@ fn a_streaming_pad_plays_without_allocating_while_its_frames_arrive() {
     // far and silence past them; the worker's writes in between are not the audio thread's.
     use std::sync::Arc;
 
-    use honeydew_audio::drums::{Pad, PadSample, PadSampler, STREAM_FRAMES, Stream};
+    use banaforge_audio::drums::{Pad, PadSample, PadSampler, STREAM_FRAMES, Stream};
 
     let frames = 4 * STREAM_FRAMES;
     let stream = Arc::new(Stream::new(SAMPLE_RATE as u32, frames, true));

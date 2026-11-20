@@ -1,7 +1,7 @@
 //! Pitcher (ID 25), UIHeight 8 U. Pages `Basic` (0) and `Advanced` (1).
 
+use banaforge_audio::analysis;
 use eframe::egui::{Color32, Id, Rect, Ui, pos2, vec2};
-use honeydew_audio::analysis;
 
 use super::leveller::animate;
 use super::live_analysis;
@@ -475,7 +475,7 @@ mod tests {
     fn a_detected_pitch_draws_the_marker_and_its_trail_and_the_target_disc() {
         // 220 Hz is A (class 9): the marker at strip.x + int(W/24 + 9·W/12), 2t wide, full height; then its first trail
         // entry, a full-height quad 1 px either side of it. The target G# (8) gets the disc under its note button.
-        use honeydew_audio::MeterSnapshot;
+        use banaforge_audio::MeterSnapshot;
         let content = Rect::from_min_size(pos2(0.0, 0.0), vec2(14.0 * U, 5.99 * U));
         let feed = [220.0, 8.0];
         for ppp in [1.0, 2.0] {

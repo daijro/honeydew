@@ -4,6 +4,8 @@
 //! Pure data and formatting; no UI. Parameter values are normalised `f32` in [0, 1] and the indices are
 //! The stored param numbers (param 0 is always `Enable`), shared with the audio side.
 
+mod banana;
+mod banana_power;
 mod channel;
 mod de_esser;
 mod denoise;
@@ -12,12 +14,12 @@ mod dynamic_eq;
 mod effects;
 mod effects_24_51;
 mod half_time;
+pub use banana_power::MODULES as BANANA_POWER;
 #[cfg(test)]
 mod inst_rows;
 #[cfg(test)]
 mod inst_tests;
 mod instruments;
-mod lemon;
 mod modulator;
 #[cfg(test)]
 mod spec_rows;
@@ -26,23 +28,23 @@ mod step_tests;
 #[cfg(test)]
 mod tests;
 
+/// Banana Studio's reverb and limiter, BanaForge's own effects (`banaforge_audio::banana`).
+pub use banana::MODULES as BANANA_MODULES;
 pub use channel::{CHANNEL_PARAMS, COMMON_PARAMS, DRUM_SLOT_PARAMS};
-/// The De-esser and Denoise, Honeydew's own effects (`honeydew_audio::de_esser`, `honeydew_audio::denoise`).
+/// The De-esser and Denoise, BanaForge's own effects (`banaforge_audio::de_esser`, `banaforge_audio::denoise`).
 pub use de_esser::MODULE as DE_ESSER;
 pub use denoise::MODULE as DENOISE;
 pub(crate) use display::clamp01;
 pub use display::{At, Display, Fmt, Sign, TextCx, menu_index, menu_value};
-/// The Dynamic EQ, Honeydew's own effect (`honeydew_audio::dynamic_eq`).
+/// The Dynamic EQ, BanaForge's own effect (`banaforge_audio::dynamic_eq`).
 pub use dynamic_eq::MODULE as DYNAMIC_EQ;
 pub(crate) use effects_24_51::ARP_RHYTHM_PATTERNS;
 pub use effects_24_51::snap_echo_delay;
 pub(crate) use effects_24_51::{arp_pattern, arp_steps};
-/// Half Time, Honeydew's own effect (`honeydew_audio::half_time`).
+/// Half Time, BanaForge's own effect (`banaforge_audio::half_time`).
 pub use half_time::MODULE as HALF_TIME;
 pub(crate) use instruments::GMSYNTH_WAVESHAPES;
-/// Lemon Studio's reverb and limiter, Honeydew's own effects (`honeydew_audio::lemon`).
-pub use lemon::MODULES as LEMON_MODULES;
-/// The Modulator, Honeydew's own effect (`honeydew_audio::modulator`).
+/// The Modulator, BanaForge's own effect (`banaforge_audio::modulator`).
 pub use modulator::MODULE as MODULATOR;
 
 /// What a module does with the signal.
@@ -311,13 +313,14 @@ pub fn instruments() -> impl Iterator<Item = &'static ModuleSpec> {
     instruments::MODULES.iter()
 }
 
-/// The module with type id `id` (effect, note effect, instrument, a plugin module, one of Lemon Studio's effects, the
+/// The module with type id `id` (effect, note effect, instrument, a plugin module, one of Banana Studio's effects, the
 /// Dynamic EQ, the Modulator, the De-esser, Denoise or Half Time), or `None` for ids that are not registered.
 pub fn module_spec(id: u16) -> Option<&'static ModuleSpec> {
     modules()
         .chain(instruments())
         .chain(&PLUGINS)
-        .chain(&LEMON_MODULES)
+        .chain(&BANANA_MODULES)
+        .chain(&BANANA_POWER)
         .chain([&DYNAMIC_EQ, &MODULATOR, &DE_ESSER, &DENOISE, &HALF_TIME])
         .find(|m| m.id == id)
 }

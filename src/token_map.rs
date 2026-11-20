@@ -127,7 +127,7 @@ pub fn note(token: &str) -> Option<u8> {
     if token.bytes().all(|b| b.is_ascii_digit()) {
         return token.parse().ok().filter(|n| *n <= 127);
     }
-    let key = honeydew_audio::sfz::note(&token.to_ascii_lowercase())?;
+    let key = banaforge_audio::sfz::note(&token.to_ascii_lowercase())?;
     u8::try_from(key as i32).ok().filter(|k| *k <= 127)
 }
 
@@ -529,7 +529,7 @@ mod tests {
         ]);
         let regions = map(&files, "_", &[Group, Root, Velocity, RoundRobin]);
         let text = sfz("My Grand", &regions);
-        let parsed = honeydew_audio::sfz::parse(&text, &|_| None);
+        let parsed = banaforge_audio::sfz::parse(&text, &|_| None);
         assert!(
             parsed.skipped.keys().all(|k| k == "group_label"),
             "{:?}",

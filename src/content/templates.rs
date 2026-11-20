@@ -15,7 +15,7 @@
 //! - The GUIDs are zero, so a template is the same bytes on every read; a song made from one gets its own
 //!   (`Song::new_guids` in the `.songtmpl` load).
 
-use honeydew_audio::sequencer::apply_drum_swing;
+use banaforge_audio::sequencer::apply_drum_swing;
 
 mod more;
 

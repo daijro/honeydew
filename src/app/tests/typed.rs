@@ -171,7 +171,7 @@ fn a_focused_text_field_takes_printable_presses_and_a_release_still_ends_the_not
     assert_eq!(rig.take(), ["NoteOff 1 60"]);
 }
 
-/// Live note recording is not built yet; typed notes take [`HoneydewApp::key_on`], the touched keys' one way to the
+/// Live note recording is not built yet; typed notes take [`BanaForgeApp::key_on`], the touched keys' one way to the
 /// engine (and MIDI's), so they will record wherever touched keys do.
 #[test]
 fn typed_notes_while_rec_is_on_take_the_touched_keys_path() {
@@ -243,7 +243,7 @@ fn set_midi_note_learns_a_typed_key() {
 #[test]
 fn a_typed_note_plays_the_drum_pad_whose_note_matches() {
     use crate::audio_engine::SongAudioEngine;
-    use honeydew_audio::device::AudioRenderer;
+    use banaforge_audio::device::AudioRenderer;
     let render = |engine: &mut SongAudioEngine| {
         let mut output = vec![0.0; 4096 * 2];
         engine.render(&mut output, 2);

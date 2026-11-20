@@ -4,7 +4,7 @@
 
 use eframe::egui;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::project_files::export::{Done, Job, NO_AUDIO_RATE, Split, slice, tags};
 use crate::sample_cache;
 use crate::ui::views::{Nav, Overlay};
@@ -13,7 +13,7 @@ fn dialog(o: &Overlay) -> bool {
     matches!(o, Overlay::SaveDialog { .. })
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// After the files, each frame: a closed Save dialog lets go of its state. An export that went ahead closes the
     /// dialog; an audio one starts rendering with the page's options, the samples loaded as a rebuild loads them, at
     /// the project's sample rate where the song has one (PR #87), else the engine rate (no resampling; 44 100 Hz without
@@ -31,9 +31,9 @@ impl HoneydewApp {
         if !export.format.is_audio() && export.split != Split::Flp {
             return;
         }
-        self.audio
-            .samples
-            .load(&self.song, &sample_cache::reader(&self.files));
+        let prepare_started = crate::project_files::export_profile::clock();
+        self.audio.samples.load(&self.song, &sample_cache::reader(&self.files));
+        eprintln!("export-profile sample_load_s={:.6}", crate::project_files::export_profile::clock() - prepare_started);
         let rate = match self.song.sample_rate {
             0 => self.audio.sample_rate().unwrap_or(NO_AUDIO_RATE),
             rate => rate,
@@ -45,10 +45,10 @@ impl HoneydewApp {
         };
         match Job::new(&self.song, &self.audio.samples, export, page, rate) {
             Ok(job) => {
-                self.navigate(Nav::Open(Overlay::Busy { title: job.title() }));
+                self.navigate(Nav::Open(progress_overlay(&job)));
                 self.export = Some(job.with_tags(tags));
             }
-            Err(error) => self.files.render_failed(&error),
+            Err(error) => self.files.render_failed_at(&error, "Preparing render engine"),
         }
     }
 
@@ -63,25 +63,33 @@ impl HoneydewApp {
         ctx.request_repaint();
         // A stem that could not be written ends the export; its message is up.
         if !self.files.stem_write_failed() {
+            let failed_stage = job.progress().2;
             let done = job.step(&mut slice());
-            let (export, title) = (job.export().clone(), job.title());
+            let (export, overlay) = (job.export().clone(), progress_overlay(job));
+            if done.is_some() { eprintln!("{}", job.profile_report()); }
             match done {
-                None => return self.navigate(Nav::Open(Overlay::Busy { title })),
+                None => return self.navigate(Nav::Open(overlay)),
                 Some(Done::Stem(name, bytes)) => {
                     self.files.write_stem(&export, &name, bytes);
-                    return self.navigate(Nav::Open(Overlay::Busy { title }));
+                    return self.navigate(Nav::Open(overlay));
                 }
                 Some(Done::File(bytes)) => self.files.write_export(&export, bytes),
                 Some(Done::Stems) => self.files.stems_rendered(),
                 Some(Done::Rendered(song, stems)) => {
                     self.files.flp_rendered(&song, &export, &stems)
                 }
-                Some(Done::Failed(error)) => self.files.render_failed(&error),
+                Some(Done::Failed(error)) => self.files.render_failed_at(&error, failed_stage),
             }
         }
         self.export = None;
         self.nav
             .overlays
-            .retain(|o| !matches!(o, Overlay::Busy { .. }));
+            .retain(|o| !matches!(o, Overlay::Busy { .. } | Overlay::ExportProgress { .. }));
     }
+}
+
+fn progress_overlay(job: &Job) -> Overlay {
+    let (done, total, stage) = job.progress();
+    Overlay::ExportProgress { title: job.title(), done, total, stage: stage.into(),
+        format: format!("{} · {} Hz · stereo", job.export().format.ext().to_uppercase(), job.rate()) }
 }

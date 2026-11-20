@@ -6,9 +6,9 @@
 
 use std::collections::HashMap;
 
-use honeydew_audio::AudioEffect;
-use honeydew_audio::analysis::analyzer::Setting;
-use honeydew_audio::gmsynth;
+use banaforge_audio::AudioEffect;
+use banaforge_audio::analysis::analyzer::Setting;
+use banaforge_audio::gmsynth;
 
 use crate::panels::cstm::{
     DIRECTWAVE, Field, MULTIBAND_SOLO_BAND, PITCHER, SLICER, cstm_from_settings, settings_from_cstm,
@@ -46,7 +46,7 @@ pub fn prepare(type_id: u16, key: u32, value: f32) {
 /// A setting that is on the screen and in the engine but not in the song (a Multiband's soloed band, a module's
 /// key-learn: UI state): a new engine starts without it, so `AudioLink` sends it again.
 pub fn screen_only(type_id: u16, key: u32) -> bool {
-    (type_id == 36 && key == MULTIBAND_SOLO_BAND) || key == honeydew_audio::instrument::KEY_LEARN
+    (type_id == 36 && key == MULTIBAND_SOLO_BAND) || key == banaforge_audio::instrument::KEY_LEARN
 }
 
 /// Every module's saved settings as `(channel, instance_id, key, value)`, each module's in key order: what a build
@@ -117,9 +117,9 @@ mod tests {
     use std::collections::HashMap;
     use std::f32::consts::TAU;
 
-    use honeydew_audio::device::AudioRenderer;
-    use honeydew_audio::pitcher::DEFAULT_NOTES;
-    use honeydew_audio::{AudioEffect, ProcessContext};
+    use banaforge_audio::device::AudioRenderer;
+    use banaforge_audio::pitcher::DEFAULT_NOTES;
+    use banaforge_audio::{AudioEffect, ProcessContext};
 
     use super::super::SongAudioEngine;
     use crate::panels::cstm::{MULTIBAND_SOLO_BAND, cstm_from_settings};
@@ -205,7 +205,7 @@ mod tests {
         engine: &mut SongAudioEngine,
         seconds: usize,
         signal: impl Fn(usize) -> (f32, f32),
-    ) -> honeydew_audio::analysis::AnalyzerView {
+    ) -> banaforge_audio::analysis::AnalyzerView {
         let effect = engine.audio.effect_mut(1, SLOT).unwrap();
         let (mut left, mut right): (Vec<f32>, Vec<f32>) =
             (0..seconds * RATE as usize).map(signal).unzip();
@@ -216,7 +216,7 @@ mod tests {
             playing: true,
         };
         effect.process(&mut left, &mut right, context).unwrap();
-        honeydew_audio::analysis::analyzer(effect.analysis()).unwrap()
+        banaforge_audio::analysis::analyzer(effect.analysis()).unwrap()
     }
 
     /// The spectrum's peak (dB) and the loudness Peak maximum after 4 s of a −6 dBFS 1 kHz tone on the left only (the
@@ -252,8 +252,8 @@ mod tests {
         // LOUDNESS `Mode` (#8) Peak (item 4) resets the meter.
         engine.set_setting(1, SLOT, 8, 4.0);
         let effect = engine.audio.effect(1, SLOT).unwrap();
-        let view = honeydew_audio::analysis::analyzer(effect.analysis()).unwrap();
-        assert_eq!(view.maxima[0], honeydew_audio::analysis::analyzer::FLOOR);
+        let view = banaforge_audio::analysis::analyzer(effect.analysis()).unwrap();
+        assert_eq!(view.maxima[0], banaforge_audio::analysis::analyzer::FLOOR);
         // `Reactivity` (#15) Fast (item 2): a second of silence takes the +8 dB peak far down (Medium holds about −30).
         engine.set_setting(1, SLOT, 15, 2.0);
         let view = analysed(&mut engine, 1, |_| (0.0, 0.0));

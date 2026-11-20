@@ -1,5 +1,5 @@
-use honeydew_audio::mixer::{ChannelMix, MixError, Mixer, OwnedStereoBuffer, SendMix};
-use honeydew_audio::playback::StereoBlock;
+use banaforge_audio::mixer::{ChannelMix, MixError, Mixer, OwnedStereoBuffer, SendMix};
+use banaforge_audio::playback::StereoBlock;
 
 /// The send level of the helpers: +6 dB, so products stay exact powers of `full`.
 const SEND: f32 = 1.0;

@@ -1,7 +1,7 @@
 //! The Wow & Flutter panel (ID 43), UIHeight 9 U.
 
+use banaforge_audio::analysis;
 use eframe::egui::{Color32, Id, Pos2, Rect, Shape, Stroke, Ui, pos2};
-use honeydew_audio::analysis;
 
 use super::live_analysis;
 use crate::panels::build::*;
@@ -200,9 +200,9 @@ mod tests {
 
     #[test]
     fn a_feed_draws_the_trace_one_point_every_2_px_averaging_its_columns() {
+        use banaforge_audio::MeterSnapshot;
+        use banaforge_audio::analysis::TRACE_POINTS;
         use eframe::egui::Shape;
-        use honeydew_audio::MeterSnapshot;
-        use honeydew_audio::analysis::TRACE_POINTS;
         // The oldest half of the ring at 0.25, the newest at 0.75 (the slab's next point is 0: oldest first).
         let mut slab = vec![0.0; 1 + TRACE_POINTS];
         for (i, v) in slab[1..].iter_mut().enumerate() {

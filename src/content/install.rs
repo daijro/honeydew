@@ -3,7 +3,7 @@
 //!
 //! - **Sync.** [`sync`] makes the folder hold what a source library's index lists, and nothing else: `index.json`,
 //!   `CREDITS.txt` and every part. The source is a content folder (beside a full download, or one picked) or a sounds
-//!   ZIP (`honeydew-<tag>-sounds.zip`, `content/` at its top). Only what is new or changed is copied, by its size and
+//!   ZIP (`banaforge-<tag>-sounds.zip`, `content/` at its top). Only what is new or changed is copied, by its size and
 //!   CRC-32 (a ZIP's central directory's, a folder's computed) against the folder's [`MANIFEST`]; the folder is the
 //!   app's, so every other file in it is removed. It never installs an older release over a newer one ([`older`]).
 //! - **Safe to stop.** Each file is written to a temp file and renamed into place: the parts first, then the index,

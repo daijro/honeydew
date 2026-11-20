@@ -1,7 +1,7 @@
 //! Analyzer (ID 26), UIHeight 10 U. Pages `SPECTRUM` (0) … `SETTINGS` (5), with the tab strip at the bottom. Its only
 //! param is `Enable`: every control is a module setting.
 //!
-//! The views draw the engine's analysis of the module's input (`honeydew_audio::analysis::analyzer`) in graph frames:
+//! The views draw the engine's analysis of the module's input (`banaforge_audio::analysis::analyzer`) in graph frames:
 //! The axes with their ticks and labels, the view's curves, the marker, then the Freeze and Zoom buttons and the
 //! selection overlay. Without a feed a view shows its frame alone.
 //!
@@ -32,10 +32,10 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use banaforge_audio::analysis::{self, AnalyzerView, analyzer as engine};
 use eframe::egui::{
     Color32, Id, Mesh, Painter, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
-use honeydew_audio::analysis::{self, AnalyzerView, analyzer as engine};
 
 use super::live_analysis;
 use super::spreader::{balance_dot, draw_petal, half_arc, polar, scope};
@@ -1834,8 +1834,8 @@ pub const REFERENCE: Reference = Reference {
 
 #[cfg(test)]
 mod live {
+    use banaforge_audio::{AudioEffect, MeterSnapshot, ProcessContext};
     use eframe::egui::Shape;
-    use honeydew_audio::{AudioEffect, MeterSnapshot, ProcessContext};
 
     use super::*;
     use crate::panels::tests::{U, display_shapes_fed};

@@ -12,8 +12,8 @@
 
 use std::mem::discriminant;
 
+use banaforge_audio::device::OutputSnapshot;
 use eframe::egui::{self};
-use honeydew_audio::device::OutputSnapshot;
 
 use crate::audio_link::AudioLink;
 use crate::project_files::ProjectFiles;
@@ -59,8 +59,8 @@ pub mod cc_picker;
 pub mod instrument_builder;
 // The project versions window (#69).
 pub mod versions;
-// A Lemon plugin's editor full screen (#68).
-pub mod lemon_editor;
+// A Banana plugin's editor full screen (#68).
+pub mod banana_editor;
 // A song section's dialog (#80).
 pub mod section_settings;
 // `Import MIDI Tracks`' picker (#113).
@@ -144,6 +144,8 @@ pub enum Overlay {
     /// The loading screen of an export under way, with its title ([`busy`]). The app keeps the title current and
     /// closes it.
     Busy { title: String },
+    ExportProgress { title: String, done: usize, total: usize, stage: String, format: String },
+    ExportResult { lines: Vec<String>, success: bool, open: bool, share: bool },
     /// The sample picker for the module with instance id `module` on `channel`: the file its `CSTM` `PATH` names (a 3x
     /// Osc's custom waveform).
     ModuleSamplePicker { channel: usize, module: i32 },
@@ -176,9 +178,9 @@ pub enum Overlay {
     ReplaceSamplePicker(ClipKey),
     /// The project versions window (#69): PROJECT `View project versions`, or the Save dialog's `Save project version`.
     Versions,
-    /// The editor of the built-in Lemon plugin module with instance id `module` on `channel`, full screen (#68, its rack
+    /// The editor of the built-in Banana plugin module with instance id `module` on `channel`, full screen (#68, its rack
     /// card's full screen button).
-    LemonEditor { channel: usize, module: i32 },
+    BananaEditor { channel: usize, module: i32 },
     /// Song section `section`'s dialog (#80: the playlist ruler's `Section…`, or a tap on its name), with its name field's
     /// text.
     SectionSettings { section: usize, name: String },
@@ -271,7 +273,7 @@ impl Navigation {
                 }
             }
             Nav::Open(overlay) => {
-                if matches!(overlay, Overlay::Message { .. }) {
+                if matches!(overlay, Overlay::Message { .. } | Overlay::ExportResult { .. }) {
                     self.answer = None;
                 }
                 self.overlays
@@ -320,7 +322,8 @@ impl Navigation {
             _ if self
                 .overlays
                 .iter()
-                .any(|o| matches!(o, Overlay::Message { tag: t, .. } if *t == tag)) =>
+                .any(|o| matches!(o, Overlay::Message { tag: t, .. } if *t == tag)
+                    || (tag == crate::project_files::export::RENDERED_TAG && matches!(o, Overlay::ExportResult { .. }))) =>
             {
                 None
             }
@@ -369,6 +372,8 @@ pub enum SongEdit {
     ChannelParam,
     /// An edit the audio already has or never needs (a chord set, a track's zip): an undo step only, no rebuild.
     Param,
+    /// Stored project metadata (lyrics): undo/dirty only, never rebuild audio.
+    Metadata,
     /// Rack state the audio already has or takes at its next build, with no undo step and no rebuild: the drum strips'
     /// controls. Every step keeps it ([`History::rack_state`]).
     ///
@@ -577,8 +582,8 @@ pub struct Slots {
     pub instrument_builder: instrument_builder::State,
     /// The project versions window's pick, and a version restored for the app.
     pub versions: versions::State,
-    /// The full screen Lemon editor's texture and pointer.
-    pub lemon_editor: lemon_editor::State,
+    /// The full screen Banana editor's texture and pointer.
+    pub banana_editor: banana_editor::State,
     /// `Import MIDI Tracks`' picker.
     pub midi_picker: midi_picker::State,
 }
@@ -681,7 +686,7 @@ impl Slots {
         }
         let top = overlays.len().saturating_sub(1);
         self.rack.full = overlays.iter().find_map(|o| match o {
-            Overlay::LemonEditor { channel, module } => Some((*channel, *module)),
+            Overlay::BananaEditor { channel, module } => Some((*channel, *module)),
             _ => None,
         });
         let above = (overlays.iter())
@@ -799,6 +804,12 @@ impl Slots {
             Overlay::SampleName { name } => {
                 top.then(|| save_dialog::show_sample(ui, app, name, &mut self.audio_editor))?
             }
+            Overlay::ExportProgress { title, done, total, stage, format } => {
+                crate::ui::export_status::progress(ui.ctx(), &app.cx, title, *done, *total, stage, format)
+            }
+            Overlay::ExportResult { lines, success, open, share } => {
+                crate::ui::export_status::result(ui.ctx(), &app.cx, lines, *success, *open, *share)
+            }
             Overlay::Busy { title } => {
                 busy(ui.ctx(), &app.cx, title);
                 None
@@ -839,9 +850,9 @@ impl Slots {
             // Modal like the Save dialog.
             Overlay::Versions => top.then(|| versions::show(&mut self.versions, ui, app))?,
             // Hidden while what it opened (the sample picker) or a message shows over it.
-            Overlay::LemonEditor { channel, module } => {
-                top.then(|| lemon_editor::show(&mut self.lemon_editor, ui, app, *channel, *module))?
-            }
+            Overlay::BananaEditor { channel, module } => top.then(|| {
+                banana_editor::show(&mut self.banana_editor, ui, app, *channel, *module)
+            })?,
             Overlay::SectionSettings { section, name } => {
                 section_settings::show(ui, app, *section, name)
             }

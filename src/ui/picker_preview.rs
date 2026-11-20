@@ -9,7 +9,7 @@
 //! note go. While the module loads it draws the `LOADING...` pulse over the row. Over a drum kit's pick it plays the
 //! kit's pads instead, across the row in pad order (#88).
 //!
-//! **Keys** (#98, a Honeydew addition). The app's keyboard ([`keyboard::keyboard_at`]),
+//! **Keys** (#98, a BanaForge addition). The app's keyboard ([`keyboard::keyboard_at`]),
 //! [`KEYS_H`] tall across the bottom of an instrument's picker, its [`WHITE_W`] white keys round middle C, playing the
 //! picker's channel as the audition strip does: velocity 1, every key a finger holds held, a tap for the keyboard's tap
 //! gate. They take the panel's colours, not the keyboard panel's ([`faint`]), and SETTINGS `Keyboard in pickers`
@@ -30,7 +30,7 @@
 //! #124, where #108 drew one smoothed band of held peaks). While it plays, the editors' playhead line marks the
 //! position on it (#123).
 
-use eframe::egui::{Align2, Color32, Id, Painter, Pos2, Rect, Sense, Ui, pos2, vec2};
+use eframe::egui::{self, Align2, Color32, Id, Painter, Pos2, Rect, Sense, Ui, pos2, vec2};
 
 use crate::icons::{IconId, draw_icon};
 use crate::metrics::{FontSize, Metrics};
@@ -536,7 +536,7 @@ impl SampleStrip {
             }
         }
 
-        // The playlist's audio clip waveform of the whole file: a frame a content beat (Honeydew change, #124).
+        // The playlist's audio clip waveform of the whole file: a frame a content beat (BanaForge change, #124).
         let ink = text.gamma_multiply(WAVE_ALPHA);
         let (x0, width) = pixel_columns(wave_rect, m);
         let rows = wave_rows(wave_rect, wave.summary.len() > 1);
@@ -546,7 +546,7 @@ impl SampleStrip {
             reversed: false,
         };
         let span = ((0.0, frames as f64 / width.max(1) as f64), (x0, width));
-        painter.add(wave_mesh(&wave, whole, &rows, span, 1.0 / m.ppp(), ink));
+        painter.add(egui::Shape::Mesh(wave_mesh(&wave, whole, &rows, span, 1.0 / m.ppp(), ink)));
         if let Some(at) = self.position(now) {
             let x = wave_rect.left() + wave_rect.width() * (at / frames.max(1) as f64) as f32;
             crate::ui::timeline::playhead_line(&painter, wave_rect, x, cx);

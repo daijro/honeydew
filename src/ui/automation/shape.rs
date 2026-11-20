@@ -1,4 +1,4 @@
-//! `Set shape` (Honeydew's own): the floating row's button for the selected points opens a small popup over the
+//! `Set shape` (BanaForge's own): the floating row's button for the selected points opens a small popup over the
 //! selection, the four shapes as buttons (each with its curve drawn above its name; the selection's own shape
 //! highlighted while all its points agree) and the **Tension** slider under them (a double tap resets it to 50 %). Each
 //! pick shows at once on the editor's curve; a tap outside the popup or Escape closes it, and what it set becomes one
@@ -37,14 +37,14 @@ const ICON_PX: f32 = 1.5;
 
 /// The popup while open: what it sets on the selected points so far, each part `None` until picked.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(super) struct Shaping {
+pub(crate) struct Shaping {
     kind: Option<ShapeKind>,
     tension: Option<u8>,
 }
 
 impl Shaping {
     /// `pts` with the picks on the selected ones.
-    pub(super) fn on(self, pts: &[Point], sel: &[bool]) -> Vec<Point> {
+    pub(crate) fn on(self, pts: &[Point], sel: &[bool]) -> Vec<Point> {
         (pts.iter().zip(sel))
             .map(|(p, &s)| match s {
                 true => Point {
@@ -62,7 +62,7 @@ impl Shaping {
 
 /// The segment from `a` to `z` on screen with shape `s` ([`shape_value`] on y, which is affine in the value): a
 /// stepped shape with upright risers, a curve in pieces about 2 points wide.
-pub(super) fn curve(s: Shape, a: Pos2, z: Pos2) -> Vec<Pos2> {
+pub(crate) fn curve(s: Shape, a: Pos2, z: Pos2) -> Vec<Pos2> {
     let y = |x: f64| shape_value(s, a.y.into(), z.y.into(), x) as f32;
     let at = |x: f64, y: f32| pos2(a.x + (z.x - a.x) * x as f32, y);
     match s.risers() {
@@ -115,14 +115,14 @@ fn place(frame: Rect, screen: Rect, u: f32) -> Rect {
 
 /// What one frame of the popup did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct Shown {
+pub(crate) struct Shown {
     /// A tap outside or Escape: it closes.
     pub close: bool,
 }
 
 /// One frame of the popup `id` over the selection's touch frame `frame`, editing `shaping`; `own` is the selected
 /// points' shared shape, if they share one; `ink` the channel colour.
-pub(super) fn popup(
+pub(crate) fn popup(
     ctx: &Context,
     cx: &UiCtx,
     id: Id,

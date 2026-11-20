@@ -1,7 +1,7 @@
 id = "proc-snare"
 kind = "samples"
 path = "Samples/Electronic Snare/"
-source = "honeydew"
+source = "banaforge"
 render = "snare"
 variant = [
   { name = "Snare Tight", tune = 200.0, decay = 0.05, snappy = 0.6, rattle = 0.09, tone = 5500.0 },

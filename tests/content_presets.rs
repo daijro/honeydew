@@ -15,13 +15,13 @@
 
 use std::path::{Path, PathBuf};
 
-use honeydew::audio_engine::SongAudioEngine;
-use honeydew::content::{PRESETS, ROOT, factory};
-use honeydew::flm::read_preset;
-use honeydew::project_files::preset_folder;
-use honeydew::song::{ChannelKind, Song, SynthKind};
-use honeydew::ui::main_menu::SongLibrary;
-use honeydew_audio::device::AudioRenderer;
+use banaforge::audio_engine::SongAudioEngine;
+use banaforge::content::{PRESETS, ROOT, factory};
+use banaforge::flm::read_preset;
+use banaforge::project_files::preset_folder;
+use banaforge::song::{ChannelKind, Song, SynthKind};
+use banaforge::ui::main_menu::SongLibrary;
+use banaforge_audio::device::AudioRenderer;
 
 const RATE: usize = 48_000;
 const C3: u8 = 48;
