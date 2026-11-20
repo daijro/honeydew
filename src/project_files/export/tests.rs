@@ -1247,3 +1247,79 @@ fn export_completion_share_reuses_only_successfully_saved_files() {
     files.share_last_render();
     assert_eq!(mem.0.borrow().shares.len(), 1);
 }
+
+/// Isolated-process benchmark: same deterministic project and encoder in both modes.
+/// Never enabled in production merely because this candidate exists.
+#[test]
+#[ignore = "controlled release benchmark; see export-performance workflow"]
+fn export_pipeline_benchmark() {
+    use std::time::Instant;
+    let mode = std::env::var("BANA_EXPORT_BENCH_MODE").unwrap_or("baseline".into());
+    let format = match std::env::var("BANA_EXPORT_BENCH_FORMAT").as_deref() {
+        Ok("flac") => Flac, Ok("mp3") => Mp3, Ok("ogg") => Ogg, _ => Wav,
+    };
+    let mut song = Song { tempo_bpm: 120.0, ..Default::default() };
+    for channel in 0..12 {
+        song.add_channel(ChannelKind::Synth(SynthKind::MiniSynth));
+        let ch = song.channels.last_mut().unwrap();
+        ch.params.0[0] = 0.4;
+        let fx = ch.rack.add(18); // Tape Delay, same settings in both modes.
+        ch.rack.get_mut(fx).unwrap().params[2] = 0.25;
+        let clip = ch.lanes[0].add_clip(0, 64.0); // 32 seconds at 120 BPM.
+        for beat in 0..64 {
+            clip.events.push(Event::Note { pos: beat * 128, len_beats: 0.75,
+                key: 48 + channel as u8, velocity: 160, pan: 127, slide: false });
+        }
+    }
+    let rate = 48000;
+    let project_bytes = crate::flm::write(&song).unwrap().len();
+    let samples = SampleCache::default();
+    let start = Instant::now();
+    let bytes = if mode == "baseline" {
+        let mut job = Job::new(&song, &samples, export(format, "benchmark"), cut(true), rate).unwrap();
+        loop {
+            if let Some(done) = job.step(&mut || false) {
+                println!("{}", job.profile_report());
+                if let Done::File(bytes) = done { break bytes; }
+                panic!("unexpected benchmark result: {done:?}");
+            }
+        }
+    } else {
+        assert_eq!(mode, "candidate");
+        let prepare = Instant::now();
+        let render = Render::new(&song, &samples, RenderSpec { range: crate::render::RenderRange::Full,
+            remainder: Remainder::Cut, normalize: false, high_quality: true, rate,
+            solo: None, master_effects: true }).unwrap();
+        let mut stream = render.benchmark_cut_stream();
+        let mut encoder = Encoder::new(format, rate, true, stream.frames(), &[]);
+        let mut profile = ExportProfile { prepare: prepare.elapsed().as_secs_f64(), ..Default::default() };
+        while !stream.done() {
+            let at = Instant::now();
+            let block = stream.step();
+            profile.render += at.elapsed().as_secs_f64();
+            if let Some([left,right]) = block {
+                let at = Instant::now(); encoder.push(left,right);
+                profile.encode += at.elapsed().as_secs_f64();
+            }
+        }
+        let at = Instant::now(); let bytes = encoder.finish();
+        profile.flush = at.elapsed().as_secs_f64();
+        println!("{}", profile.report(start.elapsed().as_secs_f64()));
+        bytes
+    };
+    let compute_s = start.elapsed().as_secs_f64();
+    // Actual native atomic save, measured separately. No benchmark files are tracked.
+    let path = std::env::temp_dir().join(format!("bana-export-benchmark-{}.{}", std::process::id(), format.ext()));
+    let at = Instant::now(); crate::project_files::write_atomic(&path, &bytes).unwrap();
+    let write_s = at.elapsed().as_secs_f64();
+    std::fs::remove_file(&path).unwrap();
+    let decoded = decode(&bytes).unwrap();
+    assert_eq!(decoded.sample_rate, rate);
+    assert_eq!(decoded.frames(), 32 * rate as usize);
+    assert!(decoded.right.is_some());
+    assert!(decoded.left.iter().any(|x| x.abs() > 0.001));
+    let hash = bytes.iter().fold(14695981039346656037_u64, |h,b| (h ^ u64::from(*b)).wrapping_mul(1099511628211));
+    let pcm_hash = decoded.left.iter().chain(decoded.right.as_ref().unwrap()).flat_map(|x| x.to_bits().to_le_bytes())
+        .fold(14695981039346656037_u64, |h,b| (h ^ u64::from(b)).wrapping_mul(1099511628211));
+    println!("BENCH pcm_fnv64={pcm_hash:016x} mode={mode} format={} rate={rate} hq=true normalize=false remainder=cut seconds=32 tracks=12 effects=12 notes=768 project_bytes={project_bytes} encoded_bytes={} fnv64={hash:016x} compute_s={compute_s:.6} write_s={write_s:.6} total_export_s={:.6}", format.ext(), bytes.len(), compute_s + write_s);
+}

@@ -41,6 +41,7 @@
 //! `Quick Render` renders the mix, since Split is no kept option (it resets whenever the dialog opens).
 
 use std::cell::RefCell;
+use super::export_profile::{ExportProfile, clock};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -342,7 +343,9 @@ impl ProjectFiles {
     pub fn write_export(&mut self, export: &Export, bytes: Vec<u8>) {
         self.export_size = Some(bytes.len() as u64);
         self.export_saving = Some(export.clone());
+        let started = clock();
         self.provider.save(&export.path, false, bytes);
+        eprintln!("export-profile save_request_s={:.6} (provider call; not asynchronous completion)", clock() - started);
     }
 
     /// Writes the stem file `name` of the split export `export` into its folder. Once every stem is rendered
@@ -527,6 +530,8 @@ impl ProjectFiles {
 /// ([`Job::step`]); with [`Split`] on, so for each stem in turn.
 pub struct Job {
     export: Export,
+    profile: ExportProfile,
+    started: f64,
     rate: u32,
     high_quality: bool,
     stage: Stage,
@@ -586,6 +591,7 @@ impl Job {
         page: RenderPage,
         rate: u32,
     ) -> Result<Self, RenderError> {
+        let started = clock();
         let page = match export.split {
             Split::Flp => RenderPage {
                 high_quality: true,
@@ -623,6 +629,8 @@ impl Job {
         let render = Render::new(song, samples, spec)?;
         Ok(Self {
             export,
+            profile: ExportProfile { prepare: clock() - started, ..Default::default() },
+            started,
             rate,
             high_quality: page.high_quality,
             stage: Stage::Rendering(Box::new(render)),
@@ -639,6 +647,9 @@ impl Job {
         }
         self
     }
+
+    pub fn profile_report(&self) -> String { self.profile.report(clock() - self.started) }
+    pub fn profile(&self) -> &ExportProfile { &self.profile }
 
     pub fn rate(&self) -> u32 { self.rate }
 
@@ -683,17 +694,24 @@ impl Job {
     /// The end of a stage ends the slice, so the busy screen shows the next stage's title before it runs. Returns what
     /// the job ended with, or a stem to write.
     pub fn step(&mut self, over: &mut dyn FnMut() -> bool) -> Option<Done> {
+        self.profile.slices += 1;
         loop {
             match std::mem::replace(&mut self.stage, Stage::Done) {
                 Stage::Rendering(mut render) => {
-                    if render.step(BLOCK) {
+                    let started = clock();
+                    let ended = render.step(BLOCK);
+                    self.profile.analysis += clock() - started;
+                    if ended {
                         self.stage = Stage::Processing(render);
                         return None;
                     }
                     self.stage = Stage::Rendering(render);
                 }
                 Stage::Processing(render) => {
-                    let stream = match render.finish() {
+                    let started = clock();
+                    let finished = render.finish();
+                    self.profile.processing += clock() - started;
+                    let stream = match finished {
                         Ok(stream) => stream,
                         Err(RenderError::Silent) if self.split.is_some() => {
                             return self.next_stem(None);
@@ -703,7 +721,9 @@ impl Job {
                     let frames = stream.frames();
                     let tags: Vec<_> = (self.tags.iter()).map(|(f, v)| (*f, v.as_str())).collect();
                     let (format, rate, hq) = (self.export.format, self.rate, self.high_quality);
+                    let started = clock();
                     let encoder = Encoder::new(format, rate, hq, frames, &tags);
+                    self.profile.processing += clock() - started;
                     self.stage = Stage::Encoding {
                         stream: Box::new(stream),
                         encoder,
@@ -715,8 +735,13 @@ impl Job {
                     mut encoder,
                 } => {
                     // Pass 2: a block rendered, and pushed once a whole one is there.
-                    if let Some([left, right]) = stream.step() {
+                    let started = clock();
+                    let block = stream.step();
+                    self.profile.render += clock() - started;
+                    if let Some([left, right]) = block {
+                        let started = clock();
                         encoder.push(left, right);
+                        self.profile.encode += clock() - started;
                     }
                     if stream.done() {
                         self.stage = Stage::Finalizing { encoder };
@@ -725,7 +750,9 @@ impl Job {
                     self.stage = Stage::Encoding { stream, encoder };
                 }
                 Stage::Finalizing { encoder } => {
+                    let started = clock();
                     let bytes = encoder.finish();
+                    self.profile.flush += clock() - started;
                     return match self.split {
                         None => Some(Done::File(bytes)),
                         Some(_) => self.next_stem(Some(bytes)),
@@ -739,7 +766,10 @@ impl Job {
                             solo: Some(channel),
                             ..split.spec
                         };
-                        let render = match Render::new(&split.song, &split.samples, spec) {
+                        let started = clock();
+                        let built = Render::new(&split.song, &split.samples, spec);
+                        self.profile.prepare += clock() - started;
+                        let render = match built {
                             Ok(render) => render,
                             Err(error) => return Some(Done::Failed(error)),
                         };
@@ -749,8 +779,12 @@ impl Job {
                     return Some(match (split.written, self.export.split) {
                         (0, _) => Done::Failed(RenderError::Silent),
                         // ponytail: deflated in one go, a stall for long stems; in slices if the web's UI stalls.
-                        (_, Split::Zip) => match crate::zip::write(&std::mem::take(&mut split.zip))
-                        {
+                        (_, Split::Zip) => match {
+                            let started = clock();
+                            let zip = crate::zip::write(&std::mem::take(&mut split.zip));
+                            self.profile.archive += clock() - started;
+                            zip
+                        } {
                             Ok(zip) => Done::File(zip),
                             // Past zip's 4 GiB, which wasm32 memory never holds anyway.
                             Err(_) => Done::Failed(RenderError::Archive),

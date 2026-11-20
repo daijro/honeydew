@@ -75,6 +75,7 @@ mod flp;
 pub use flp::{LOCATE, LOCATE_TAG};
 mod archive;
 pub mod export;
+pub mod export_profile;
 pub use archive::{
     ARCHIVE_FAILED, DECOMPRESS_FAILED, IMPORT_FAILED, IMPORT_TAG, NOTHING_KNOWN, UNZIPPED_FOLDER,
 };

@@ -224,6 +224,17 @@ fn streamed(
 }
 
 impl Render {
+    /// Experimental benchmark path only. Cut + no normalization needs neither
+    /// peak analysis, tail wrapping nor leading/trailing silence bounds.
+    #[cfg(test)]
+    pub(crate) fn benchmark_cut_stream(self) -> Stream {
+        assert!(self.spec.remainder == Remainder::Cut && !self.spec.normalize);
+        Stream {
+            pass: self.pass, start: 0, head: [Vec::new(), Vec::new()], peak: None,
+            out: [Vec::with_capacity(2 * BLOCK), Vec::with_capacity(2 * BLOCK)], handed: 0,
+        }
+    }
+
     /// Confirmed pass-one timeline frames, including the configured tail.
     pub fn progress(&self) -> (usize, usize) { (self.pass.done.min(self.pass.end), self.pass.end) }
     pub fn new(

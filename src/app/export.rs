@@ -31,9 +31,9 @@ impl BanaForgeApp {
         if !export.format.is_audio() && export.split != Split::Flp {
             return;
         }
-        self.audio
-            .samples
-            .load(&self.song, &sample_cache::reader(&self.files));
+        let prepare_started = crate::project_files::export_profile::clock();
+        self.audio.samples.load(&self.song, &sample_cache::reader(&self.files));
+        eprintln!("export-profile sample_load_s={:.6}", crate::project_files::export_profile::clock() - prepare_started);
         let rate = match self.song.sample_rate {
             0 => self.audio.sample_rate().unwrap_or(NO_AUDIO_RATE),
             rate => rate,
@@ -66,6 +66,7 @@ impl BanaForgeApp {
             let failed_stage = job.progress().2;
             let done = job.step(&mut slice());
             let (export, overlay) = (job.export().clone(), progress_overlay(job));
+            if done.is_some() { eprintln!("{}", job.profile_report()); }
             match done {
                 None => return self.navigate(Nav::Open(overlay)),
                 Some(Done::Stem(name, bytes)) => {
