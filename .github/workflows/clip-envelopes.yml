@@ -46,9 +46,12 @@ jobs:
       - name: Control and offline-render regressions
         run: |
           result=0
+          cargo test --lib --no-run >> /tmp/controls.log 2>&1 || result=$?
+          if [ "$result" -eq 0 ]; then
           for filter in clip_envelope ui::audio_editor::tests song::points flm:: audio_link::edits audio_engine::merge audio_engine::audio_clips ui::main_screen::tests ui::clips::tests render::tests; do
             cargo test --lib "$filter" >> /tmp/controls.log 2>&1 || result=$?
           done
+          fi
           cargo test -p banaforge-audio device::tests >> /tmp/controls.log 2>&1 || result=$?
           cat /tmp/controls.log
           python3 - <<'PY'

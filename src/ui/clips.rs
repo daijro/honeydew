@@ -650,6 +650,9 @@ impl Clips {
                     );
                 };
                 draw(&painter);
+                if self.selected == Some(r) && clip.file.sample.is_some() && !channel.lanes[r.lane].collapsed {
+                    self.envelopes.status(ui, &app.cx, clip_box(rect,m), r, grid);
+                }
                 // A marked clip again over the message's dim, outlined in `text` 2 px wide.
                 if self.marked.contains(&r) {
                     let lifted = painter.clone().with_layer_id(message::lift_layer());

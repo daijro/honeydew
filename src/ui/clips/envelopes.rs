@@ -129,6 +129,16 @@ struct Menu { clip: ClipRef, lane: usize, index: usize, frame: Rect, original: V
 pub(super) struct Editor { drag: Option<Drag>, menu: Option<Menu>, owned: bool, editing: Option<ClipRef> }
 impl Editor {
     pub fn finish(&mut self) -> bool { let a = self.drag.take().is_some(); let b = self.menu.take().is_some(); let active = a || b; self.owned = false; active }
+    pub fn status(&self, ui:&egui::Ui, cx:&UiCtx, b:Rect, r:ClipRef, grid:Rect) {
+        let a=area(b,cx.m); if a.height()<cx.m.u(0.65) {return;}
+        for (k,lane) in lanes(a).into_iter().enumerate() {
+            let label=Rect::from_min_size(pos2(b.left().max(grid.left()),lane.top()),vec2(cx.m.u(1.0),lane.height()));
+            if self.editing==Some(r) {
+                ui.painter_at(grid).rect_stroke(lane,0.0,Stroke::new(1.0/cx.m.ppp(),COLORS[k]),StrokeKind::Inside);
+            }
+            crate::ui::tooltip::tip(ui,label,"Tap VOL or PAN to arm both clip lanes for editing (tap again to exit). Drag a point; tap empty lane space to add. Hold or right-click a point for curve shape and tension. PAN: top = right, middle = center, bottom = left. Clip header/waveform still move the clip.",None);
+        }
+    }
     pub fn busy(&self) -> bool { self.drag.is_some() || self.menu.is_some() || self.owned }
     pub fn show(&mut self, ui: &mut egui::Ui, app: &mut AppCtx, blocks: &[(ClipRef, Rect)], selected: Option<ClipRef>, grid: Rect, axis: TimeAxis, snap: Option<f64>) -> bool {
         self.owned = false;
