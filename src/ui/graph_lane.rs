@@ -599,7 +599,7 @@ pub fn spacer_wave(
     let rows = wave_rows(spacer, wave.summary.len() > 1);
     let span = ((0.0, fpp), (x0, width));
     painter.with_clip_rect(painter.clip_rect().intersect(spacer)).add(
-        egui::Shape::Mesh(crate::ui::clips::wave_mesh(wave, fit, &rows, span, px, ink)));
+        egui::Shape::Mesh(crate::ui::clips::quality_wave_mesh(wave, fit, &rows, span, px, ink, None, crate::ui::waveform_quality::WaveformQuality::current(painter.ctx()))));
 
 }
 

@@ -181,6 +181,9 @@ pub struct Settings {
     /// `Sound mode:`, a stored id from [`SOUND_MODES`], selecting the platform's audio mode.
     #[serde(rename = "soundModeAndr")]
     pub sound_mode: u8,
+    /// Display-only policy, independent of the audio output profile.
+    #[serde(rename = "waveformQuality")]
+    pub waveform_quality: crate::ui::waveform_quality::WaveformQuality,
     /// `Enable audio recording latency compensation` (our own key): ON compensates. BanaForge change (#129, #130): the
     /// earlier `reclatency` toggle compensated while OFF or unset; a load moves it here once, keeping whether it
     /// compensated ([`migrate_keys`]). On by default, as the earlier unset key compensated.
@@ -418,6 +421,7 @@ impl Default for Settings {
             low_latency: 0,
             background_audio: false,
             sound_mode: DEFAULT_SOUND_MODE,
+            waveform_quality: Default::default(),
             latency_compensation: true,
             multitrack_recording: false,
             count_in: true,
@@ -875,6 +879,7 @@ mod tests {
                 .get(1)
                 .map(|&(id, _)| id)
                 .unwrap_or(d.sound_mode),
+            waveform_quality: crate::ui::waveform_quality::WaveformQuality::Balanced,
             latency_compensation: !d.latency_compensation,
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
@@ -1047,6 +1052,23 @@ mod tests {
             Settings::load(&stored(r#"{"playlistFollowPosition":65000}"#)).playlist_follow_position,
             950
         );
+    }
+
+    #[test]
+    fn waveform_quality_is_high_by_default_saved_and_independent_of_audio() {
+        use crate::ui::waveform_quality::WaveformQuality;
+        assert_eq!(Settings::load(&stored("{}" )).waveform_quality, WaveformQuality::High);
+        assert_eq!(Settings::load(&stored(r#"{"waveformQuality":"Invalid"}"#)).waveform_quality, WaveformQuality::High);
+        for quality in WaveformQuality::ALL {
+            let mut mem = Mem::default();
+            let mut s = Settings::default();
+            let sound = (s.sound_mode, s.low_latency);
+            s.waveform_quality = quality;
+            s.save(&mut mem);
+            let loaded = Settings::load(&mem);
+            assert_eq!(loaded.waveform_quality, quality);
+            assert_eq!((loaded.sound_mode, loaded.low_latency), sound);
+        }
     }
 
     #[test]

@@ -1697,3 +1697,32 @@ fn a_second_finger_cancels_a_stretch_drag() {
     assert_ne!(rig.ed.handle.unwrap().center(), handle);
     assert_eq!(rig.ed.handle, fresh.ed.handle);
 }
+
+#[test]
+fn waveform_quality_changes_actual_editor_geometry_but_not_song_or_source() {
+    use crate::ui::waveform_quality::WaveformQuality as Quality;
+    let mut rig = Rig::new(song(), Some(sample(1000, vec![0.5; 1000], None)));
+    let before = rig.song.clone();
+    let data = rig.sample.as_ref().unwrap().data.clone();
+    let summary = rig.sample.as_ref().unwrap().summary.clone();
+    let color = wave_color(&rig.song);
+    let high = rig.quads(color);
+    let mut count = high.len();
+    for q in [Quality::Balanced, Quality::Performance] {
+        q.publish(&rig.off.ctx);
+        rig.run(vec![]);
+        let cols = rig.quads(color);
+        assert!(cols.len() < count);
+        count = cols.len();
+        if q == Quality::Performance {
+            assert!(cols.iter().all(|r| (r.width() - 1.0).abs() < 0.001));
+            assert!(cols.windows(2).all(|p| p[1].left() > p[0].right()));
+        }
+    }
+    Quality::High.publish(&rig.off.ctx);
+    rig.run(vec![]);
+    assert_eq!(rig.quads(color), high);
+    assert_eq!(rig.song, before);
+    assert!(Arc::ptr_eq(&rig.sample.as_ref().unwrap().data, &data));
+    assert!(Arc::ptr_eq(&rig.sample.as_ref().unwrap().summary, &summary));
+}

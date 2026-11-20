@@ -215,6 +215,7 @@ const PLUGIN_ROWS: [Row; 4] = [
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Choice {
     SoundMode,
+    WaveformQuality,
     Theme,
     /// `Animation`: `Full`, `Reduced` (no animations) or `Minimal` (no scroll inertia either).
     Animation,
@@ -276,6 +277,7 @@ const ROWS: [Row; 71 + cfg!(desktop) as usize] = {
             },
         ),
         row("Sound mode:", Dropdown(Choice::SoundMode)),
+        row("Waveform Quality:", Dropdown(Choice::WaveformQuality)),
         row("Sample memory limit:", Dropdown(Choice::SampleMemory)),
         row("Recording:", Header),
         row("Audio input:", AudioInput),
@@ -830,6 +832,9 @@ impl SettingsTab {
                     let sound_mode_tip = "NATIVE: Android Oboe low-latency path (AAudio where recommended, OpenSL ES fallback).\nFAST: OpenSL ES, low-latency request, 256-frame callback target.\nSAFE: OpenSL ES, 1024-frame callback target.\nULTRA SAFE: OpenSL ES, 2048-frame callback target. Device limits may change actual buffers; diagnostics report accepted values. Higher buffers trade responsiveness for headroom. iOS retains its audio-session buffer.";
                     crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
                 }
+                if matches!(choice, Choice::WaveformQuality) {
+                    crate::ui::tooltip::tip(ui, button_rect, "Display only. High preserves current detail; Balanced groups more peaks; Performance draws separated vertical amplitude bars. Audio quality and timing are unchanged.", None);
+                }
                 if matches!(choice, Choice::SampleMemory) {
                     let tip = "The most memory SFZ and DW Sampler samples take. Past it, each keeps its start in memory and plays the rest from disk. Auto: the memory available, less a margin.";
                     crate::ui::tooltip::tip(ui, button_rect, tip, None);
@@ -1240,6 +1245,8 @@ impl Choice {
     /// The items in menu order, as (stored value, label).
     fn items(self) -> Vec<(usize, String)> {
         match self {
+            Choice::WaveformQuality => crate::ui::waveform_quality::WaveformQuality::ALL.into_iter()
+                .enumerate().map(|(i, q)| (i, q.label().to_owned())).collect(),
             Choice::SoundMode => SOUND_MODES
                 .iter()
                 .map(|&(id, label)| (usize::from(id), label.to_owned()))
@@ -1271,6 +1278,7 @@ impl Choice {
     fn get(self, s: &Settings) -> usize {
         match self {
             Choice::SoundMode => usize::from(s.sound_mode),
+            Choice::WaveformQuality => s.waveform_quality as usize,
             // A theme of the user's is no built-in one.
             Choice::Theme if !s.custom_theme.is_empty() => usize::MAX,
             Choice::Theme => s.theme as usize,
@@ -1286,6 +1294,7 @@ impl Choice {
     fn set(self, s: &mut Settings, value: usize) {
         match self {
             Choice::SoundMode => s.sound_mode = value as u8,
+            Choice::WaveformQuality => s.waveform_quality = crate::ui::waveform_quality::WaveformQuality::ALL.get(value).copied().unwrap_or_default(),
             Choice::Theme => (s.theme, s.custom_theme) = (value as u32, String::new()),
             Choice::Animation => (s.animations, s.inertia) = (value == 0, value != 2),
             Choice::SampleMemory => s.sample_memory_limit = value as u8,
@@ -1407,6 +1416,21 @@ mod tests {
     }
 
     #[test]
+    fn waveform_quality_selector_is_live_and_next_to_sound_mode_on_mobile() {
+        use crate::ui::waveform_quality::WaveformQuality;
+        assert_eq!(index("Waveform Quality:"), index("Sound mode:") + 1);
+        let row = &ROWS[index("Waveform Quality:")];
+        assert!(platform_row_visible(row, false, false));
+        assert_eq!(Choice::WaveformQuality.items().iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), ["High Quality", "Balanced", "Performance"]);
+        let mut s = Settings::default();
+        for (i, q) in WaveformQuality::ALL.into_iter().enumerate() {
+            Choice::WaveformQuality.set(&mut s, i);
+            assert_eq!(s.waveform_quality, q);
+            assert_eq!(Choice::WaveformQuality.get(&s), i);
+        }
+    }
+
+    #[test]
     fn mobile_sound_mode_is_visible_in_the_actual_settings_filter() {
         let mobile: Vec<_> = ROWS.iter().filter(|r| platform_row_visible(r, false, false))
             .map(|r| r.label).collect();
@@ -1433,6 +1457,7 @@ mod tests {
                 "Audio buffer size",
                 "Enable background audio (iOS Only)",
                 "Sound mode:",
+                "Waveform Quality:",
                 "Sample memory limit:",
                 "Recording:",
                 "Audio input:",

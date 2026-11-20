@@ -22,6 +22,12 @@ impl FollowCursor {
         .intersect(marks)
     }
 
+    /// Invisible padding: same visual cap, a 1.8 U wide by 1.3 U tall grab zone inside the ruler.
+    fn hit_rect(&self, marks: Rect, cx: &UiCtx) -> Rect {
+        let r = self.rect(marks, cx);
+        Rect::from_center_size(r.center(), vec2(cx.m.u(1.8), cx.m.u(1.3))).intersect(marks)
+    }
+
     /// Returns true for the complete owned gesture, including its release. Raw hit-testing is deliberate:
     /// the ruler and seek knob overlap this small, explicitly reserved handle and must not claim its press.
     pub(super) fn input(
@@ -50,8 +56,8 @@ impl FollowCursor {
             return was;
         }
         if pressed
-            && ui.rect_contains_pointer(self.rect(marks, cx))
-            && let Some(p) = pos.filter(|p| self.rect(marks, cx).contains(*p))
+            && ui.rect_contains_pointer(self.hit_rect(marks, cx))
+            && let Some(p) = pos.filter(|p| self.hit_rect(marks, cx).contains(*p))
         {
             let anchor = marks.left() + marks.width() * self.fraction() as f32;
             self.grab = Some(p.x - anchor);
@@ -194,6 +200,19 @@ mod tests {
             false
         ));
         assert_eq!(cursor.fraction(), 0.25);
+    }
+
+    #[test]
+    fn padded_follow_handle_can_be_grabbed_outside_unchanged_visual_cap() {
+        let ctx = Context::default();
+        let mut cursor = FollowCursor::default();
+        frame(&ctx, &mut cursor, vec![], true, false);
+        // Visual cap ends at x319.2/y20.48 at this scale; enlarged touch zone extends to x328.8/y31.
+        let p = pos2(324.0, 25.0);
+        assert!(frame(&ctx, &mut cursor, vec![Event::PointerMoved(p), button(p, true)], true, false));
+        let end = pos2(484.0, 25.0);
+        frame(&ctx, &mut cursor, vec![Event::PointerMoved(end), button(end, false)], true, false);
+        assert!((cursor.fraction() - 0.45).abs() < 0.002);
     }
 
     #[test]

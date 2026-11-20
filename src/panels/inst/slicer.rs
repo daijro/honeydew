@@ -28,7 +28,7 @@ use crate::panels::build::*;
 use crate::params::Display;
 use crate::sample_cache::{SampleCache, SampleKey, Waveform};
 use crate::ui::UiCtx;
-use crate::ui::audio_editor::{add_column, pixel_columns, wave_rows};
+use crate::ui::audio_editor::{pixel_columns, wave_rows};
 
 /// The Slicer's module type.
 pub const TYPE_ID: u16 = 33;
@@ -143,13 +143,19 @@ fn waveform(
     let px = 1.0 / cx.m.ppp();
     let per_column = sample.frames() as f64 / width.max(1) as f64;
     let channels = (std::iter::once(&sample.left).chain(&sample.right)).zip(posted.summary.iter());
+    let quality = crate::ui::waveform_quality::WaveformQuality::current(ui.ctx());
+    let stride = quality.stride(1, width);
     let mut mesh = Mesh::default();
     for ((samples, summary), row) in channels.zip(wave_rows(rect, sample.right.is_some())) {
-        for (i, peak) in peaks(samples, summary, per_column, 0.0, width)
+        for (i, peak) in peaks(samples, summary, per_column * stride as f64, 0.0, width.div_ceil(stride))
             .into_iter()
             .enumerate()
         {
-            add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, ink);
+            let x = x0 + i as f32 * px * stride as f32;
+            let width = (px * stride as f32).min(x0 + width as f32 * px - x);
+            let (x, width) = quality.column(x, width, px);
+            let y = crate::ui::audio_editor::column_span(peak.0, peak.1, row.0, row.1, px);
+            mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + width, y), ink);
         }
     }
     painter.add(mesh);

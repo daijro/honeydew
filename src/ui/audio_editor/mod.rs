@@ -1265,8 +1265,9 @@ impl AudioEditor {
         let (x0, n) = pixel_columns(f.grid, m);
         let px = 1.0 / m.ppp();
         let base_bpp = f64::from(px / axis.beat_w);
-        let stride = crate::ui::clips::waveform_column_stride(
-            base_bpp * wave.per_beat, source.data.sample_rate, m.ppp(), n);
+        let quality = crate::ui::waveform_quality::WaveformQuality::current(painter.ctx());
+        let stride = quality.stride(crate::ui::clips::waveform_column_stride(
+            base_bpp * wave.per_beat, source.data.sample_rate, m.ppp(), n), n);
         let bpp = base_bpp * stride as f64;
         let left = axis.tick(x0) / f64::from(PPQ);
         let end = wave.end();
@@ -1282,7 +1283,9 @@ impl AudioEditor {
                 let x = x0 + i as f32 * px * stride as f32;
                 let gain = volume.column_gain(beat * f64::from(PPQ), (beat + bpp) * f64::from(PPQ));
                 let y = column_span(peak.0 * gain, peak.1 * gain, row.0, row.1, px);
-                mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + px * stride as f32, y), fill);
+                let width = (px * stride as f32).min(x0 + n as f32 * px - x);
+                let (x, width) = quality.column(x, width, px);
+                mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + width, y), fill);
             }
         }
         painter.with_clip_rect(painter.clip_rect().intersect(f.value)).add(mesh);

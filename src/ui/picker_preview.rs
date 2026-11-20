@@ -38,7 +38,7 @@ use crate::sample_cache::Waveform;
 use crate::settings::Settings;
 use crate::theme::{Rgba, Theme};
 use crate::ui::audio_editor::{Wave, pixel_columns, wave_rows};
-use crate::ui::clips::wave_mesh;
+use crate::ui::clips::quality_wave_mesh;
 use crate::ui::gesture::CALM_U;
 use crate::ui::keyboard::{self, KeyInput, KeyView, Piano};
 use crate::ui::panel_resize::{PanelGrab, Zone};
@@ -546,7 +546,7 @@ impl SampleStrip {
             reversed: false,
         };
         let span = ((0.0, frames as f64 / width.max(1) as f64), (x0, width));
-        painter.add(egui::Shape::Mesh(wave_mesh(&wave, whole, &rows, span, 1.0 / m.ppp(), ink)));
+        painter.add(egui::Shape::Mesh(quality_wave_mesh(&wave, whole, &rows, span, 1.0 / m.ppp(), ink, None, crate::ui::waveform_quality::WaveformQuality::current(painter.ctx()))));
         if let Some(at) = self.position(now) {
             let x = wave_rect.left() + wave_rect.width() * (at / frames.max(1) as f64) as f32;
             crate::ui::timeline::playhead_line(&painter, wave_rect, x, cx);
