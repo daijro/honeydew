@@ -47,6 +47,8 @@ jobs:
             grep -E 'BENCH |export-profile|FAILED|error:' "$file" || true
           done | tee benchmark-results/summary.txt
           cat benchmark-results/summary.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Compare medians and decoded PCM fingerprints
+        run: python3 tools/analyze-export-benchmark.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
