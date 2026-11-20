@@ -2224,7 +2224,7 @@ fn paint_clip(
         let ink = sample(&stops, if dim { 0.0 } else { CURVE_TINT }).to_color32();
         automation(&painter, clip, area, axis, ink, m);
         if let Some(wave) = wave {
-            let wave_area = if lane.kind == LaneKind::Audio && area.height() >= m.u(0.65) {
+            let wave_area = if lane.kind == LaneKind::Audio && area.height() >= 64.0 {
                 Rect::from_min_max(area.min, pos2(area.right(), envelopes::lanes(area)[0].top()))
             } else { area };
             waveform(&painter, clip, wave, wave_area, axis, ink, m);
@@ -5622,7 +5622,9 @@ mod tests {
         // Shown twice over: each loop pass from its start.
         lane.clips[0].visible_len_beats = 4.0;
         let (cols, texts) = columns(&lane, false, plain, ink);
-        assert_eq!(texts, [("Loop 01".to_owned(), content.to_color32())]);
+        assert!(texts.contains(&("Loop 01".to_owned(), content.to_color32())));
+        assert!(texts.iter().any(|t| t.0 == "VOL"));
+        assert!(texts.iter().any(|t| t.0 == "PAN"));
         assert_eq!(cols.len(), 128);
         assert_eq!(
             (cols[63], cols[64], cols[96]),

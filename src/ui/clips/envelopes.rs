@@ -6,7 +6,7 @@ use crate::ui::automation::shape::{self, Shaping};
 const COLORS: [Color32; 2] = [Color32::from_rgb(255, 213, 64), Color32::from_rgb(80, 222, 255)];
 
 pub(super) fn lanes(area: Rect) -> [Rect; 2] {
-    let top = area.top() + area.height() * 0.38;
+    let top = if area.height() >= 64.0 { area.top() + area.height() * 0.38 } else { area.top() };
     let middle = (top + area.bottom()) * 0.5;
     [Rect::from_min_max(pos2(area.left(), top), pos2(area.right(), middle)),
      Rect::from_min_max(pos2(area.left(), middle), area.max)]
@@ -61,7 +61,7 @@ pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, 
     if lp < f64::from(px / axis.beat_w) * f64::from(PPQ) { return; }
     for (k, lane) in lanes(area).into_iter().enumerate() {
         let p = painter.with_clip_rect(visible.intersect(lane));
-        p.rect_filled(lane, 0.0, Color32::from_rgba_unmultiplied(8, 14, 24, 220));
+        p.rect_filled(lane, 0.0, Color32::from_rgba_unmultiplied(8, 14, 24, if area.height() >= 64.0 { 220 } else { 75 }));
         p.hline(lane.x_range(), lane.top(), Stroke::new(px, COLORS[k].gamma_multiply(0.45)));
         let values = value_rect(lane, m);
         if k == 1 {
@@ -124,7 +124,7 @@ struct Drag {
     clip: ClipRef, lane: usize, index: usize, origin: f64,
     original: Vec<Point>, expected: Vec<Point>, since: f64, press: Pos2, moved: bool, bound: bool,
 }
-struct Menu { clip: ClipRef, lane: usize, index: usize, frame: Rect, original: Vec<Point>, shaping: Shaping }
+struct Menu { clip: ClipRef, lane: usize, index: usize, frame: Rect, original: Vec<Point>, expected: Vec<Point>, shaping: Shaping }
 #[derive(Default)]
 pub(super) struct Editor { drag: Option<Drag>, menu: Option<Menu>, owned: bool }
 impl Editor {
@@ -135,17 +135,20 @@ impl Editor {
         if let Some(mut menu) = self.menu.take() {
             let Some(clip) = find(app.song, menu.clip) else { return false; };
             let key = PointKey::Envelope(menu.lane as i16);
+            if points::points(clip,key) != menu.expected { return true; }
             let own = menu.original.get(menu.index).map(|p| p.shape);
             let mut selection = vec![false; menu.original.len()];
             if let Some(s) = selection.get_mut(menu.index) { *s = true; }
             let close = shape::popup(ui.ctx(), &app.cx, Id::new("playlist-envelope-shape"), menu.frame, (&mut menu.shaping, own), COLORS[menu.lane]).close;
             let new = menu.shaping.on(&menu.original, &selection);
-            if points::points(clip, key) != new { set(app, menu.clip, key, new, false); }
+            if points::points(clip, key) != new { set(app, menu.clip, key, new.clone(), false); }
+            menu.expected = new;
             if close { app.song_edited(true); } else { self.menu = Some(menu); }
             return true;
         }
         let (pos, pressed, released, down, secondary, cancel) = ui.input(|i| (i.pointer.interact_pos(), i.pointer.primary_pressed(), i.pointer.primary_released(), i.pointer.primary_down(), i.pointer.secondary_clicked(), !i.focused || crate::ui::focus_lost(i) || i.multi_touch().is_some() || i.key_pressed(egui::Key::Escape)));
         if let Some(mut drag) = self.drag.take() {
+            ui.ctx().request_repaint();
             let key = PointKey::Envelope(drag.lane as i16);
             let valid = find(app.song, drag.clip).is_some_and(|c| points::points(c, key) == drag.expected);
             if !valid { return true; } // An external undo/delete wins; never overwrite it.
@@ -158,7 +161,7 @@ impl Editor {
                 drag.moved |= p.distance(drag.press) > app.cx.m.u(0.15);
                 if drag.bound && !drag.moved && ui.input(|i| i.time) - drag.since > 0.5 && down {
                     self.menu = Some(Menu { clip: drag.clip, lane: drag.lane, index: drag.index,
-                        frame: Rect::from_center_size(p, vec2(20.0,20.0)), original:drag.original, shaping:Shaping::default() });
+                        frame: Rect::from_center_size(p, vec2(20.0,20.0)), expected:drag.original.clone(), original:drag.original, shaping:Shaping::default() });
                     return true;
                 }
                 if (drag.moved || !drag.bound) && let Some((_, b)) = blocks.iter().find(|(r,_)| *r == drag.clip) {
@@ -204,10 +207,11 @@ impl Editor {
             points::insert(&mut pts, Point { tick, value: points::raw(((values.bottom()-p.y)/values.height()).clamp(0.0,1.0)), ..Default::default() })
         });
         if secondary {
-            if closest.is_some() { self.menu = Some(Menu { clip:r, lane, index, frame:Rect::from_center_size(p, vec2(20.0,20.0)), original, shaping:Shaping::default() }); }
+            if closest.is_some() { self.menu = Some(Menu { clip:r, lane, index, frame:Rect::from_center_size(p, vec2(20.0,20.0)), expected:original.clone(), original, shaping:Shaping::default() }); }
             return true;
         }
         set(app, r, key, pts.clone(), false);
+        ui.ctx().request_repaint();
         self.drag = Some(Drag { clip:r, lane, index, origin, original, expected:pts, since:ui.input(|i| i.time), press:p, moved:false, bound:closest.is_some() });
         true
     }
