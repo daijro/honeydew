@@ -153,7 +153,19 @@ pub fn corner(ui: &mut egui::Ui, area: Rect, topic: Topic) -> bool {
     }
     let was_open = previous == Some(topic);
     let at = pos2(area.right() - 32.0, area.top() + 2.0);
-    button(ui, at, topic);
+    // Workspace chrome paints before the grid; use a bounded chrome layer only
+    // while that workspace is unobscured. Settings row icons never use this layer.
+    if icons_visible(&ctx) {
+    egui::Area::new(Id::new(("workspace-help", topic.title())))
+        .order(egui::Order::Foreground)
+        .fixed_pos(at)
+        .show(&ctx, |ui| {
+            ui.set_min_size(vec2(30.0, 30.0));
+            button(ui, at, topic);
+        });
+    } else {
+        button(ui, at, topic);
+    }
     was_open
         || ctx.data(|d| d.get_temp::<Topic>(key)).is_some()
         || (icons_visible(&ctx) && ctx.input(|i| {

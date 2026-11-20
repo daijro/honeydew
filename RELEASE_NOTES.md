@@ -1,3 +1,10 @@
+BanaForge 0.5.26 — compact channel controls, Gross Beat layout and help alignment
+
+- Channel Settings: bound Monitor and Record arm controls to compact themed buttons with captions, rather than sizing their discs from the color-wheel row. Recording/monitoring functionality remains connected to the same settings. Keep brightness Value caption and numeric slider within the color column; clamp audio-channel dialog width to the viewport.
+- Banana Gross Beat: replace compressed multi-item TIME/VOLUME lists with one mode selector on the active tab, and separate mode, Length and Mix rows. Presets, custom points and processing are unchanged.
+- Settings information icons now paint and interact in their actual scrolling parent row, with the page clip. Workspace help chrome is suppressed while menus or other app overlays are open, so it cannot float above Settings navigation. The persisted Show information buttons preference is preserved.
+- Adds layout/clip regressions for channel button bounds, narrow color captions, both Gross Beat tabs, scrolling info rows and workspace/menu isolation. Physical Android acceptance remains necessary across display sizes/scales.
+
 BanaForge 0.5.25 — optional contextual information icons
 
 - Settings → User interface → Show information buttons defaults ON. Turn it OFF to hide contextual icons and their touch targets throughout Playlist, Piano Roll, Mixer, Audio Editor and Settings; turn it ON to restore their original positions.

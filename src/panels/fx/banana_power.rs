@@ -27,10 +27,10 @@ pub(in crate::panels) fn panel(id: u16) -> Panel {
             hstack([
                 display(2).draw(envelope).w(Size::Flex(4.0)),
                 vstack([
-                    spinner(3, "Time mode").p(1).h(Size::U(1.5)).show(Show::Tab(0)),
-                    spinner(4, "Volume mode").p(2).h(Size::U(1.5)).show(Show::Tab(1)),
-                    spinner(5, "Length").p(3).h(Size::U(1.5)).mt(0.2),
-                    knob(6, "Mix").p(4).h(Size::U(2.0)).mt(0.2),
+                    spinner(3, "Time mode").p(1).h(Size::U(1.4)).show(Show::Tab(0)),
+                    spinner(4, "Volume mode").p(2).h(Size::U(1.4)).show(Show::Tab(1)),
+                    spinner(5, "Length").p(3).h(Size::U(1.4)).mt(0.2),
+                    knob(6, "Mix").p(4).h(Size::U(1.8)).mt(0.2),
                 ])
                 .w(Size::Flex(1.7)),
             ]),

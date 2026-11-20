@@ -435,3 +435,23 @@ mod layout_regressions {
         }
     }
 }
+
+#[cfg(test)]
+mod brightness_layout_tests {
+    use super::*;
+    #[test]
+    fn layout_regression_brightness_value_caption_stays_inside_narrow_dialog() {
+        let mut off = crate::ui::offscreen::Offscreen::new();
+        for width in [144.0, 216.0, 288.0] {
+            let bounds=Rect::from_min_size(egui::pos2(20.0,20.0),vec2(width,208.0));
+            let shapes=off.frame(vec![],&mut |ui,_| {
+                color_wheel(ui,Id::new(("narrow-wheel",width.to_bits())),bounds,Color32::from_rgb(232,48,60));
+            });
+            let labels: Vec<_>=shapes.iter().filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.job.text == "Value" => Some(Rect::from_min_size(t.pos,t.galley.size())), _=>None
+            }).collect();
+            assert_eq!(labels.len(),1);
+            assert!(bounds.contains_rect(labels[0]));
+        }
+    }
+}
