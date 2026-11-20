@@ -11,6 +11,7 @@ pub mod clips;
 pub mod drum_grid;
 pub mod drums;
 pub mod graph_lane;
+mod follow_cursor;
 pub mod keyboard;
 pub mod layout;
 pub mod main_menu;

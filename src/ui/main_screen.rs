@@ -504,6 +504,8 @@ pub struct MainScreen {
     /// The time range on the ruler, in song ticks.
     pub(crate) region: RangeSelect,
     knob: PlayheadKnob,
+    follow_cursor: crate::ui::follow_cursor::FollowCursor,
+    follow_cursor_busy: bool,
     ram: RamReadout,
     /// The shared performance data's smoothed load, for the `CPU` meter; the app sets it every frame.
     pub meter: Load,
@@ -613,6 +615,14 @@ impl MainScreen {
         // Scrolling first: the rows, the clips and the `+` are placed from the new offsets. The view follows the
         // playhead while the song plays with Settings `Continuous scrolling during playback` on.
         let before = self.view();
+        let marks = ruler_area.with_min_x(grid.left());
+        self.follow_cursor.position.get_or_insert(settings.playlist_follow_position.clamp(50, 950));
+        let popup = app.covered || self.add_channel_open || self.track_menu.is_some()
+            || self.insert.is_some() || self.snap_menu || self.region.dragging() || self.region.pending();
+        self.follow_cursor_busy = self.follow_cursor.input(ui, marks, settings.continuous_scroll, popup, &cx);
+        if settings.continuous_scroll {
+            app.settings.playlist_follow_position = self.follow_cursor.position.unwrap_or(250);
+        }
         let playing = self.playing && settings.continuous_scroll;
         let lead = app.audio.playhead_lead();
         let follow = (audio.filter(|_| playing))
@@ -622,7 +632,7 @@ impl MainScreen {
             ruler_area,
             track_area,
             content,
-            (follow, !app.covered),
+            (follow, !app.covered && !self.follow_cursor_busy),
             m,
         );
         let row_h = self.row_h(m);
@@ -843,12 +853,17 @@ impl MainScreen {
         self.knob.armed = self.armed;
         let shown =
             playhead.is_some() && timeline::knob_shown(self.playing, self.clips.row.showing());
+        if !self.follow_cursor_busy {
         match (self.knob).show(ui, knob, marks, x, shown, &cx) {
             Some(KnobGesture::Tap) => self.playing = true,
             Some(KnobGesture::Drop(x)) => {
                 actions.seek = Some(self.knob.drop_tick(ui, &ruler_at, end, x));
             }
             None => {}
+        }
+        }
+        if settings.continuous_scroll {
+            self.follow_cursor.paint(ui, marks, &cx);
         }
         // The keymap's editing actions, after the popups (the snap menu's too), which take Escape first
         // (`ui/edit_keys.rs`); paste and Add clip land on the snap mode's grid, as the insert menu does.
@@ -1119,7 +1134,12 @@ impl MainScreen {
             playhead: Some(playhead as f64),
         };
         let items = crate::ui::sections::region_items;
-        let out = (self.region).show_with(ui, Id::new("playlist_region"), &at, &items, &app.cx);
+        let out = if self.follow_cursor_busy {
+            self.region.paint(ui, &at, at.range, &app.cx);
+            timeline::RulerOutput::default()
+        } else {
+            (self.region).show_with(ui, Id::new("playlist_region"), &at, &items, &app.cx)
+        };
         let sections = &app.song.sections;
         let knob = (!self.playing).then(|| axis.x(playhead as f64));
         let painter = ui.painter_at(strip);
@@ -1614,7 +1634,7 @@ impl MainScreen {
         let id = Id::new("track_scroll");
         let report = (self.scroller).update(ui, id, m.u(1.0), &zones, &mut axes, opts);
         if let Some(playhead) = follow {
-            scroller::follow(&mut axes[X], playhead);
+            scroller::follow_at(&mut axes[X], playhead, self.follow_cursor.fraction());
         }
         self.take(axes, was, m);
         // The rows' range counts the `+` room in points: a row zoom changes it, and the zoom clamped the position to the
@@ -5438,6 +5458,52 @@ mod tests {
         rig.song.file.playlist_view[2] = 0.01;
         assert_eq!(rig.frame(vec![]).m.u(1.0), 32.0);
         assert!((rig.screen.axis(GRID_X, &m).beat_w - 100.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn adjustable_follow_cursor_drags_without_seeking_and_keeps_audio_time() {
+        let mut rig = Rig::new(song_with_a_clip());
+        rig.screen.playing = true;
+        FOLLOW.set(Some(40 * u64::from(PPQ)));
+        let first = rig.frame(vec![]);
+        let channels = rig.song.channels.clone();
+        let play_loop = rig.song.play_loop;
+        let m = first.m;
+        let marks = Rect::from_x_y_ranges(GRID_X..=1170.0, 0.0..=timeline::ruler_h(&m));
+        for fraction in [0.1_f32, 0.8, 0.4] {
+            let from = pos2(marks.left() + marks.width() * rig.screen.follow_cursor.fraction() as f32, m.u(0.32));
+            let to = pos2(marks.left() + marks.width() * fraction, from.y);
+            for events in [vec![egui::Event::PointerMoved(from)], vec![button(from, true)],
+                vec![egui::Event::PointerMoved(to)], vec![button(to, false)]] {
+                let out = rig.frame(events);
+                assert!(out.seek.is_none() && out.playhead.is_none() && out.edit.is_none());
+                assert!(rig.screen.playing);
+            }
+            let span = f64::from(marks.width()) / f64::from(rig.screen.axis(GRID_X, &m).beat_w);
+            assert!((rig.screen.scroll_x - (40.0 - f64::from(fraction) * span)).abs() < 0.03);
+            assert!((rig.screen.follow_cursor.fraction() - f64::from(fraction)).abs() < 0.002);
+        }
+        // Zoom changes the view mapping, not the audio clock or selected screen fraction.
+        for zoom in [-0.5, 1.5, 3.0] {
+            rig.screen.zoom = zoom;
+            rig.frame(vec![]);
+            let span = f64::from(marks.width()) / f64::from(rig.screen.axis(GRID_X, &m).beat_w);
+            assert!((rig.screen.scroll_x - (40.0 - 0.4 * span)).abs() < 0.03);
+        }
+        let selected = rig.screen.follow_cursor.position;
+        FOLLOW.set(None);
+        rig.frame(vec![]);
+        let scroll = rig.screen.scroll_x;
+        // No handle exists with Follow off. Playback no longer forces any horizontal position.
+        rig.frame(vec![]);
+        assert_eq!(rig.screen.scroll_x, scroll);
+        assert_eq!(rig.screen.follow_cursor.position, selected);
+        FOLLOW.set(Some(50 * u64::from(PPQ)));
+        rig.frame(vec![]);
+        assert_eq!(rig.screen.follow_cursor.position, selected);
+        assert_eq!(rig.song.channels, channels);
+        assert_eq!(rig.song.play_loop, play_loop);
+        FOLLOW.set(None);
     }
 
     #[test]

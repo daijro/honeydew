@@ -611,7 +611,7 @@ impl RangeSelect {
     }
 
     /// The range over the ruler (type docs).
-    fn paint(&self, ui: &egui::Ui, at: &RangeRuler, range: Option<TimeRange>, cx: &UiCtx) {
+    pub(crate) fn paint(&self, ui: &egui::Ui, at: &RangeRuler, range: Option<TimeRange>, cx: &UiCtx) {
         let Some(r) = range else { return };
         let (c, m) = (&cx.theme.colors, cx.m);
         let t = m.t();

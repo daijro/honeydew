@@ -230,6 +230,9 @@ pub struct Settings {
     /// `Continuous scrolling during playback`.
     #[serde(rename = "continuousScroll")]
     pub continuous_scroll: bool,
+    /// Playlist follow anchor in thousandths of the visible timeline width (5–95%).
+    #[serde(rename = "playlistFollowPosition")]
+    pub playlist_follow_position: u16,
     /// Optional visual-only Playlist channel activity lights.
     #[serde(rename = "trackActivityIndicators")]
     pub track_activity_indicators: bool,
@@ -430,6 +433,7 @@ impl Default for Settings {
             middle_c_is_c4: false,
             range_labels: true,
             continuous_scroll: false,
+            playlist_follow_position: 250,
             track_activity_indicators: false,
             show_hidden_tracks: false,
             hardware_meters: true,
@@ -511,6 +515,7 @@ impl Settings {
             serde_json::from_value::<Self>(Value::Object(one)).is_ok()
         });
         let mut s: Self = serde_json::from_value(Value::Object(fields)).unwrap_or_default();
+        s.playlist_follow_position = s.playlist_follow_position.clamp(50, 950);
         s.vocal_waveform_offset_y = s.vocal_waveform_offset_y.min(40);
         let d = Self::default();
         if s.theme as usize >= builtin_themes().len() {
@@ -885,6 +890,7 @@ mod tests {
             middle_c_is_c4: !d.middle_c_is_c4,
             range_labels: !d.range_labels,
             continuous_scroll: !d.continuous_scroll,
+            playlist_follow_position: 675,
             track_activity_indicators: !d.track_activity_indicators,
             show_hidden_tracks: !d.show_hidden_tracks,
             hardware_meters: !d.hardware_meters,
@@ -1016,6 +1022,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn playlist_follow_position_persists_and_validates_without_changing_follow_toggle() {
+        for position in [50, 250, 500, 950] {
+            let mut mem = Mem::default();
+            let s = Settings { playlist_follow_position: position, continuous_scroll: true, ..Settings::default() };
+            s.save(&mut mem);
+            let loaded = Settings::load(&mem);
+            assert_eq!(loaded.playlist_follow_position, position);
+            assert!(loaded.continuous_scroll);
+        }
+        assert_eq!(Settings::load(&stored("{}" )).playlist_follow_position, 250);
+        assert_eq!(Settings::load(&stored(r#"{"playlistFollowPosition":0}"#)).playlist_follow_position, 50);
+        assert_eq!(Settings::load(&stored(r#"{"playlistFollowPosition":65000}"#)).playlist_follow_position, 950);
     }
 
     #[test]
