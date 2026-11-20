@@ -776,6 +776,8 @@ impl AudioEditor {
             points::points(clip, PointKey::Envelope(0))
         };
         let volume = volume::envelope(&volume_points, waveform_level_gain(slot));
+        let pan_points = if self.lane == 1 { shown.0.clone() } else { points::points(clip, PointKey::Envelope(1)) };
+        let stereo = (!pan_points.is_empty()).then(|| volume::stereo(&volume, &pan_points, slot.map_or(0.5, |s| s.params[1])));
 
         // 2 … 7 over the grid.
         let gp = ui.painter_at(f.grid);
@@ -789,6 +791,7 @@ impl AudioEditor {
                 w,
                 tint.gamma_multiply(WAVE_ALPHA),
                 &volume,
+                stereo.as_ref(),
                 m,
             );
         }
@@ -1344,6 +1347,7 @@ impl AudioEditor {
         wave: Wave,
         fill: Color32,
         volume: &volume::VolumeEnvelope,
+        stereo: Option<&[Arc<volume::VolumeEnvelope>; 2]>,
         m: &Metrics,
     ) {
         let (x0, n) = pixel_columns(f.grid, m);
@@ -1363,9 +1367,11 @@ impl AudioEditor {
         let left = axis.tick(x0) / f64::from(PPQ);
         let end = wave.end();
         let cols = self.peaks.get(source, wave, left, bpp, n.div_ceil(stride));
-        let rows = wave_rows(f.value, cols.len() == 2);
+        let rows = wave_rows(f.value, cols.len() == 2 || stereo.is_some());
         let mut mesh = Mesh::default();
-        for (col, &row) in cols.iter().zip(&rows) {
+        for (channel, &row) in rows.iter().enumerate() {
+            let Some(col) = cols.get(channel.min(cols.len().saturating_sub(1))) else { continue; };
+            let volume = stereo.map_or(volume, |s| &s[channel.min(1)]);
             for (i, &peak) in col.iter().enumerate() {
                 let beat = left + i as f64 * bpp;
                 if beat < -1e-9 || beat >= end - 1e-9 {

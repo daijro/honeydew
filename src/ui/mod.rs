@@ -344,3 +344,5 @@ pub(crate) mod export_status;
 pub mod waveform_quality;
 
 pub mod envelope_display;
+
+pub mod help;

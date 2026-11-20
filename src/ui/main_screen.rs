@@ -574,6 +574,7 @@ impl MainScreen {
         input: ScreenInput,
         actions: &mut ScreenActions,
     ) {
+        app.covered |= crate::ui::help::corner(ui.ctx(), app.regions.editor, crate::ui::help::Topic::Playlist);
         let cx = app.cx;
         let UiCtx { theme, m } = cx;
         let ScreenInput {

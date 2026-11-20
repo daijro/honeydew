@@ -687,6 +687,9 @@ impl SettingsTab {
         s: &mut Settings,
     ) {
         let (m, colors) = (cx.m, &cx.theme.colors);
+        if let Some(topic) = crate::ui::help::setting(row.label) {
+            crate::ui::help::button(ui.ctx(), egui::pos2(slot.left()-32.0,slot.center().y-15.0), topic);
+        }
         // Headers and the metronome row take the whole slot; the other rows are a control row, centred in it.
         let r = match row.kind {
             Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize | Kind::WaveformGap => {
