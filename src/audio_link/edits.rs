@@ -81,7 +81,7 @@ pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
                 edit.silence.push(index);
             }
             std::cmp::Ordering::Equal => {
-                let kept = |(a, b): (&Lane, &Lane)| a == b || retouched(a, b);
+                let kept = |(a, b): (&Lane, &Lane)| a == b || retouched(a, b) || envelopes_retouched(a, b);
                 edit.resync |= !a.lanes.iter().zip(&b.lanes).all(kept);
             }
         }
@@ -186,6 +186,22 @@ fn retouched(a: &Lane, b: &Lane) -> bool {
         && (a.kind, a.target, a.grid, a.swing) == (b.kind, b.target, b.grid, b.swing)
         && a.clips.len() == b.clips.len()
         && a.clips.iter().zip(&b.clips).all(clip)
+}
+
+/// Only VOL/PAN content changed: retain timing, sample identity, speed, mute and lane ordering.
+fn envelopes_retouched(a: &Lane, b: &Lane) -> bool {
+    if a.kind != LaneKind::Audio || b.kind != LaneKind::Audio || a.clips.len() != b.clips.len() { return false; }
+    let mut bare = a.clone();
+    for (a, b) in bare.clips.iter_mut().zip(&b.clips) {
+        let keep = |e: &Event| !matches!(e, Event::Envelope { env_param: 0 | 1, .. });
+        if !a.events.iter().filter(|e| keep(e)).eq(b.events.iter().filter(|e| keep(e))) { return false; }
+        a.events.clone_from(&b.events);
+        a.file.shapes.clone_from(&b.file.shapes);
+        a.file.pan_shapes.clone_from(&b.file.pan_shapes);
+        // Raw EVN2 is merely an optional encoding cache, not envelope semantics.
+        a.file.raw_events.clone_from(&b.file.raw_events);
+    }
+    bare == *b
 }
 
 /// Each event of `old` has its own in `new`, alike but maybe for its graph-lane values. Both are sorted by position.

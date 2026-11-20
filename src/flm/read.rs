@@ -1146,6 +1146,10 @@ impl Reader {
                     self.charge(2 * child.payload.len(), &child.path)?;
                     clip.file.shapes = shapes(child.payload);
                 }
+                b"HDPn" if kind == LaneKind::Audio => {
+                    self.charge(2 * child.payload.len(), &child.path)?;
+                    clip.file.pan_shapes = shapes(child.payload);
+                }
                 b"HDVo" => {
                     self.charge(2 * child.payload.len(), &child.path)?;
                     match vocal_notes(child.payload) {

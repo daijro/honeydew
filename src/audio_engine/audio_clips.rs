@@ -50,6 +50,23 @@ impl Clips {
         }
     }
 
+    /// Retain sample positions, attack/release and every sounding voice while adopting new prepared curves.
+    /// Runs at handover on the audio thread: bounded scans and copies, no allocation or sample relaunch.
+    pub fn adopt_envelopes(&mut self, old: &Clips, frame: u64, beat: f64) {
+        self.sampler.adopt(&old.sampler, Some);
+        for (pad, span) in self.spans.iter().enumerate() {
+            if frame < span.start || frame >= span.end { continue; }
+            let content = ((beat - span.start_beat).rem_euclid(span.loop_beats) + span.offset)
+                .rem_euclid(span.loop_beats) * f64::from(PPQ);
+            for (index, steps) in span.envelopes.iter().enumerate() {
+                let n = steps.partition_point(|&(tick, _)| f64::from(tick) <= content);
+                if let Some(&(_, value)) = n.checked_sub(1).and_then(|i| steps.get(i)) {
+                    self.sampler.set_param(pad, index, value);
+                }
+            }
+        }
+    }
+
     /// The seek rule at `frame`, song beat `beat`, while playing: on a channel whose first lane is audio every clip
     /// voice is cut; then each clip with start < frame < end relaunches from content beat
     /// c = ((beat − start) mod L) + offset (less L once if ≥ L), source time c·60/BPM, after its envelopes take the
@@ -134,8 +151,9 @@ fn envelope(clip: &Clip, env_param: i16) -> Result<Clip, EngineError> {
         })
         .collect();
     let mut converted = Clip { events, ..clip.clone() };
-    // HDSh on audio clips belongs to VOL only; PAN/SPEED remain linear.
-    if env_param != 0 { converted.file.shapes.clear(); }
+    // Audio clips store each curve independently; the automation converter reads HDSh.
+    if env_param == 1 { converted.file.shapes = clip.file.pan_shapes.clone(); }
+    else if env_param != 0 { converted.file.shapes.clear(); }
     let mut result = automation_clip(&converted, false)?;
     // An envelope beginning later must hold the base before its first point,
     // including later loop passes, rather than retaining the previous pass's end.

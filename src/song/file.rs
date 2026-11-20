@@ -502,6 +502,8 @@ pub struct ClipFileState {
     /// `HDSh` (BanaForge's own): on an automation clip, the shape of each segment that is not the straight line, by the
     /// tick of its point (sorted, one per tick: the last point at a tick starts the segment that has a length).
     pub shapes: Vec<(u32, banaforge_audio::automation::Shape)>,
+    /// HDPn: independent clip PAN segment shapes; old readers safely ignore this extension.
+    pub pan_shapes: Vec<(u32, banaforge_audio::automation::Shape)>,
     /// `HDVo` (BanaForge's own): vocal-synth per-note lyrics and pitch-curve points, keyed by note start and MIDI key.
     pub vocal_notes: Vec<VocalNoteState>,
 }
@@ -516,6 +518,7 @@ impl Default for ClipFileState {
             header_extra: Vec::new(),
             raw_events: Raw::default(),
             shapes: Vec::new(),
+            pan_shapes: Vec::new(),
             vocal_notes: Vec::new(),
         }
     }

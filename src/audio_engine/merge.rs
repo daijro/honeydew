@@ -162,7 +162,7 @@ impl SongAudioEngine {
 
     /// Channel `channel` takes over `old`'s channel `from` (the same channel id). `retime`: `old`'s build tempo over
     /// this one's, when they differ (the audio clips kept are timed at it).
-    fn adopt_channel(&mut self, old: &mut Self, channel: usize, from: usize, retime: Option<f64>) {
+    fn adopt_channel(&mut self, old: &mut Self, channel: usize, from: usize, _retime: Option<f64>) {
         // An instrument of the same instance id and build plays on (a preset of its type applies to it: the new params
         // follow), with this song's rack place and key range; another type or build is a new one, which starts silent.
         for row in 0..self.instruments[channel].len() {
@@ -206,9 +206,9 @@ impl SongAudioEngine {
         let same = (self.clips[channel].as_ref().zip(old.clips[from].as_ref()))
             .is_some_and(|(new, running)| new.same_samples(running));
         if !self.resync && same {
-            std::mem::swap(&mut self.clips[channel], &mut old.clips[from]);
-            if let (Some(ratio), Some(clips)) = (retime, &mut self.clips[channel]) {
-                clips.retime(|frame| (frame as f64 * ratio).round() as u64);
+            if let (Some(new), Some(running)) = (&mut self.clips[channel], &old.clips[from]) {
+                let beat = self.frame as f64 * f64::from(self.built_bpm) / (60.0 * f64::from(self.sample_rate));
+                new.adopt_envelopes(running, self.frame, beat);
             }
         }
         let (initial, applied) = (&self.initial, &mut self.applied);

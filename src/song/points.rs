@@ -116,6 +116,7 @@ pub fn points(clip: &Clip, key: PointKey) -> Vec<Point> {
             value: raw(value),
             shape: match key {
                 PointKey::Automation | PointKey::Envelope(0) => shape_at(clip, tick),
+                PointKey::Envelope(1) => clip.file.pan_shapes.binary_search_by_key(&tick, |s| s.0).map_or_else(|_| Shape::default(), |i| clip.file.pan_shapes[i].1),
                 PointKey::Envelope(_) => Shape::default(),
             },
         })
@@ -126,7 +127,7 @@ pub fn points(clip: &Clip, key: PointKey) -> Vec<Point> {
 /// `banaforge_audio::automation::AutomationClip`, with their shapes on automation; every other event stays.
 pub fn set_points(clip: &mut Clip, key: PointKey, pts: Vec<Point>) {
     use banaforge_audio::automation::{AutomationClip, AutomationPoint};
-    let automation = matches!(key, PointKey::Automation | PointKey::Envelope(0));
+    let automation = matches!(key, PointKey::Automation | PointKey::Envelope(0 | 1));
     let pts = pts
         .iter()
         .map(|p| AutomationPoint {
@@ -143,7 +144,7 @@ pub fn set_points(clip: &mut Clip, key: PointKey, pts: Vec<Point>) {
     let built = AutomationClip::new(0, 1, 1, 0, 1, pts).expect("a positive key and a loop");
     if automation {
         // By tick, the last point's at each: the one whose segment has a length.
-        let shapes = &mut clip.file.shapes;
+        let shapes = if key == PointKey::Envelope(1) { &mut clip.file.pan_shapes } else { &mut clip.file.shapes };
         shapes.clear();
         for p in built.points() {
             let tick = p.tick as u32;

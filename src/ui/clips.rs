@@ -28,6 +28,8 @@
 //!   and keeps it at the lift; dragging on makes it a marquee instead, and hides the menu. A right click on empty track
 //!   space shows the menu there too.
 
+mod envelopes;
+
 use banaforge_audio::drums::SPEED;
 use banaforge_audio::sample_edit::speed_ratio;
 use banaforge_audio::slicer;
@@ -283,6 +285,7 @@ pub struct LiveTake {
 /// The playlist's clip selection and the gesture on it.
 #[derive(Default)]
 pub struct Clips {
+    envelopes: envelopes::Editor,
     /// The paint slot [`Self::show`] leaves between the clips and their selection chrome, for the playhead line
     /// (clips, then the line, then the grid's children).
     pub(crate) line_slot: Option<egui::layers::ShapeIdx>,
@@ -539,7 +542,7 @@ impl Clips {
         });
         // Floating actions are drawn later, but must win before raw lane/clip
         // hit testing can change their selection or hide them on touch-down.
-        let pressed = pressed && !self.row.owns_pointer(pos);
+        let mut pressed = pressed && !self.row.owns_pointer(pos);
         // Every frame, for its latch: a press held over a focus loss is up, and decides nothing.
         let down = primary_down_live(ui, Id::new("clip_touch"));
         let stale = held && !down || ui.input(|i| !i.focused || crate::ui::focus_lost(i));
@@ -591,6 +594,12 @@ impl Clips {
             .filter(|(_, rect)| rect.intersects(grid))
             .collect();
         blocks.sort_by_key(|&(r, _)| Some(r) == self.selected);
+        if self.envelopes.show(ui, app, &blocks, self.selected, grid, axis, Some(drag_unit)) {
+            pressed = false;
+            landed = None;
+            self.touch = None;
+            self.drag = None;
+        }
         let painter = ui.painter_at(grid);
         let tempo = app.song.tempo_bpm;
         // A touch on a clip or in the group's frame hides the selection's handles (and its floating row) until it ends;
@@ -1004,7 +1013,7 @@ impl Clips {
     /// A touch on empty track space held past a tap, or its marquee: the playlist does not scroll under it (`now`,
     /// input time).
     pub(crate) fn busy(&self, now: f64) -> bool {
-        self.marquee.is_some()
+        self.envelopes.busy() || self.marquee.is_some()
             || (self.touch).is_some_and(|t| {
                 matches!(t.on, Target::Lane(..)) && gesture::is_long(now - t.since)
             })
@@ -2214,8 +2223,14 @@ fn paint_clip(
         let ink = sample(&stops, if dim { 0.0 } else { CURVE_TINT }).to_color32();
         automation(&painter, clip, area, axis, ink, m);
         if let Some(wave) = wave {
-            waveform(&painter, clip, wave, area, axis, ink, m);
+            let wave_area = if lane.kind == LaneKind::Audio && area.height() >= m.u(0.65) {
+                Rect::from_min_max(area.min, pos2(area.right(), envelopes::lanes(area)[0].top()))
+            } else { area };
+            waveform(&painter, clip, wave, wave_area, axis, ink, m);
         }
+    }
+    if lane.kind == LaneKind::Audio && clip.file.sample.is_some() {
+        envelopes::paint(&body, clip, area, axis, m);
     }
 }
 

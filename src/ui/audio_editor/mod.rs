@@ -376,7 +376,7 @@ pub fn apply(song: &mut Song, at: At, action: &Action) -> bool {
         let changed = points::points(clip, key) != pts;
         if changed {
             points::set_points(clip, key, pts);
-            clip.fit_loop(b);
+            if !matches!(key, PointKey::Envelope(0 | 1)) { clip.fit_loop(b); }
         }
         changed
     };
@@ -1448,7 +1448,7 @@ impl AudioEditor {
             "audio_point_button",
             sel,
             view,
-            if self.lane == 0 { &OPS } else { &OPS[..2] },
+            if self.lane <= 1 { &OPS } else { &OPS[..2] },
             cx,
         )?;
         ui.ctx().request_repaint();

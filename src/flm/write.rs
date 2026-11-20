@@ -605,6 +605,16 @@ fn write_clip(
             Ok(())
         })?;
     }
+    if kind == LaneKind::Audio && !clip.file.pan_shapes.is_empty() {
+        writer.chunk(*b"HDPn", |writer| {
+            for &(tick, shape) in &clip.file.pan_shapes {
+                writer.u32(tick)?;
+                writer.u8(shape.kind as u8)?;
+                writer.u8(shape.tension)?;
+            }
+            Ok(())
+        })?;
+    }
     if !clip.file.vocal_notes.is_empty() {
         writer.chunk(*b"HDVo", |writer| {
             if clip.file.vocal_notes.len() > 16_384 {
