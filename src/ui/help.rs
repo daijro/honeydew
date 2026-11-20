@@ -94,10 +94,27 @@ pub fn button(ui: &mut egui::Ui, at: egui::Pos2, topic: Topic) {
         let response = ui.interact(rect, Id::new(("help-icon", topic.title())), Sense::click());
         let ink = Color32::from_rgb(185, 205, 220);
         let painter = ui.painter_at(ui.clip_rect());
-        painter.circle(rect.center(), 8.0, Color32::from_rgb(35,43,54), Stroke::new(1.0,ink));
-        painter.text(rect.center(), Align2::CENTER_CENTER, "i", FontId::proportional(13.0), ink);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("About {}",topic.title())));
-        response.on_hover_text(format!("About {}",topic.title()))
+        painter.circle(
+            rect.center(),
+            8.0,
+            Color32::from_rgb(35, 43, 54),
+            Stroke::new(1.0, ink),
+        );
+        painter.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            "i",
+            FontId::proportional(13.0),
+            ink,
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                true,
+                format!("About {}", topic.title()),
+            )
+        });
+        response.on_hover_text(format!("About {}", topic.title()))
     });
     if response.as_ref().is_some_and(|r| r.clicked()) {
         ctx.data_mut(|d| d.insert_temp(key, topic));
@@ -125,9 +142,10 @@ pub fn button(ui: &mut egui::Ui, at: egui::Pos2, topic: Topic) {
     if let Some(panel) = shown {
         if ctx.input(|i| {
             i.pointer.any_pressed()
-                && i.pointer
-                    .interact_pos()
-                    .is_some_and(|p| !panel.response.rect.contains(p) && !response.as_ref().is_some_and(|r| r.rect.contains(p)))
+                && i.pointer.interact_pos().is_some_and(|p| {
+                    !panel.response.rect.contains(p)
+                        && !response.as_ref().is_some_and(|r| r.rect.contains(p))
+                })
         }) {
             open = false;
         }
@@ -138,9 +156,17 @@ pub fn button(ui: &mut egui::Ui, at: egui::Pos2, topic: Topic) {
 }
 pub fn corner(ui: &mut egui::Ui, area: Rect, topic: Topic) -> bool {
     let ctx = ui.ctx().clone();
-    if ctx.data(|d| d.get_temp::<bool>(Id::new("workspace-help-obscured"))).unwrap_or(false) {
+    if ctx
+        .data(|d| d.get_temp::<bool>(Id::new("workspace-help-obscured")))
+        .unwrap_or(false)
+    {
         let key = Id::new("contextual-help-open");
-        if ctx.data(|d| d.get_temp::<Topic>(key)).is_some_and(|t| matches!(t, Topic::Playlist | Topic::PianoRoll | Topic::Mixer | Topic::AudioEditor)) {
+        if ctx.data(|d| d.get_temp::<Topic>(key)).is_some_and(|t| {
+            matches!(
+                t,
+                Topic::Playlist | Topic::PianoRoll | Topic::Mixer | Topic::AudioEditor
+            )
+        }) {
             ctx.data_mut(|d| d.remove::<Topic>(key));
         }
         return false;
@@ -156,23 +182,24 @@ pub fn corner(ui: &mut egui::Ui, area: Rect, topic: Topic) -> bool {
     // Workspace chrome paints before the grid; use a bounded chrome layer only
     // while that workspace is unobscured. Settings row icons never use this layer.
     if icons_visible(&ctx) {
-    egui::Area::new(Id::new(("workspace-help", topic.title())))
-        .order(egui::Order::Foreground)
-        .fixed_pos(at)
-        .show(&ctx, |ui| {
-            ui.set_min_size(vec2(30.0, 30.0));
-            button(ui, at, topic);
-        });
+        egui::Area::new(Id::new(("workspace-help", topic.title())))
+            .order(egui::Order::Foreground)
+            .fixed_pos(at)
+            .show(&ctx, |ui| {
+                ui.set_min_size(vec2(30.0, 30.0));
+                button(ui, at, topic);
+            });
     } else {
         button(ui, at, topic);
     }
     was_open
         || ctx.data(|d| d.get_temp::<Topic>(key)).is_some()
-        || (icons_visible(&ctx) && ctx.input(|i| {
-            i.pointer
-                .interact_pos()
-                .is_some_and(|p| Rect::from_min_size(at, vec2(30.0, 30.0)).contains(p))
-        }))
+        || (icons_visible(&ctx)
+            && ctx.input(|i| {
+                i.pointer
+                    .interact_pos()
+                    .is_some_and(|p| Rect::from_min_size(at, vec2(30.0, 30.0)).contains(p))
+            }))
 }
 
 #[cfg(test)]
@@ -207,49 +234,85 @@ mod tests {
         assert!(icons_visible(&off.ctx));
         publish_icon_visibility(&off.ctx, false);
         let mut draw = |ui: &mut egui::Ui, _: &crate::ui::UiCtx| {
-            assert!(!corner(ui, Rect::from_min_size(pos2(0.0, 0.0), vec2(42.0, 80.0)), Topic::Envelopes));
+            assert!(!corner(
+                ui,
+                Rect::from_min_size(pos2(0.0, 0.0), vec2(42.0, 80.0)),
+                Topic::Envelopes
+            ));
         };
         off.frame(vec![], &mut draw);
         off.click(pos2(25.0, 17.0), &mut draw);
-        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), None);
+        assert_eq!(
+            off.ctx
+                .data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))),
+            None
+        );
         publish_icon_visibility(&off.ctx, true);
-        let mut draw = |ui: &mut egui::Ui, _: &crate::ui::UiCtx| button(ui, pos2(10.0, 2.0), Topic::Envelopes);
+        let mut draw =
+            |ui: &mut egui::Ui, _: &crate::ui::UiCtx| button(ui, pos2(10.0, 2.0), Topic::Envelopes);
         off.frame(vec![], &mut draw);
         off.click(pos2(25.0, 17.0), &mut draw);
-        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), Some(Topic::Envelopes));
+        assert_eq!(
+            off.ctx
+                .data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))),
+            Some(Topic::Envelopes)
+        );
         publish_icon_visibility(&off.ctx, false);
         off.frame(vec![], &mut draw);
-        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), Some(Topic::Envelopes));
-        off.frame(crate::ui::offscreen::key_tap(egui::Key::Escape, Default::default()), &mut draw);
-        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), None);
+        assert_eq!(
+            off.ctx
+                .data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))),
+            Some(Topic::Envelopes)
+        );
+        off.frame(
+            crate::ui::offscreen::key_tap(egui::Key::Escape, Default::default()),
+            &mut draw,
+        );
+        assert_eq!(
+            off.ctx
+                .data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))),
+            None
+        );
     }
 
     #[test]
     fn layout_regression_info_icons_follow_row_coordinates_and_parent_clip() {
         let mut off = crate::ui::offscreen::Offscreen::new();
-        let clip = Rect::from_min_max(pos2(0.0,40.0),pos2(200.0,100.0));
-        for y in [50.0,20.0] {
-            let shapes=off.frame(vec![], &mut |ui,_| {
+        let clip = Rect::from_min_max(pos2(0.0, 40.0), pos2(200.0, 100.0));
+        for y in [50.0, 20.0] {
+            let shapes = off.frame(vec![], &mut |ui, _| {
                 ui.set_clip_rect(clip);
-                button(ui,pos2(10.0,y),Topic::Colors);
+                button(ui, pos2(10.0, y), Topic::Colors);
             });
-            let icons: Vec<_>=shapes.iter().filter_map(|s| match &s.shape {
-                egui::Shape::Circle(c) if c.radius == 8.0 => Some((c.center,s.clip_rect)), _=>None
-            }).collect();
-            assert_eq!(icons,vec![(pos2(25.0,y+15.0),clip)]);
+            let icons: Vec<_> = shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Circle(c) if c.radius == 8.0 => Some((c.center, s.clip_rect)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(icons, vec![(pos2(25.0, y + 15.0), clip)]);
         }
     }
     #[test]
     fn layout_regression_workspace_help_never_floats_above_menu() {
-        let mut off=crate::ui::offscreen::Offscreen::new();
+        let mut off = crate::ui::offscreen::Offscreen::new();
         off.ctx.data_mut(|d| {
-            d.insert_temp(Id::new("workspace-help-obscured"),true);
-            d.insert_temp(Id::new("contextual-help-open"),Topic::Colors);
+            d.insert_temp(Id::new("workspace-help-obscured"), true);
+            d.insert_temp(Id::new("contextual-help-open"), Topic::Colors);
         });
-        off.frame(vec![],&mut |ui,_| {
-            assert!(!corner(ui,Rect::from_min_size(pos2(0.0,0.0),vec2(400.0,300.0)),Topic::Playlist));
+        off.frame(vec![], &mut |ui, _| {
+            assert!(!corner(
+                ui,
+                Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0)),
+                Topic::Playlist
+            ));
         });
-        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))),Some(Topic::Colors));
+        assert_eq!(
+            off.ctx
+                .data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))),
+            Some(Topic::Colors)
+        );
     }
 
     #[test]

@@ -307,7 +307,10 @@ const ROWS: [Row; 76 + cfg!(desktop) as usize] = {
         row("Scaling:", Scaling),
         row("Scale is currently limited to", ScaleLimit),
         row("Animation:", Dropdown(Choice::Animation)),
-        row("Show information buttons", Toggle(|s| &mut s.show_information_buttons)),
+        row(
+            "Show information buttons",
+            Toggle(|s| &mut s.show_information_buttons),
+        ),
         row("Application:", Header),
         row("Edit:", Header),
         row(

@@ -243,16 +243,35 @@ fn midi_rows(
             text_off: Some(text),
             ..Button::new(id.with(name), rect, "", true, colors)
         };
-        ui.painter_at(buttons_row).text(rect.center_bottom() + vec2(0.0, m.u(0.1)), Align2::CENTER_TOP,
-            if name == "arm" { "Record arm" } else { "Monitor" }, m.font_id(FontSize::Pt8), text);
-        if button(ui, cx, &b, *on).on_hover_text(if name == "arm" { "Arm channel recording" } else { "Monitor channel input" }).clicked() {
+        ui.painter_at(buttons_row).text(
+            rect.center_bottom() + vec2(0.0, m.u(0.1)),
+            Align2::CENTER_TOP,
+            if name == "arm" {
+                "Record arm"
+            } else {
+                "Monitor"
+            },
+            m.font_id(FontSize::Pt8),
+            text,
+        );
+        if button(ui, cx, &b, *on)
+            .on_hover_text(if name == "arm" {
+                "Arm channel recording"
+            } else {
+                "Monitor channel input"
+            })
+            .clicked()
+        {
             *on = !*on;
             changed = true;
         }
     }
     let field = row(FIELD);
     let channel_row = row((7.0, 1.25));
-    let side = Rect::from_center_size(channel_row.center(), vec2(channel_row.width(), field.height()));
+    let side = Rect::from_center_size(
+        channel_row.center(),
+        vec2(channel_row.width(), field.height()),
+    );
     let (device, channel) = if MIDI_DEVICES {
         (Some(field), side)
     } else {
@@ -302,8 +321,15 @@ fn midi_rows(
 /// Compact, bounded squares: the old 6.5-U-tall color-wheel row must never size MIDI buttons.
 fn input_button_rects(row: Rect, unit: f32) -> [Rect; 2] {
     let gap = unit * BUTTON_GAP;
-    let side = (unit * 1.8).min((row.width()-gap).max(0.0)/2.0).min((row.height()-unit*0.7).max(0.0));
-    std::array::from_fn(|i| Rect::from_min_size(row.min + vec2(i as f32*(side+gap),0.0),vec2(side,side)))
+    let side = (unit * 1.8)
+        .min((row.width() - gap).max(0.0) / 2.0)
+        .min((row.height() - unit * 0.7).max(0.0));
+    std::array::from_fn(|i| {
+        Rect::from_min_size(
+            row.min + vec2(i as f32 * (side + gap), 0.0),
+            vec2(side, side),
+        )
+    })
 }
 
 fn accepted_rgb(text: &str) -> Option<[u8; 3]> {
@@ -369,7 +395,13 @@ fn color_wheel(ui: &mut Ui, id: Id, rect: Rect, current: Color32) -> Option<[u8;
         vec2(rect.width(), 24.0),
     );
     let label_width = 44.0_f32.min(brightness.width() * 0.25);
-    ui.painter().text(brightness.left_center(), Align2::LEFT_CENTER, "Value", egui::FontId::proportional(12.0), ui.visuals().text_color());
+    ui.painter().text(
+        brightness.left_center(),
+        Align2::LEFT_CENTER,
+        "Value",
+        egui::FontId::proportional(12.0),
+        ui.visuals().text_color(),
+    );
     let slider_rect = brightness.with_min_x(brightness.left() + label_width);
     let mut slider_ui = ui.new_child(egui::UiBuilder::new().max_rect(slider_rect));
     slider_ui.set_clip_rect(slider_rect.intersect(ui.clip_rect()));
@@ -428,10 +460,15 @@ mod layout_regressions {
     #[test]
     fn layout_regression_channel_input_buttons_stay_small_and_inside_column() {
         for width in [110.0, 220.0, 320.0] {
-            let row = Rect::from_min_size(egui::pos2(16.0,80.0),vec2(width,90.0));
-            let buttons=input_button_rects(row,32.0);
+            let row = Rect::from_min_size(egui::pos2(16.0, 80.0), vec2(width, 90.0));
+            let buttons = input_button_rects(row, 32.0);
             assert!(!buttons[0].intersect(buttons[1]).is_positive());
-            for b in buttons { assert!(row.contains_rect(b)); assert!(b.width()<=57.61); assert_eq!(b.width(),b.height()); assert!(b.bottom()+20.0 <= row.bottom()); }
+            for b in buttons {
+                assert!(row.contains_rect(b));
+                assert!(b.width() <= 57.61);
+                assert!((b.width() - b.height()).abs() < 0.001);
+                assert!(b.bottom() + 20.0 <= row.bottom());
+            }
         }
     }
 }
@@ -443,14 +480,25 @@ mod brightness_layout_tests {
     fn layout_regression_brightness_value_caption_stays_inside_narrow_dialog() {
         let mut off = crate::ui::offscreen::Offscreen::new();
         for width in [144.0, 216.0, 288.0] {
-            let bounds=Rect::from_min_size(egui::pos2(20.0,20.0),vec2(width,208.0));
-            let shapes=off.frame(vec![],&mut |ui,_| {
-                color_wheel(ui,Id::new(("narrow-wheel",width.to_bits())),bounds,Color32::from_rgb(232,48,60));
+            let bounds = Rect::from_min_size(egui::pos2(20.0, 20.0), vec2(width, 208.0));
+            let shapes = off.frame(vec![], &mut |ui, _| {
+                color_wheel(
+                    ui,
+                    Id::new(("narrow-wheel", width.to_bits())),
+                    bounds,
+                    Color32::from_rgb(232, 48, 60),
+                );
             });
-            let labels: Vec<_>=shapes.iter().filter_map(|s| match &s.shape {
-                egui::Shape::Text(t) if t.galley.job.text == "Value" => Some(Rect::from_min_size(t.pos,t.galley.size())), _=>None
-            }).collect();
-            assert_eq!(labels.len(),1);
+            let labels: Vec<_> = shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text == "Value" => {
+                        Some(Rect::from_min_size(t.pos, t.galley.size()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(labels.len(), 1);
             assert!(bounds.contains_rect(labels[0]));
         }
     }
