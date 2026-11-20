@@ -12,8 +12,8 @@ Live gestures use the existing Audition edit funnel: changed frames update audio
 
 ## Playlist use
 
-- Audio clips show yellow **VOL** and cyan **PAN** lanes, independent points/curves, and a PAN center guide. Top PAN means right, bottom means left, middle means centered balance. The indication is normalized sampler gain/balance control, not a dB-linear volume scale.
-- Select a clip, then tap its VOL or PAN label to arm both lanes for point creation. Colored lane outlines indicate armed editing. Tap empty lane space to add, drag an existing point to move. Existing points on selected clips can be dragged without separately arming point creation.
+- Audio clips show only meaningfully changed envelope lanes: yellow volume and cyan pan by default, with no clip text labels. Untouched clips have no envelope overlays. The waveform retains its full area. The PAN center guide appears only for an active PAN envelope. Top PAN means right, bottom means left, middle means centered balance. The indication is normalized sampler gain/balance control, not a dB-linear volume scale.
+- Select a clip, then double-tap its envelope area to arm both lanes for point creation. Colored lane outlines indicate armed editing. Tap empty lane space to add, drag an existing point to move. Existing points on selected clips can be dragged without separately arming point creation.
 - Tap the label again to exit point-creation mode. Ordinary clip moves remain available outside the lanes; inactive empty lanes retain ordinary body behavior.
 - Hold a point (or right-click on desktop) for the existing curve-shape/tension popup. Duplicate-tick controls and Square/Stairs risers show vertical changes at the engine's rounded event ticks.
 - Compact rows use translucent lane backgrounds over the waveform; taller rows reserve a separate waveform area above the two lanes. Collapsed tracks retain their compact name-only behavior. Increase track-height zoom for fine touch editing on compact rows.
@@ -44,3 +44,9 @@ The release benchmark compares eight cached waveform meshes with and without bot
 5. While playing, drag points and shape curves from both editors. Confirm transport/sample position continues and live output follows the edit. A deliberately instantaneous gain/PAN jump may click; that is not an output-stream restart.
 6. Undo/redo complete gestures, interrupt drags with a pinch/focus loss, switch editors mid-gesture, save/reopen the project and verify both curves and sound.
 7. Profile the same heavy project/device/zoom/thermal state with Android frame tracing and audio diagnostics. Desktop synthetic paint/tessellation results do not establish sustained phone responsiveness or audible synchronization.
+
+## Display preferences (0.5.23)
+
+Settings → Edit contains Show Playlist envelopes and VOL / PAN colors. The compact right-side panel includes a waveform preview, independent color swatches (including white, no black preset), #RRGGBB input, and reset. HEX accepts arbitrary user colors, including black if explicitly typed. The panel scrolls on short displays. Preferences are global and persist independently of project files. Hiding overlays also hides editing outlines and blocks new hidden point gestures; ongoing transactions still finalize normally. Audio Editor remains available for editing while Playlist overlays are hidden.
+
+Envelope visibility is derived without allocating from that clip's control events: a lane is meaningful if any control differs from the clip's base sampler parameter. Explicit default-valued points remain saved but are not drawn. No whole-project scan, waveform-cache invalidation, PCM mutation, or engine command occurs for color/visibility changes. Untouched clips return before preparing curves or producing geometry.

@@ -29,7 +29,7 @@ pub fn panel(ctx: &egui::Context, prefs: &mut EnvelopeDisplay) {
     if !open { return; }
     egui::Window::new("Edit · Envelope display").open(&mut open)
         .anchor(egui::Align2::RIGHT_TOP, vec2(-8.0, 36.0))
-        .default_width(252.0).resizable(false).collapsible(false).show(ctx, |ui| {
+        .default_width(252.0).max_height((ctx.content_rect().height() - 72.0).max(100.0)).vscroll(true).resizable(false).collapsible(false).show(ctx, |ui| {
         ui.set_max_width(252.0);
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), egui::Sense::hover());
         let p = ui.painter();

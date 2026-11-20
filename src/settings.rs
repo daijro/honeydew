@@ -882,7 +882,7 @@ mod tests {
                 .map(|&(id, _)| id)
                 .unwrap_or(d.sound_mode),
             waveform_quality: crate::ui::waveform_quality::WaveformQuality::Balanced,
-            envelope_display: Default::default(),
+            envelope_display: crate::ui::envelope_display::EnvelopeDisplay { visible: false, colors: [[20, 80, 255], [255, 255, 255]] },
             latency_compensation: !d.latency_compensation,
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
@@ -1249,6 +1249,7 @@ mod tests {
                 "editorRibbonShift",
                 "enableAnimations",
                 "enableInertia",
+                "envelope_display",
                 "ghostnotes",
                 "graphTabShift",
                 "gridSize",
@@ -1270,6 +1271,7 @@ mod tests {
                 "pianoRollPanSnap",
                 "pianoRollVelocitySnap",
                 "pickerKeys",
+                "playlistFollowPosition",
                 "pluginFolders",
                 "preferredKbdSizeCells",
                 "projectVersionSizeLimit",
@@ -1291,6 +1293,7 @@ mod tests {
                 "soundsNoticeSeen",
                 "soundsOverMobileData",
                 "theme",
+                "trackActivityIndicators",
                 "uiscalefactor",
                 "vocalSynth.browserVisible",
                 "vocalSynth.desktopWorkspace",
@@ -1301,6 +1304,7 @@ mod tests {
                 "vocalSynth.simpleMode",
                 "vocalSynth.waveformEnabled",
                 "vocalSynth.waveformOffsetY",
+                "waveformQuality",
                 "whatsNewSeen",
                 "writeTagsOnExport"
             ]

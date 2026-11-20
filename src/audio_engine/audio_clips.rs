@@ -418,6 +418,20 @@ mod clip_envelope_audio_tests {
     use crate::song::points::{self, Point, PointKey, Shape, ShapeKind};
     use banaforge_audio::device::AudioRenderer;
 
+    #[test]
+    fn clip_envelope_hidden_and_custom_colors_never_change_pcm_or_project() {
+        let (mut song, cache) = fixture();
+        constant(&mut song, 0, 24000);
+        constant(&mut song, 1, 50000);
+        let original = song.clone();
+        let ctx = eframe::egui::Context::default();
+        crate::ui::envelope_display::EnvelopeDisplay::default().publish(&ctx);
+        let visible = render(&mut engine(&song, &cache), 12000);
+        crate::ui::envelope_display::EnvelopeDisplay { visible: false, colors: [[0, 70, 255], [255;3]] }.publish(&ctx);
+        let hidden = render(&mut engine(&song, &cache), 12000);
+        assert_eq!(visible, hidden);
+        assert_eq!(song, original);
+    }
     fn fixture() -> (Song, SampleCache) {
         let mut song = Song {
             tempo_bpm: 120.0,
