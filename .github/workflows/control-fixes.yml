@@ -21,8 +21,20 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
       - name: Resolve Android dependency and format changed files
         run: |
-          cargo metadata --format-version 1 > /dev/null
-          rustfmt --edition 2024 --config skip_children=true crates/audio/src/device.rs crates/audio/src/device_android.rs src/ui/keyboard.rs src/ui/piano_roll/mod.rs src/ui/piano_roll/tests.rs src/app.rs src/app/tests/editor_wiring.rs src/settings.rs src/audio_link.rs
+          set +e
+          cargo metadata --format-version 1 > /tmp/metadata.json 2>/tmp/prepare.log
+          rc=$?
+          if [ "$rc" -eq 0 ]; then
+            rustfmt --edition 2024 --config skip_children=true crates/audio/src/device.rs crates/audio/src/device_android.rs src/ui/keyboard.rs src/ui/piano_roll/mod.rs src/ui/piano_roll/tests.rs src/app.rs src/app/tests/editor_wiring.rs src/settings.rs src/audio_link.rs >> /tmp/prepare.log 2>&1
+            rc=$?
+          fi
+          python3 - <<'PY'
+          import pathlib
+          s=pathlib.Path('/tmp/prepare.log').read_text()[-24000:]
+          for i in range(0,len(s),3000):
+              print('::notice title=prepare-log::'+s[i:i+3000].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
+          [ "$rc" -eq 0 ] || exit "$rc"
           git diff > /tmp/prepared.patch
           python3 - <<'PY'
           import base64, pathlib
