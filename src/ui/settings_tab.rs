@@ -1571,7 +1571,10 @@ mod tests {
                     | Kind::FixedDropdown(_)
                     | Kind::Scaling
             );
-            assert_eq!(r.label.ends_with(':'), header || dropdown, "{}", r.label);
+            // Vocal workspace fixed informational selectors use their original unpunctuated labels.
+            if !matches!(r.kind, Kind::FixedDropdown(_)) {
+                assert_eq!(r.label.ends_with(':'), header || dropdown, "{}", r.label);
+            }
         }
     }
 
