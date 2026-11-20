@@ -53,6 +53,11 @@ jobs:
           done
           cargo test -p banaforge-audio device::tests >> /tmp/controls.log 2>&1 || result=$?
           cat /tmp/controls.log
+          python3 - <<'PY'
+          import pathlib
+          summaries=[s for s in pathlib.Path('/tmp/controls.log').read_text().splitlines() if s.startswith('test result:')]
+          print('::notice title=Test summaries::'+'; '.join(summaries))
+          PY
           if [ "$result" -ne 0 ]; then
             python3 - <<'PY'
           import pathlib

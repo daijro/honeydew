@@ -1516,6 +1516,7 @@ mod tests {
                 "Show range labels on keyboard",
                 "Keyboard in pickers",
                 "Continuous scrolling during playback",
+                "Track activity indicators",
                 "Show hidden tracks",
                 "Show CPU and RAM meters",
                 "Show performance overlay",
@@ -1583,7 +1584,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 15 } else { 14 });
+        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 24 } else { 23 });
         for (label, field) in &toggles {
             let mut s = Settings::default();
             *field(&mut s) = !*field(&mut s);
@@ -1717,7 +1718,7 @@ mod tests {
     impl Rig {
         /// Tall enough to show every row (2 U each) without scrolling.
         fn new() -> Self {
-            Self::with_height(3000.0)
+            Self::with_height((ROWS.len() as f32 + 2.0) * ROW_PITCH * 32.0)
         }
 
         fn with_height(height: f32) -> Self {
@@ -2140,7 +2141,7 @@ mod tests {
             let (u, t) = (m.u(1.0), m.t());
             let column_right = rig.width - 2.0 * u;
             let fills = fills(&rig);
-            assert_eq!(toggles().count(), 19);
+            assert_eq!(toggles().count(), 29);
             for r in toggles() {
                 let at = format!("ppp {ppp} scale {scale}: `{}`", r.label);
                 let control = rig.rect_of(row_id(index(r.label)));
