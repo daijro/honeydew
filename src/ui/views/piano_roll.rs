@@ -42,7 +42,11 @@ impl State {
 /// Draws the piano roll of `channel`'s note lane in `app.regions.editor`; back to the playlist once the channel is gone
 /// (the app collapses an editor whose clip goes).
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usize) -> Option<Nav> {
-    app.covered |= crate::ui::help::corner(ui.ctx(), app.regions.editor, crate::ui::help::Topic::PianoRoll);
+    app.covered |= crate::ui::help::corner(
+        ui.ctx(),
+        app.regions.editor,
+        crate::ui::help::Topic::PianoRoll,
+    );
     if channel >= app.song.channels.len() {
         return Some(Nav::Show(View::Playlist));
     }

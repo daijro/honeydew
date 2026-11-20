@@ -2397,7 +2397,13 @@ fn waveform(
         &crate::song::points::points(clip, crate::song::points::PointKey::Envelope(0)),
         audio_editor::waveform_level_gain(clip.file.sample.as_deref()),
     );
-    let stereo = has_pan.then(|| audio_editor::volume::stereo(&volume, &pan_points, clip.file.sample.as_ref().map_or(0.5, |s| s.params[1])));
+    let stereo = has_pan.then(|| {
+        audio_editor::volume::stereo(
+            &volume,
+            &pan_points,
+            clip.file.sample.as_ref().map_or(0.5, |s| s.params[1]),
+        )
+    });
     let painter = painter.with_clip_rect(painter.clip_rect().intersect(area));
     let passes =
         ((from - base) / lp).floor().max(0.0) as u64..((to - base) / lp).ceil().max(0.0) as u64;
@@ -2550,7 +2556,17 @@ pub(crate) fn quality_wave_mesh(
     volume: Option<&std::sync::Arc<audio_editor::volume::VolumeEnvelope>>,
     quality: crate::ui::waveform_quality::WaveformQuality,
 ) -> std::sync::Arc<Mesh> {
-    stereo_wave_mesh(source, wave, rows, ((left, beats_per_px), (x0, width)), px, ink, volume, None, quality)
+    stereo_wave_mesh(
+        source,
+        wave,
+        rows,
+        ((left, beats_per_px), (x0, width)),
+        px,
+        ink,
+        volume,
+        None,
+        quality,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2592,8 +2608,10 @@ fn stereo_wave_mesh(
                     _ => false,
                 }
                 && match (&entry.stereo, stereo) {
-                    (None,None) => true,
-                    (Some(a),Some(b)) => a.iter().zip(b).all(|(a,b)| std::sync::Arc::ptr_eq(a,b)),
+                    (None, None) => true,
+                    (Some(a), Some(b)) => {
+                        a.iter().zip(b).all(|(a, b)| std::sync::Arc::ptr_eq(a, b))
+                    }
                     _ => false,
                 }
                 && entry.rows == rows
@@ -2619,7 +2637,9 @@ fn stereo_wave_mesh(
     let column_px = px * stride as f32;
     for (channel, &row) in rows.iter().enumerate() {
         let source_channel = channel.min(source.summary.len().saturating_sub(1));
-        let Some((samples, summary)) = source.channels().nth(source_channel) else { continue; };
+        let Some((samples, summary)) = source.channels().nth(source_channel) else {
+            continue;
+        };
         let volume = stereo.map(|s| &s[channel.min(1)]).or(volume);
         let overview = |left: f64, span: f64, width| {
             source.overview_columns(
@@ -2669,7 +2689,9 @@ fn stereo_wave_mesh(
     let mesh = std::sync::Arc::new(mesh);
     // Four MiB / 256 entries maximum; many tiny clips must not thrash a 32-entry cache.
     const BUDGET: usize = 4 * 1024 * 1024;
-    let retained_bytes = mesh_bytes(&mesh) + volume.map_or(0, |v| v.memory_bytes()) + stereo.map_or(0, |s| s.iter().map(|v| v.memory_bytes()).sum());
+    let retained_bytes = mesh_bytes(&mesh)
+        + volume.map_or(0, |v| v.memory_bytes())
+        + stereo.map_or(0, |s| s.iter().map(|v| v.memory_bytes()).sum());
     if retained_bytes <= BUDGET {
         WAVE_MESHES.with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -2679,7 +2701,10 @@ fn stereo_wave_mesh(
                     .map(|entry| {
                         mesh_bytes(&entry.mesh)
                             + entry.volume.as_ref().map_or(0, |v| v.memory_bytes())
-                            + entry.stereo.as_ref().map_or(0, |s| s.iter().map(|v| v.memory_bytes()).sum::<usize>())
+                            + entry
+                                .stereo
+                                .as_ref()
+                                .map_or(0, |s| s.iter().map(|v| v.memory_bytes()).sum::<usize>())
                     })
                     .sum::<usize>()
                     + retained_bytes

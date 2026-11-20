@@ -1,3 +1,10 @@
+BanaForge 0.5.24 — PAN runtime restoration, stereo waveform prediction, contextual help
+
+- Reasserts each active audio clip's compiled VOL/PAN/SPEED at render-block boundaries; seek/relaunch restores base settings where no previous envelope step applies. Live envelope handover retains sample phase and sounding voices. PAN remains linear stereo balance: it attenuates the opposite channel, not folds its content into the other side.
+- Playlist and Audio Editor waveforms show predicted left output above right when PAN points exist, with quantized VOL×PAN gain. Mono source peaks can supply both output rows without another PCM decode. This is before channel/master effects, not a final-output meter; overview columns retain conservative peak gain. Overlay visibility/colors remain display-only and persisted.
+- Small circular information buttons open compact, scrollable, dismissible explanations in Playlist, Piano Roll, Mixer, Audio Editor and relevant advanced Settings rows. Includes actual effects, ON/OFF meaning where applicable and stereo/device limitations. Help does not send audio commands. Further individual plugin/control topics can use the shared catalog.
+- Regression suite verifies real mono and stereo PCM, center/left/right balance, live phase preservation, envelope shape/persistence/overlap behavior, help opening/dismissal, and existing editors. Physical Android routes, accessibility mono-audio settings, touch layouts and heavy-project performance still require device testing. See PAN_HELP_TESTING.md.
+
 BanaForge 0.5.21 — waveform quality and easier follow-handle grabs
 
 - New persisted Waveform Quality selector immediately after Sound mode: High Quality (default/current filled detail), Balanced (larger adjacent peak groups), Performance (sparse independent one-device-pixel vertical amplitude bars).

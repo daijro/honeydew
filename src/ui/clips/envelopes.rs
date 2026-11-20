@@ -6,9 +6,11 @@ use crate::ui::automation::shape::{self, Shaping};
 /// Scan existing events without allocation; untouched clips never prepare/tessellate curves.
 fn used(clip: &Clip, lane: usize) -> bool {
     let default = base(clip, lane);
-    clip.events.iter().any(|event| matches!(event,
+    clip.events.iter().any(|event| {
+        matches!(event,
         Event::Envelope { env_param, value, control: true, .. }
-        if *env_param == lane as i16 && points::raw(*value) != default))
+        if *env_param == lane as i16 && points::raw(*value) != default)
+    })
 }
 
 pub(super) fn lanes(area: Rect) -> [Rect; 2] {
@@ -107,7 +109,9 @@ fn xy(tick: f64, value: f32, origin: f64, axis: TimeAxis, r: Rect) -> Pos2 {
 /// Bounded by visible pixels, not clip duration or the number of quantized audio events.
 pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, m: &Metrics) {
     let display = crate::ui::envelope_display::EnvelopeDisplay::current(painter.ctx());
-    if !display.visible || (!used(clip, 0) && !used(clip, 1)) { return; }
+    if !display.visible || (!used(clip, 0) && !used(clip, 1)) {
+        return;
+    }
     let colors = [display.color(0), display.color(1)];
     if area.height() < m.u(0.65) {
         return;
@@ -127,7 +131,9 @@ pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, 
         return;
     }
     for (k, lane) in lanes(area).into_iter().enumerate() {
-        if !used(clip, k) { continue; }
+        if !used(clip, k) {
+            continue;
+        }
         let p = painter.with_clip_rect(visible.intersect(lane));
         let values = value_rect(lane, m);
         if k == 1 {
@@ -227,7 +233,6 @@ pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, 
                 );
             }
         }
-
     }
 }
 
@@ -269,7 +274,9 @@ impl Editor {
     }
     pub fn status(&self, ui: &egui::Ui, cx: &UiCtx, b: Rect, r: ClipRef, grid: Rect) {
         let display = crate::ui::envelope_display::EnvelopeDisplay::current(ui.ctx());
-        if !display.visible { return; }
+        if !display.visible {
+            return;
+        }
         let a = area(b, cx.m);
         if a.height() < cx.m.u(0.65) {
             return;
@@ -424,7 +431,9 @@ impl Editor {
             self.owned = true;
             return true;
         }
-        if !crate::ui::envelope_display::EnvelopeDisplay::current(ui.ctx()).visible { return false; }
+        if !crate::ui::envelope_display::EnvelopeDisplay::current(ui.ctx()).visible {
+            return false;
+        }
         if cancel || app.covered || !(pressed || secondary) {
             return false;
         }
@@ -456,7 +465,10 @@ impl Editor {
             return false;
         };
         // Double-tap a selected clip to arm point creation without covering its waveform.
-        if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
+        if ui.input(|i| {
+            i.pointer
+                .button_double_clicked(egui::PointerButton::Primary)
+        }) {
             self.editing = if self.editing == Some(r) {
                 None
             } else {
@@ -677,18 +689,45 @@ mod clip_envelope_tests {
         clip.file.sample = Some(Box::default());
         assert!(!used(&clip, 0) && !used(&clip, 1));
         let default = base(&clip, 0);
-        points::set_points(&mut clip, PointKey::Envelope(0), vec![Point { tick: 0, value: default, ..Default::default() }]);
+        points::set_points(
+            &mut clip,
+            PointKey::Envelope(0),
+            vec![Point {
+                tick: 0,
+                value: default,
+                ..Default::default()
+            }],
+        );
         assert!(!used(&clip, 0));
-        points::set_points(&mut clip, PointKey::Envelope(0), vec![Point { tick: 0, value: 12000, ..Default::default() }]);
+        points::set_points(
+            &mut clip,
+            PointKey::Envelope(0),
+            vec![Point {
+                tick: 0,
+                value: 12000,
+                ..Default::default()
+            }],
+        );
         assert!(used(&clip, 0) && !used(&clip, 1));
-        points::set_points(&mut clip, PointKey::Envelope(1), vec![Point { tick: 0, value: 0, ..Default::default() }]);
+        points::set_points(
+            &mut clip,
+            PointKey::Envelope(1),
+            vec![Point {
+                tick: 0,
+                value: 0,
+                ..Default::default()
+            }],
+        );
         assert!(used(&clip, 0) && used(&clip, 1));
         points::set_points(&mut clip, PointKey::Envelope(0), vec![]);
         assert!(!used(&clip, 0) && used(&clip, 1));
         let before = clip.clone();
         let mut off = Offscreen::new();
         off.frame(vec![], &mut |ui, cx| {
-            let hidden = crate::ui::envelope_display::EnvelopeDisplay { visible: false, ..Default::default() };
+            let hidden = crate::ui::envelope_display::EnvelopeDisplay {
+                visible: false,
+                ..Default::default()
+            };
             hidden.publish(ui.ctx());
             let n = ui.painter().add(egui::Shape::Noop);
             paint(ui.painter(), &clip, BLOCK, axis(), cx.m);
@@ -699,7 +738,9 @@ mod clip_envelope_tests {
         let untouched = empty_clip();
         off.frame(vec![], &mut |ui, cx| {
             crate::ui::envelope_display::EnvelopeDisplay::default().publish(ui.ctx());
-            for _ in 0..10000 { paint(ui.painter(), &untouched, BLOCK, axis(), cx.m); }
+            for _ in 0..10000 {
+                paint(ui.painter(), &untouched, BLOCK, axis(), cx.m);
+            }
         });
         CURVES.with(|c| assert!(c.borrow().is_empty()));
     }

@@ -309,7 +309,10 @@ const ROWS: [Row; 75 + cfg!(desktop) as usize] = {
         row("Animation:", Dropdown(Choice::Animation)),
         row("Application:", Header),
         row("Edit:", Header),
-        row("Show Playlist envelopes", Toggle(|s| &mut s.envelope_display.visible)),
+        row(
+            "Show Playlist envelopes",
+            Toggle(|s| &mut s.envelope_display.visible),
+        ),
         row("VOL / PAN colors", EnvelopeColors),
         row("Enable ghost notes", Toggle(|s| &mut s.ghost_notes)),
         row(
@@ -688,7 +691,11 @@ impl SettingsTab {
     ) {
         let (m, colors) = (cx.m, &cx.theme.colors);
         if let Some(topic) = crate::ui::help::setting(row.label) {
-            crate::ui::help::button(ui.ctx(), Pos2::new(slot.left()-32.0,slot.center().y-15.0), topic);
+            crate::ui::help::button(
+                ui.ctx(),
+                Pos2::new(slot.left() - m.u(TOGGLE_OUT) - 32.0, slot.center().y - 15.0),
+                topic,
+            );
         }
         // Headers and the metronome row take the whole slot; the other rows are a control row, centred in it.
         let r = match row.kind {
@@ -1067,7 +1074,9 @@ impl SettingsTab {
             }
             Kind::EnvelopeColors => {
                 label(ui, before(button_rect), FontSize::Pt10);
-                if light_button(ui, button_rect, "Colors", true) { crate::ui::envelope_display::open(ui.ctx()); }
+                if light_button(ui, button_rect, "Colors", true) {
+                    crate::ui::envelope_display::open(ui.ctx());
+                }
             }
             Kind::ThemeCreator => {
                 label(ui, before(button_rect), FontSize::Pt10);

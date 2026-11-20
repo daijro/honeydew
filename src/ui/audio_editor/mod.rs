@@ -395,7 +395,9 @@ pub fn apply(song: &mut Song, at: At, action: &Action) -> bool {
             envelope_op(&mut pts, op, range, playhead, loop_end);
             let changed = set(clip, key, pts);
             // Content-region edits retain their established loop-fit behavior.
-            if changed { clip.fit_loop(b); }
+            if changed {
+                clip.fit_loop(b);
+            }
             changed
         }
         &Action::Stretch { len_beats, ratio } => {
@@ -776,8 +778,13 @@ impl AudioEditor {
             points::points(clip, PointKey::Envelope(0))
         };
         let volume = volume::envelope(&volume_points, waveform_level_gain(slot));
-        let pan_points = if self.lane == 1 { shown.0.clone() } else { points::points(clip, PointKey::Envelope(1)) };
-        let stereo = (!pan_points.is_empty()).then(|| volume::stereo(&volume, &pan_points, slot.map_or(0.5, |s| s.params[1])));
+        let pan_points = if self.lane == 1 {
+            shown.0.clone()
+        } else {
+            points::points(clip, PointKey::Envelope(1))
+        };
+        let stereo = (!pan_points.is_empty())
+            .then(|| volume::stereo(&volume, &pan_points, slot.map_or(0.5, |s| s.params[1])));
 
         // 2 … 7 over the grid.
         let gp = ui.painter_at(f.grid);
@@ -1370,7 +1377,9 @@ impl AudioEditor {
         let rows = wave_rows(f.value, cols.len() == 2 || stereo.is_some());
         let mut mesh = Mesh::default();
         for (channel, &row) in rows.iter().enumerate() {
-            let Some(col) = cols.get(channel.min(cols.len().saturating_sub(1))) else { continue; };
+            let Some(col) = cols.get(channel.min(cols.len().saturating_sub(1))) else {
+                continue;
+            };
             let volume = stereo.map_or(volume, |s| &s[channel.min(1)]);
             for (i, &peak) in col.iter().enumerate() {
                 let beat = left + i as f64 * bpp;
