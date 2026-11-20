@@ -55,9 +55,12 @@ impl Clips {
     pub fn adopt_envelopes(&mut self, old: &Clips, frame: u64, beat: f64) {
         self.sampler.adopt(&old.sampler, Some);
         for (pad, span) in self.spans.iter().enumerate() {
-            if frame < span.start || frame >= span.end { continue; }
+            if frame < span.start || frame >= span.end {
+                continue;
+            }
             let content = ((beat - span.start_beat).rem_euclid(span.loop_beats) + span.offset)
-                .rem_euclid(span.loop_beats) * f64::from(PPQ);
+                .rem_euclid(span.loop_beats)
+                * f64::from(PPQ);
             for (index, steps) in span.envelopes.iter().enumerate() {
                 let n = steps.partition_point(|&(tick, _)| f64::from(tick) <= content);
                 if let Some(&(_, value)) = n.checked_sub(1).and_then(|i| steps.get(i)) {
@@ -150,17 +153,29 @@ fn envelope(clip: &Clip, env_param: i16) -> Result<Clip, EngineError> {
             _ => None,
         })
         .collect();
-    let mut converted = Clip { events, ..clip.clone() };
+    let mut converted = Clip {
+        events,
+        ..clip.clone()
+    };
     // Audio clips store each curve independently; the automation converter reads HDSh.
-    if env_param == 1 { converted.file.shapes = clip.file.pan_shapes.clone(); }
-    else if env_param != 0 { converted.file.shapes.clear(); }
+    if env_param == 1 {
+        converted.file.shapes = clip.file.pan_shapes.clone();
+    } else if env_param != 0 {
+        converted.file.shapes.clear();
+    }
     let mut result = automation_clip(&converted, false)?;
     // An envelope beginning later must hold the base before its first point,
     // including later loop passes, rather than retaining the previous pass's end.
     if result.events.first().is_some_and(|e| e.pos() > 0) {
         if let Some(slot) = clip.file.sample.as_deref() {
-            result.events.insert(0, Event::Automation { pos: 0,
-                value: slot.params[env_param as usize], control: false });
+            result.events.insert(
+                0,
+                Event::Automation {
+                    pos: 0,
+                    value: slot.params[env_param as usize],
+                    control: false,
+                },
+            );
         }
     }
     Ok(result)
@@ -326,9 +341,19 @@ pub(super) fn actions(
         push(end, Action::ClipFade { pad })?;
         for (index, env_param) in ENVELOPES.into_iter().enumerate() {
             let steps = envelope(clip, env_param)?;
-            if let Some(Event::Automation { value, .. }) = steps.events.iter()
-                .rfind(|e| f64::from(e.pos()) <= offset.rem_euclid(lp) * ppq) {
-                push(start, Action::ClipParam { pad, index, value: *value })?;
+            if let Some(Event::Automation { value, .. }) = steps
+                .events
+                .iter()
+                .rfind(|e| f64::from(e.pos()) <= offset.rem_euclid(lp) * ppq)
+            {
+                push(
+                    start,
+                    Action::ClipParam {
+                        pad,
+                        index,
+                        value: *value,
+                    },
+                )?;
             }
             for (tick, event) in steps.events_in_song_range(0, u64::MAX) {
                 if let Event::Automation { value, .. } = *event {
@@ -351,10 +376,23 @@ mod volume_envelope_tests {
         let mut song = Song::default();
         song.add_channel(crate::song::ChannelKind::AudioClip);
         let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
-        let linear = vec![Point { tick: 0, value: 0, ..Default::default() },
-            Point { tick: 128, value: 65535, ..Default::default() }];
+        let linear = vec![
+            Point {
+                tick: 0,
+                value: 0,
+                ..Default::default()
+            },
+            Point {
+                tick: 128,
+                value: 65535,
+                ..Default::default()
+            },
+        ];
         let mut smooth = linear.clone();
-        smooth[0].shape = Shape { kind: ShapeKind::Smooth, tension: 80 };
+        smooth[0].shape = Shape {
+            kind: ShapeKind::Smooth,
+            tension: 80,
+        };
         points::set_points(clip, PointKey::Envelope(0), smooth);
         points::set_points(clip, PointKey::Envelope(1), linear.clone());
         let a = envelope(clip, 0).unwrap().events;
@@ -364,7 +402,11 @@ mod volume_envelope_tests {
         let b = envelope(&overlapping, 0).unwrap().events;
         assert_ne!(a, b);
         assert_eq!(pan, b, "VOL shapes must not change PAN");
-        assert_eq!(envelope(clip, 0).unwrap().events, a, "editing another clip must not alter this clip");
+        assert_eq!(
+            envelope(clip, 0).unwrap().events,
+            a,
+            "editing another clip must not alter this clip"
+        );
     }
 }
 
@@ -372,100 +414,204 @@ mod volume_envelope_tests {
 mod clip_envelope_audio_tests {
     use super::*;
     use crate::audio_engine::SongAudioEngine;
-    use crate::song::points::{self, Point, PointKey, Shape, ShapeKind};
     use crate::flm::chunk::ContentPath;
+    use crate::song::points::{self, Point, PointKey, Shape, ShapeKind};
     use banaforge_audio::device::AudioRenderer;
 
     fn fixture() -> (Song, SampleCache) {
-        let mut song = Song { tempo_bpm:120.0, ..Default::default() };
+        let mut song = Song {
+            tempo_bpm: 120.0,
+            ..Default::default()
+        };
         song.add_channel(crate::song::ChannelKind::AudioClip);
         let mut slot = SamplerSlot::default();
         slot.file.path = Some(ContentPath::Plain("clip-envelope-noise.wav".into()));
-        let clip = song.channels[1].lanes[0].add_clip(0,4.0);
+        let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
         clip.file.sample = Some(Box::new(slot));
         let mut x = 1u32;
-        let data:Vec<i16> = (0..100000).map(|_| { x=x.wrapping_mul(1664525).wrapping_add(1013904223); ((x>>20) as i16)-2048 }).collect();
+        let data: Vec<i16> = (0..100000)
+            .map(|_| {
+                x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+                ((x >> 20) as i16) - 2048
+            })
+            .collect();
         let wav = crate::sample_cache::tests::wav(&data);
-        let mut cache = SampleCache::default(); cache.load(&song,&|_| Some(wav.clone()));
-        (song,cache)
+        let mut cache = SampleCache::default();
+        cache.load(&song, &|_| Some(wav.clone()));
+        (song, cache)
     }
-    fn curve(song:&mut Song, index:usize, points:Vec<Point>) {
-        points::set_points(&mut song.channels[1].lanes[0].clips[0],PointKey::Envelope(index as i16),points);
+    fn curve(song: &mut Song, index: usize, points: Vec<Point>) {
+        points::set_points(
+            &mut song.channels[1].lanes[0].clips[0],
+            PointKey::Envelope(index as i16),
+            points,
+        );
     }
-    fn constant(song:&mut Song,index:usize,value:u16) { curve(song,index,vec![Point { tick:0,value,..Default::default() }]); }
-    fn engine(song:&Song, cache:&SampleCache) -> SongAudioEngine {
-        let mut e=SongAudioEngine::with_samples(song,44100.0,cache).unwrap(); e.play();e
+    fn constant(song: &mut Song, index: usize, value: u16) {
+        curve(
+            song,
+            index,
+            vec![Point {
+                tick: 0,
+                value,
+                ..Default::default()
+            }],
+        );
     }
-    fn render(e:&mut SongAudioEngine, n:usize) -> Vec<f32> {
-        let mut result=vec![0.0;n*2];
-        for chunk in result.chunks_mut(254) { e.render(chunk,2); }
+    fn engine(song: &Song, cache: &SampleCache) -> SongAudioEngine {
+        let mut e = SongAudioEngine::with_samples(song, 44100.0, cache).unwrap();
+        e.play();
+        e
+    }
+    fn render(e: &mut SongAudioEngine, n: usize) -> Vec<f32> {
+        let mut result = vec![0.0; n * 2];
+        for chunk in result.chunks_mut(254) {
+            e.render(chunk, 2);
+        }
         result
     }
-    fn energy(a:&[f32],channel:usize)->f32 { a.iter().skip(channel).step_by(2).map(|v|v*v).sum() }
+    fn energy(a: &[f32], channel: usize) -> f32 {
+        a.iter().skip(channel).step_by(2).map(|v| v * v).sum()
+    }
 
     #[test]
     fn clip_envelope_pan_left_center_right_reaches_real_pcm() {
-        let (song,cache)=fixture();
-        for (pan,silent) in [(0,Some(1)),(32768,None),(65535,Some(0))] {
-            let mut s=song.clone();constant(&mut s,1,pan);
-            let audio=render(&mut engine(&s,&cache),8000);
-            if let Some(c)=silent { assert!(energy(&audio,c)<1e-12);assert!(energy(&audio,1-c)>0.01); }
-            else { assert!((energy(&audio,0)-energy(&audio,1)).abs()<0.001); }
+        let (song, cache) = fixture();
+        for (pan, silent) in [(0, Some(1)), (32768, None), (65535, Some(0))] {
+            let mut s = song.clone();
+            constant(&mut s, 1, pan);
+            let audio = render(&mut engine(&s, &cache), 8000);
+            if let Some(c) = silent {
+                assert!(energy(&audio, c) < 1e-12);
+                assert!(energy(&audio, 1 - c) > 0.01);
+            } else {
+                assert!((energy(&audio, 0) - energy(&audio, 1)).abs() < 0.001);
+            }
         }
     }
     #[test]
     fn clip_envelope_gradual_and_instant_gain_pan_share_playback_events() {
-        let (song,cache)=fixture();
-        for kind in [ShapeKind::Linear,ShapeKind::Smooth,ShapeKind::Square,ShapeKind::Stairs] {
-            let mut changed=song.clone();
-            let pts=vec![Point { tick:0,value:0,shape:Shape { kind,tension:50 } },Point { tick:128,value:65535,..Default::default() }];
-            curve(&mut changed,0,pts.clone());curve(&mut changed,1,pts);
-            let mut heard=engine(&changed,&cache);
-            let mut reference=engine(&song,&cache);
+        let (song, cache) = fixture();
+        for kind in [
+            ShapeKind::Linear,
+            ShapeKind::Smooth,
+            ShapeKind::Square,
+            ShapeKind::Stairs,
+        ] {
+            let mut changed = song.clone();
+            let pts = vec![
+                Point {
+                    tick: 0,
+                    value: 0,
+                    shape: Shape { kind, tension: 50 },
+                },
+                Point {
+                    tick: 128,
+                    value: 65535,
+                    ..Default::default()
+                },
+            ];
+            curve(&mut changed, 0, pts.clone());
+            curve(&mut changed, 1, pts);
+            let mut heard = engine(&changed, &cache);
+            let mut reference = engine(&song, &cache);
             // Compare 0.5 s of actual output with base PCM and the prepared slot's gain/balance at each block.
             for i in 0..100 {
-                let frame=i*220;
-                let a=render(&mut heard,220);let b=render(&mut reference,220);
-                assert!(a.iter().all(|v|v.is_finite()));
-                if kind==ShapeKind::Square && frame<10000 { assert!(energy(&a,0)+energy(&a,1)<1e-12); }
-                if kind==ShapeKind::Linear && i>20 { assert!(energy(&a,0)+energy(&a,1)>0.0); }
-                assert!(b.iter().any(|v|*v!=0.0));
+                let frame = i * 220;
+                let a = render(&mut heard, 220);
+                let b = render(&mut reference, 220);
+                assert!(a.iter().all(|v| v.is_finite()));
+                if kind == ShapeKind::Square && frame < 10000 {
+                    assert!(energy(&a, 0) + energy(&a, 1) < 1e-12);
+                }
+                if kind == ShapeKind::Linear && i > 20 {
+                    assert!(energy(&a, 0) + energy(&a, 1) > 0.0);
+                }
+                assert!(b.iter().any(|v| *v != 0.0));
             }
-            render(&mut heard,50);
-            let a=render(&mut heard,512);
-            assert!(energy(&a,0)<1e-12, "full right at final point, {kind:?}");
-            assert!(energy(&a,1)>0.0);
+            render(&mut heard, 50);
+            let a = render(&mut heard, 512);
+            assert!(energy(&a, 0) < 1e-12, "full right at final point, {kind:?}");
+            assert!(energy(&a, 1) > 0.0);
         }
     }
     #[test]
     fn clip_envelope_live_handover_keeps_sample_phase_and_applies_new_gain_pan_without_relaunch() {
-        let (song,cache)=fixture();
-        let mut old=engine(&song,&cache);let mut reference=engine(&song,&cache);
-        render(&mut old,10000);render(&mut reference,10000);
-        let mut changed=song.clone();constant(&mut changed,0,40000);constant(&mut changed,1,65535);
-        let mut new=SongAudioEngine::with_samples(&changed,44100.0,&cache).unwrap().adopting_edit(false,Vec::new());
+        let (song, cache) = fixture();
+        let mut old = engine(&song, &cache);
+        let mut reference = engine(&song, &cache);
+        render(&mut old, 10000);
+        render(&mut reference, 10000);
+        let mut changed = song.clone();
+        constant(&mut changed, 0, 40000);
+        constant(&mut changed, 1, 65535);
+        let mut new = SongAudioEngine::with_samples(&changed, 44100.0, &cache)
+            .unwrap()
+            .adopting_edit(false, Vec::new());
         new.take_over(&mut old);
-        assert_eq!(new.clips[1].as_ref().unwrap().sampler.active_voices(0),1);
-        let a=render(&mut new,2000);let b=render(&mut reference,2000);
-        let gain=banaforge_audio::drums::level_gain(points::unit(40000))/banaforge_audio::drums::level_gain(DEFAULTS[0]);
-        assert!(energy(&a,0)<1e-12);
-        for (i,(a,b)) in a.iter().skip(1).step_by(2).zip(b.iter().skip(1).step_by(2)).enumerate() {
-            assert!((*a-*b*gain).abs()<2e-5,"phase/gain changed at {i}: {a} vs {}",*b*gain);
+        assert_eq!(new.clips[1].as_ref().unwrap().sampler.active_voices(0), 1);
+        let a = render(&mut new, 2000);
+        let b = render(&mut reference, 2000);
+        let gain = banaforge_audio::drums::level_gain(points::unit(40000))
+            / banaforge_audio::drums::level_gain(DEFAULTS[0]);
+        assert!(energy(&a, 0) < 1e-12);
+        for (i, (a, b)) in a
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .zip(b.iter().skip(1).step_by(2))
+            .enumerate()
+        {
+            assert!(
+                (*a - *b * gain).abs() < 2e-5,
+                "phase/gain changed at {i}: {a} vs {}",
+                *b * gain
+            );
         }
     }
     #[test]
     fn clip_envelope_overlaps_sum_independently_and_roundtrip_pan_shapes() {
-        let (mut a,cache)=fixture();constant(&mut a,1,0);
-        let mut b=a.clone();constant(&mut b,1,65535);constant(&mut b,0,40000);
-        let mut together=a.clone();let mut second=b.channels[1].lanes[0].clips[0].clone();second.id+=1;
+        let (mut a, cache) = fixture();
+        constant(&mut a, 1, 0);
+        let mut b = a.clone();
+        constant(&mut b, 1, 65535);
+        constant(&mut b, 0, 40000);
+        let mut together = a.clone();
+        let mut second = b.channels[1].lanes[0].clips[0].clone();
+        second.id += 1;
         together.channels[1].lanes[0].clips.push(second);
-        let ab=render(&mut engine(&together,&cache),5000);let aa=render(&mut engine(&a,&cache),5000);let bb=render(&mut engine(&b,&cache),5000);
-        for ((a,b),c) in aa.iter().zip(bb).zip(ab) { assert!((a+b-c).abs()<2e-5); }
-        let points=vec![Point {tick:0,value:0,shape:Shape {kind:ShapeKind::Square,tension:20}},Point {tick:256,value:65535,..Default::default()}];
-        curve(&mut together,1,points.clone());
-        let saved=crate::flm::write(&together).unwrap();let loaded=crate::flm::read(&saved).unwrap();
-        assert_eq!(points::points(&loaded.channels[1].lanes[0].clips[0],PointKey::Envelope(1)),points);
-        let loaded_audio=render(&mut engine(&loaded,&cache),7000);let expected=render(&mut engine(&together,&cache),7000);
-        for (a,b) in loaded_audio.iter().zip(expected) {assert!((a-b).abs()<2e-5);}
+        let ab = render(&mut engine(&together, &cache), 5000);
+        let aa = render(&mut engine(&a, &cache), 5000);
+        let bb = render(&mut engine(&b, &cache), 5000);
+        for ((a, b), c) in aa.iter().zip(bb).zip(ab) {
+            assert!((a + b - c).abs() < 2e-5);
+        }
+        let points = vec![
+            Point {
+                tick: 0,
+                value: 0,
+                shape: Shape {
+                    kind: ShapeKind::Square,
+                    tension: 20,
+                },
+            },
+            Point {
+                tick: 256,
+                value: 65535,
+                ..Default::default()
+            },
+        ];
+        curve(&mut together, 1, points.clone());
+        let saved = crate::flm::write(&together).unwrap();
+        let loaded = crate::flm::read(&saved).unwrap();
+        assert_eq!(
+            points::points(&loaded.channels[1].lanes[0].clips[0], PointKey::Envelope(1)),
+            points
+        );
+        let loaded_audio = render(&mut engine(&loaded, &cache), 7000);
+        let expected = render(&mut engine(&together, &cache), 7000);
+        for (a, b) in loaded_audio.iter().zip(expected) {
+            assert!((a - b).abs() < 2e-5);
+        }
     }
 }

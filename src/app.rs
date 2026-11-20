@@ -988,7 +988,9 @@ impl BanaForgeApp {
             View::AutomationEditor(_) => slots.automation_editor.editor.end_touch(),
             View::AudioEditor(_) => {
                 slots.audio_editor.editor.end_touch();
-                if slots.audio_editor.end_live() { edit = edit.max(Some(SongEdit::Final)); }
+                if slots.audio_editor.end_live() {
+                    edit = edit.max(Some(SongEdit::Final));
+                }
             }
             View::Playlist | View::Mixer | View::DrumEditor(_) => {}
         }

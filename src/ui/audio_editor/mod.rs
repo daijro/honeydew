@@ -376,7 +376,9 @@ pub fn apply(song: &mut Song, at: At, action: &Action) -> bool {
         let changed = points::points(clip, key) != pts;
         if changed {
             points::set_points(clip, key, pts);
-            if !matches!(key, PointKey::Envelope(0 | 1)) { clip.fit_loop(b); }
+            if !matches!(key, PointKey::Envelope(0 | 1)) {
+                clip.fit_loop(b);
+            }
         }
         changed
     };
@@ -391,7 +393,10 @@ pub fn apply(song: &mut Song, at: At, action: &Action) -> bool {
             let mut pts = points::points(clip, key);
             let loop_end = clip.loop_ticks().map_or(0, |t| t as u32);
             envelope_op(&mut pts, op, range, playhead, loop_end);
-            set(clip, key, pts)
+            let changed = set(clip, key, pts);
+            // Content-region edits retain their established loop-fit behavior.
+            if changed { clip.fit_loop(b); }
+            changed
         }
         &Action::Stretch { len_beats, ratio } => {
             let Some(slot) = clip.file.sample.as_deref_mut() else {
@@ -1005,21 +1010,32 @@ impl AudioEditor {
     }
 
     /// Current VOL/PAN gesture, for the view's live transaction. No PCM is regenerated.
-    pub(crate) fn shaping_live(&self) -> bool { self.shaping.is_some() }
+    pub(crate) fn shaping_live(&self) -> bool {
+        self.shaping.is_some()
+    }
     pub(crate) fn live_points(&self, song: &Song, at: At) -> Option<(PointKey, Vec<Point>)> {
-        if self.lane > 1 { return None; }
+        if self.lane > 1 {
+            return None;
+        }
         let key = PointKey::Envelope(self.lane as i16);
         if let Gesture::Points(g) = &self.gesture {
-            return Some((key, g.preview.as_ref().map_or_else(|| g.orig.clone(), |v| v.0.clone())));
+            return Some((
+                key,
+                g.preview
+                    .as_ref()
+                    .map_or_else(|| g.orig.clone(), |v| v.0.clone()),
+            ));
         }
         if let Some(shaping) = self.shaping {
-            let pts = find(song, at).map(|(_,c)| points::points(c,key))?;
+            let pts = find(song, at).map(|(_, c)| points::points(c, key))?;
             return Some((key, shaping.on(&pts, &self.sel)));
         }
         None
     }
     pub(crate) fn acknowledge_live(&mut self, at: At, key: PointKey, pts: Vec<Point>) {
-        if let PointKey::Envelope(k) = key { self.seen = Some((at, k as usize, pts)); }
+        if let PointKey::Envelope(k) = key {
+            self.seen = Some((at, k as usize, pts));
+        }
     }
 
     /// The stretch the sample shows with: the dragged length's while the handle is dragged, else the slot's.

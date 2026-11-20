@@ -207,7 +207,8 @@ impl SongAudioEngine {
             .is_some_and(|(new, running)| new.same_samples(running));
         if !self.resync && same {
             if let (Some(new), Some(running)) = (&mut self.clips[channel], &old.clips[from]) {
-                let beat = self.frame as f64 * f64::from(self.built_bpm) / (60.0 * f64::from(self.sample_rate));
+                let beat = self.frame as f64 * f64::from(self.built_bpm)
+                    / (60.0 * f64::from(self.sample_rate));
                 new.adopt_envelopes(running, self.frame, beat);
             }
         }

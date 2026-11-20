@@ -10,8 +10,8 @@ use eframe::egui::{self, UiBuilder};
 
 use super::{AppCtx, Nav, held_clip};
 use crate::sample_cache;
-use crate::song::{LaneKind, Song};
 use crate::song::points::{self, Point, PointKey};
+use crate::song::{LaneKind, Song};
 use crate::ui::audio_editor::{self, Action, At, AudioEditor, Transport};
 use crate::ui::preview::ClipKey;
 
@@ -33,7 +33,9 @@ pub struct State {
 
 impl State {
     /// A hidden editor finishes a live gesture as one undoable edit, never leaves an orphan preview.
-    pub(crate) fn end_live(&mut self) -> bool { self.live.take().is_some() }
+    pub(crate) fn end_live(&mut self) -> bool {
+        self.live.take().is_some()
+    }
 
     /// The clip `channel`'s editor edits, while it is an audio clip.
     pub fn current(&self, song: &Song, channel: usize) -> Option<ClipKey> {
@@ -82,29 +84,48 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
             action => {
                 let final_points = matches!(action, Action::Points { .. });
                 let changed = audio_editor::apply(app.song, at, &action);
-                if changed || (final_points && state.live.is_some()) { app.song_edited(true); }
-                if final_points { state.live = None; finished = true; }
+                if changed || (final_points && state.live.is_some()) {
+                    app.song_edited(true);
+                }
+                if final_points {
+                    state.live = None;
+                    finished = true;
+                }
             }
         }
     }
     if !finished {
         if let Some((key, pts)) = state.editor.live_points(app.song, at) {
-            let clip = crate::ui::sample_row::clip_mut(app.song, ClipKey {channel:at.0,lane:at.1,id:at.2});
+            let clip = crate::ui::sample_row::clip_mut(
+                app.song,
+                ClipKey {
+                    channel: at.0,
+                    lane: at.1,
+                    id: at.2,
+                },
+            );
             if let Some(clip) = clip {
                 let before = points::points(clip, key);
                 if before != pts {
-                    state.live.get_or_insert((at,key,before));
-                    points::set_points(clip,key,pts.clone());
-                    state.editor.acknowledge_live(at,key,pts);
+                    state.live.get_or_insert((at, key, before));
+                    points::set_points(clip, key, pts.clone());
+                    state.editor.acknowledge_live(at, key, pts);
                     app.edit = app.edit.max(Some(super::SongEdit::Audition));
                 }
             }
         } else if shaping && !state.editor.shaping_live() && state.live.is_some() {
             state.live = None;
             app.song_edited(true);
-        } else if let Some((at,key,original)) = state.live.take() {
-            audio_editor::apply(app.song,at,&Action::Points {key,points:original.clone()});
-            state.editor.acknowledge_live(at,key,original);
+        } else if let Some((at, key, original)) = state.live.take() {
+            audio_editor::apply(
+                app.song,
+                at,
+                &Action::Points {
+                    key,
+                    points: original.clone(),
+                },
+            );
+            state.editor.acknowledge_live(at, key, original);
             app.song_edited(true);
         }
     }

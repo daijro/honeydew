@@ -595,7 +595,10 @@ impl Clips {
             .collect();
         blocks.sort_by_key(|&(r, _)| Some(r) == self.selected);
         if (!self.row.owns_pointer(pos) || self.envelopes.busy())
-            && self.envelopes.show(ui, app, &blocks, self.selected, grid, axis, Some(drag_unit)) {
+            && self
+                .envelopes
+                .show(ui, app, &blocks, self.selected, grid, axis, Some(drag_unit))
+        {
             pressed = false;
             landed = None;
             self.touch = None;
@@ -650,8 +653,12 @@ impl Clips {
                     );
                 };
                 draw(&painter);
-                if self.selected == Some(r) && clip.file.sample.is_some() && !channel.lanes[r.lane].collapsed {
-                    self.envelopes.status(ui, &app.cx, clip_box(rect,m), r, grid);
+                if self.selected == Some(r)
+                    && clip.file.sample.is_some()
+                    && !channel.lanes[r.lane].collapsed
+                {
+                    self.envelopes
+                        .status(ui, &app.cx, clip_box(rect, m), r, grid);
                 }
                 // A marked clip again over the message's dim, outlined in `text` 2 px wide.
                 if self.marked.contains(&r) {
@@ -1017,7 +1024,8 @@ impl Clips {
     /// A touch on empty track space held past a tap, or its marquee: the playlist does not scroll under it (`now`,
     /// input time).
     pub(crate) fn busy(&self, now: f64) -> bool {
-        self.envelopes.busy() || self.marquee.is_some()
+        self.envelopes.busy()
+            || self.marquee.is_some()
             || (self.touch).is_some_and(|t| {
                 matches!(t.on, Target::Lane(..)) && gesture::is_long(now - t.since)
             })
@@ -2229,8 +2237,13 @@ fn paint_clip(
         automation(&painter, clip, area, axis, ink, m);
         if let Some(wave) = wave {
             let wave_area = if lane.kind == LaneKind::Audio && area.height() >= 64.0 {
-                Rect::from_min_max(area.min, pos2(area.right(), envelopes::lanes(area)[0].top()))
-            } else { area };
+                Rect::from_min_max(
+                    area.min,
+                    pos2(area.right(), envelopes::lanes(area)[0].top()),
+                )
+            } else {
+                area
+            };
             waveform(&painter, clip, wave, wave_area, axis, ink, m);
         }
     }

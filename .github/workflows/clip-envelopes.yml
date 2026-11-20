@@ -9,6 +9,8 @@ on:
       - 'src/audio_engine/audio_clips.rs'
 jobs:
   controls:
+    env:
+      CARGO_TERM_COLOR: never
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:

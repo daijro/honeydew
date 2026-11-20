@@ -81,7 +81,8 @@ pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
                 edit.silence.push(index);
             }
             std::cmp::Ordering::Equal => {
-                let kept = |(a, b): (&Lane, &Lane)| a == b || retouched(a, b) || envelopes_retouched(a, b);
+                let kept =
+                    |(a, b): (&Lane, &Lane)| a == b || retouched(a, b) || envelopes_retouched(a, b);
                 edit.resync |= !a.lanes.iter().zip(&b.lanes).all(kept);
             }
         }
@@ -190,11 +191,28 @@ fn retouched(a: &Lane, b: &Lane) -> bool {
 
 /// Only VOL/PAN content changed: retain timing, sample identity, speed, mute and lane ordering.
 fn envelopes_retouched(a: &Lane, b: &Lane) -> bool {
-    if a.kind != LaneKind::Audio || b.kind != LaneKind::Audio || a.clips.len() != b.clips.len() { return false; }
+    if a.kind != LaneKind::Audio || b.kind != LaneKind::Audio || a.clips.len() != b.clips.len() {
+        return false;
+    }
     let mut bare = a.clone();
     for (a, b) in bare.clips.iter_mut().zip(&b.clips) {
-        let keep = |e: &Event| !matches!(e, Event::Envelope { env_param: 0 | 1, .. });
-        if !a.events.iter().filter(|e| keep(e)).eq(b.events.iter().filter(|e| keep(e))) { return false; }
+        let keep = |e: &Event| {
+            !matches!(
+                e,
+                Event::Envelope {
+                    env_param: 0 | 1,
+                    ..
+                }
+            )
+        };
+        if !a
+            .events
+            .iter()
+            .filter(|e| keep(e))
+            .eq(b.events.iter().filter(|e| keep(e)))
+        {
+            return false;
+        }
         a.events.clone_from(&b.events);
         a.file.shapes.clone_from(&b.file.shapes);
         a.file.pan_shapes.clone_from(&b.file.pan_shapes);
@@ -1350,19 +1368,48 @@ mod tests {
 #[cfg(test)]
 mod clip_envelope_edit_tests {
     use super::*;
-    use crate::song::points::{self,Point,PointKey,Shape,ShapeKind};
+    use crate::song::points::{self, Point, PointKey, Shape, ShapeKind};
     #[test]
     fn clip_envelope_edits_do_not_resync_but_timing_speed_sample_changes_still_do() {
-        let mut a=Song::default();a.add_channel(crate::song::ChannelKind::AudioClip);
-        let clip=a.channels[1].lanes[0].add_clip(0,4.0);clip.file.sample=Some(Box::default());
-        let mut b=a.clone();
-        for key in [PointKey::Envelope(0),PointKey::Envelope(1)] {
-            points::set_points(&mut b.channels[1].lanes[0].clips[0],key,vec![Point {tick:0,value:10000,shape:Shape {kind:ShapeKind::Smooth,tension:70}},Point{tick:128,value:60000,..Default::default()}]);
+        let mut a = Song::default();
+        a.add_channel(crate::song::ChannelKind::AudioClip);
+        let clip = a.channels[1].lanes[0].add_clip(0, 4.0);
+        clip.file.sample = Some(Box::default());
+        let mut b = a.clone();
+        for key in [PointKey::Envelope(0), PointKey::Envelope(1)] {
+            points::set_points(
+                &mut b.channels[1].lanes[0].clips[0],
+                key,
+                vec![
+                    Point {
+                        tick: 0,
+                        value: 10000,
+                        shape: Shape {
+                            kind: ShapeKind::Smooth,
+                            tension: 70,
+                        },
+                    },
+                    Point {
+                        tick: 128,
+                        value: 60000,
+                        ..Default::default()
+                    },
+                ],
+            );
         }
-        assert!(!edit(&mut a.clone(),&b,false).resync);
-        let mut moved=b.clone();moved.channels[1].lanes[0].clips[0].start_tick=128;
-        assert!(edit(&mut b.clone(),&moved,false).resync);
-        points::set_points(&mut b.channels[1].lanes[0].clips[0],PointKey::Envelope(2),vec![Point{tick:0,value:60000,..Default::default()}]);
-        assert!(edit(&mut a.clone(),&b,false).resync);
+        assert!(!edit(&mut a.clone(), &b, false).resync);
+        let mut moved = b.clone();
+        moved.channels[1].lanes[0].clips[0].start_tick = 128;
+        assert!(edit(&mut b.clone(), &moved, false).resync);
+        points::set_points(
+            &mut b.channels[1].lanes[0].clips[0],
+            PointKey::Envelope(2),
+            vec![Point {
+                tick: 0,
+                value: 60000,
+                ..Default::default()
+            }],
+        );
+        assert!(edit(&mut a.clone(), &b, false).resync);
     }
 }
