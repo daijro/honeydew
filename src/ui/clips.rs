@@ -5688,7 +5688,8 @@ mod tests {
             .collect();
         let area = Rect::from_x_y_ranges(0.0..=1.0, 101.0 + 0.7 * 32.0..=149.0);
         let (centre, scale) = wave_rows(area, false)[0];
-        assert_eq!(cols.len(), 64);
+        // Balanced waveform quality uses one summary column per two pixels.
+        assert_eq!(cols.len(), 32);
         for column in cols {
             let expected = audio_editor::column_span(-0.5, 0.5, centre, scale, 1.0);
             assert!((column.min - expected.min).abs() < 0.001);

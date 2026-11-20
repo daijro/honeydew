@@ -425,7 +425,7 @@ mod clip_envelope_audio_tests {
         };
         song.add_channel(crate::song::ChannelKind::AudioClip);
         let mut slot = SamplerSlot::default();
-        slot.file.path = Some(ContentPath::Plain("clip-envelope-noise.wav".into()));
+        slot.file.path = Some(ContentPath::Shorthand { root: crate::flm::chunk::ContentRoot::User, relative: "My Samples/clip-envelope-noise.wav".into() });
         let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
         clip.file.sample = Some(Box::new(slot));
         let mut x = 1u32;
@@ -612,6 +612,6 @@ mod clip_envelope_audio_tests {
         let loaded_audio = render(&mut engine(&loaded, &cache), 7000);
         let expected = render(&mut engine(&together, &cache), 7000);
         let difference = loaded_audio.iter().zip(&expected).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
-        assert!(difference < 2e-5, "roundtrip max PCM difference {difference}; original clip {:?}; loaded clip {:?}", together.channels[1].lanes[0].clips[0], loaded.channels[1].lanes[0].clips[0]);
+        assert!(difference < 2e-5, "roundtrip max PCM difference {difference}");
     }
 }
