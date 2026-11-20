@@ -250,6 +250,7 @@ mod clip_envelope_tests {
     use crate::ui::main_screen::Regions;
     use crate::project_files::mem::MemFiles;
     const BLOCK:Rect=Rect {min:pos2(20.0,50.0),max:pos2(660.0,190.0)};
+    fn empty_clip()->Clip {let mut lane=Lane::new(LaneKind::Audio); lane.add_clip(0,4.0).clone()}
     fn axis()->TimeAxis {TimeAxis {origin:20.0,beat_w:160.0}}
     struct Rig { off:Offscreen, editor:Editor, song:Song, edits:Vec<Option<crate::ui::views::SongEdit>>, selected:Option<ClipRef> }
     impl Rig {
@@ -314,7 +315,7 @@ mod clip_envelope_tests {
         for kind in [ShapeKind::Linear,ShapeKind::Square,ShapeKind::Smooth,ShapeKind::Stairs] {
             let pts=vec![Point{tick:0,value:65535,shape:Shape{kind,tension:30}},Point{tick:128,value:0,..Default::default()}];
             let steps=prepared(&pts);assert!(std::sync::Arc::ptr_eq(&steps,&prepared(&pts)));
-            let mut clip=Clip::default();points::set_points(&mut clip,PointKey::Envelope(1),pts);
+            let mut clip=empty_clip();points::set_points(&mut clip,PointKey::Envelope(1),pts);
             for tick in 0..160 {
                 let expected=clip.events.iter().filter_map(|e|match e {Event::Envelope{pos,env_param:1,value,..} if *pos<=tick=>Some(*value),_=>None}).last().unwrap();
                 assert!((value_at(&steps,32768,f64::from(tick))-expected).abs()<1e-6);
@@ -323,7 +324,7 @@ mod clip_envelope_tests {
     }
     #[test]
     fn clip_envelope_loop_offset_mapping_is_same_for_each_repeat() {
-        let mut clip=Clip::default();clip.loop_len_beats=4.0;clip.offset_beats=1.0;clip.start_tick=256;clip.visible_len_beats=8.0;
+        let mut clip=empty_clip();clip.loop_len_beats=4.0;clip.offset_beats=1.0;clip.start_tick=256;clip.visible_len_beats=8.0;
         let lp=clip.loop_ticks().unwrap();let start=f64::from(clip.start_tick)-clip.offset_beats*f64::from(PPQ);
         for repeat in 0..2 {let tick=start+repeat as f64*lp+128.0;let origin=start+((tick-start)/lp).floor()*lp;assert_eq!(tick-origin,128.0);}
     }
@@ -336,7 +337,7 @@ mod clip_envelope_tests {
         let ctx=egui::Context::default();let m=crate::ui::offscreen::metrics();
         let wave=Wave {frames:96000,per_beat:24000.0,reversed:false};
         let mesh=super::super::wave_mesh(&source,wave,&[(60.0,20.0)],((0.0,4.0/640.0),(20.0,640)),1.0,Color32::GRAY);
-        let mut clip=Clip::default();clip.loop_len_beats=4.0;clip.file.sample=Some(Box::default());
+        let mut clip=empty_clip();clip.loop_len_beats=4.0;clip.file.sample=Some(Box::default());
         for points_count in [2,32,128] {
             for k in 0..2 {
                 let pts=(0..points_count).map(|i|Point {tick:i as u32*511/(points_count-1) as u32,value:if i%2==0 {8000}else{58000},shape:Shape {kind:if i%3==0 {ShapeKind::Square}else{ShapeKind::Smooth},tension:50}}).collect();
