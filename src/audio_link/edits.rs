@@ -1346,3 +1346,23 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod clip_envelope_edit_tests {
+    use super::*;
+    use crate::song::points::{self,Point,PointKey,Shape,ShapeKind};
+    #[test]
+    fn clip_envelope_edits_do_not_resync_but_timing_speed_sample_changes_still_do() {
+        let mut a=Song::default();a.add_channel(crate::song::ChannelKind::AudioClip);
+        let clip=a.channels[1].lanes[0].add_clip(0,4.0);clip.file.sample=Some(Box::default());
+        let mut b=a.clone();
+        for key in [PointKey::Envelope(0),PointKey::Envelope(1)] {
+            points::set_points(&mut b.channels[1].lanes[0].clips[0],key,vec![Point {tick:0,value:10000,shape:Shape {kind:ShapeKind::Smooth,tension:70}},Point{tick:128,value:60000,..Default::default()}]);
+        }
+        assert!(!edit(&mut a.clone(),&b,false).resync);
+        let mut moved=b.clone();moved.channels[1].lanes[0].clips[0].start_tick=128;
+        assert!(edit(&mut b.clone(),&moved,false).resync);
+        points::set_points(&mut b.channels[1].lanes[0].clips[0],PointKey::Envelope(2),vec![Point{tick:0,value:60000,..Default::default()}]);
+        assert!(edit(&mut a.clone(),&b,false).resync);
+    }
+}

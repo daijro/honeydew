@@ -1549,8 +1549,9 @@ impl Clips {
         samples: &mut SampleCache,
         files: &ProjectFiles,
     ) -> bool {
+        let envelope = self.envelopes.finish();
         let Some(drag) = self.drag.take().filter(|d| d.edited && d.unchanged(song)) else {
-            return false;
+            return envelope;
         };
         drag.scale_sample(song, samples, files);
         true

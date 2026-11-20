@@ -128,6 +128,7 @@ struct Menu { clip: ClipRef, lane: usize, index: usize, frame: Rect, original: V
 #[derive(Default)]
 pub(super) struct Editor { drag: Option<Drag>, menu: Option<Menu>, owned: bool }
 impl Editor {
+    pub fn finish(&mut self) -> bool { let active = self.drag.take().is_some() || self.menu.take().is_some(); self.owned = false; active }
     pub fn busy(&self) -> bool { self.drag.is_some() || self.menu.is_some() || self.owned }
     pub fn show(&mut self, ui: &mut egui::Ui, app: &mut AppCtx, blocks: &[(ClipRef, Rect)], selected: Option<ClipRef>, grid: Rect, axis: TimeAxis, snap: Option<f64>) -> bool {
         self.owned = false;
@@ -216,4 +217,135 @@ fn set(app: &mut AppCtx, r: ClipRef, key: PointKey, pts: Vec<Point>, final_edit:
         if final_edit { app.song_edited(true); }
         else { app.edit = app.edit.max(Some(crate::ui::views::SongEdit::Audition)); }
     }
+}
+
+#[cfg(test)]
+mod clip_envelope_tests {
+    use super::*;
+    use crate::song::points::{Shape,ShapeKind};
+    use crate::ui::offscreen::Offscreen;
+    use crate::settings::Settings;
+    use crate::audio_link::AudioLink;
+    use crate::ui::main_screen::Regions;
+    use crate::project_files::mem::MemFiles;
+    const BLOCK:Rect=Rect {min:pos2(20.0,50.0),max:pos2(660.0,190.0)};
+    fn axis()->TimeAxis {TimeAxis {origin:20.0,beat_w:160.0}}
+    struct Rig { off:Offscreen, editor:Editor, song:Song, edits:Vec<Option<crate::ui::views::SongEdit>>, selected:Option<ClipRef> }
+    impl Rig {
+        fn new()->Self {
+            let mut song=Song::default();song.add_channel(ChannelKind::AudioClip);
+            let clip=song.channels[1].lanes[0].add_clip(0,4.0);clip.file.sample=Some(Box::default());
+            let r=ClipRef{channel:1,lane:0,id:clip.id};
+            let mut s=Self {off:Offscreen::new(),editor:Editor::default(),song,edits:Vec::new(),selected:Some(r)};
+            s.frame(vec![]);s
+        }
+        fn frame(&mut self,events:Vec<egui::Event>) {
+            let mut audio=AudioLink::default();let mut files=ProjectFiles::with_provider(Box::new(MemFiles::default()));
+            let mut settings=Settings::default();let mut selected=1;
+            let r=self.selected.unwrap();let mut edit=None;
+            let song=&mut self.song;let editor=&mut self.editor;
+            self.off.frame(events,&mut |ui,cx| {
+                let mut app=AppCtx {cx:*cx,regions:Regions::new(ui.max_rect(),cx.m),song,audio:&mut audio,selected:&mut selected,snapshot:None,playing:true,armed:false,previewing:false,middle_c_is_c4:false,settings:&mut settings,ghost_notes:true,files:&mut files,edit:None,answer:None,covered:false,playhead:None,seek:None,midi_devices:&[],midi_rescan:false};
+                let grid = ui.max_rect();
+                editor.show(ui,&mut app,&[(r,BLOCK)],Some(r),grid,axis(),None);
+                edit=app.edit;
+            });
+            self.edits.push(edit);
+        }
+        fn point(&self,lane:usize,tick:u32,v:f32)->Pos2 {
+            let m=crate::ui::offscreen::metrics();let r=value_rect(lanes(area(clip_box(BLOCK,&m),&m))[lane],&m);
+            xy(f64::from(tick),v,0.0,axis(),r)
+        }
+        fn button(&mut self,p:Pos2,down:bool) {self.frame(vec![egui::Event::PointerMoved(p),egui::Event::PointerButton {pos:p,button:egui::PointerButton::Primary,pressed:down,modifiers:Default::default()}]);}
+        fn points(&self,lane:i16)->Vec<Point> {points::points(&self.song.channels[1].lanes[0].clips[0],PointKey::Envelope(lane))}
+    }
+    #[test]
+    fn clip_envelope_playlist_create_drag_live_cancel_and_one_undo_transaction() {
+        let mut r=Rig::new();let before=r.song.clone();let mut history=crate::history::History::new(&before);
+        let from=r.point(0,64,0.8);r.button(from,true);
+        assert_eq!(r.points(0).len(),1);
+        assert_eq!(r.edits.last().copied().flatten(),Some(crate::ui::views::SongEdit::Audition));
+        history.edited(&r.song,false);
+        let to=r.point(0,128,0.2);r.frame(vec![egui::Event::PointerMoved(to)]);
+        assert_eq!(r.points(0)[0].tick,128);assert!((points::unit(r.points(0)[0].value)-0.2).abs()<0.001);
+        history.edited(&r.song,false);r.button(to,false);history.edited(&r.song,true);
+        assert_eq!(r.edits.last().copied().flatten(),Some(crate::ui::views::SongEdit::Final));
+        assert_eq!(r.song.channels[1].lanes[0].clips[0].visible_len_beats,before.channels[1].lanes[0].clips[0].visible_len_beats);
+        assert_eq!(history.undo().unwrap().channels[1].lanes[0].clips[0].events,before.channels[1].lanes[0].clips[0].events);
+        assert!(history.undo().is_none());
+        assert!(r.points(1).is_empty());
+        let initial=r.points(0);r.button(to,true);r.frame(vec![egui::Event::PointerMoved(from)]);
+        r.frame(crate::ui::offscreen::key_tap(egui::Key::Escape,Default::default()));
+        assert_eq!(r.points(0),initial);
+    }
+    #[test]
+    fn clip_envelope_pan_lane_is_independent_center_is_exact_and_live_data_is_editor_data() {
+        let mut r=Rig::new();let p=r.point(1,64,0.5);r.button(p,true);r.button(p,false);
+        assert!(r.points(0).is_empty());assert!((i32::from(r.points(1)[0].value)-32768).abs()<=1);
+        let pts=vec![Point{tick:0,value:0,shape:Shape{kind:ShapeKind::Smooth,tension:80}},Point{tick:128,value:65535,..Default::default()}];
+        audio_editor::apply(&mut r.song,(1,0,1),&Action::Points{key:PointKey::Envelope(1),points:pts.clone()});
+        assert_eq!(r.points(1),pts);
+        let bytes=crate::flm::write(&r.song).unwrap();let loaded=crate::flm::read(&bytes).unwrap();
+        assert_eq!(points::points(&loaded.channels[1].lanes[0].clips[0],PointKey::Envelope(1)),pts);
+    }
+    #[test]
+    fn clip_envelope_display_values_match_prepared_audio_steps_and_cache() {
+        for kind in [ShapeKind::Linear,ShapeKind::Square,ShapeKind::Smooth,ShapeKind::Stairs] {
+            let pts=vec![Point{tick:0,value:65535,shape:Shape{kind,tension:30}},Point{tick:128,value:0,..Default::default()}];
+            let steps=prepared(&pts);assert!(std::sync::Arc::ptr_eq(&steps,&prepared(&pts)));
+            let mut clip=Clip::default();points::set_points(&mut clip,PointKey::Envelope(1),pts);
+            for tick in 0..160 {
+                let expected=clip.events.iter().filter_map(|e|match e {Event::Envelope{pos,env_param:1,value,..} if *pos<=tick=>Some(*value),_=>None}).last().unwrap();
+                assert!((value_at(&steps,32768,f64::from(tick))-expected).abs()<1e-6);
+            }
+        }
+    }
+    #[test]
+    fn clip_envelope_loop_offset_mapping_is_same_for_each_repeat() {
+        let mut clip=Clip::default();clip.loop_len_beats=4.0;clip.offset_beats=1.0;clip.start_tick=256;clip.visible_len_beats=8.0;
+        let lp=clip.loop_ticks().unwrap();let start=f64::from(clip.start_tick)-clip.offset_beats*f64::from(PPQ);
+        for repeat in 0..2 {let tick=start+repeat as f64*lp+128.0;let origin=start+((tick-start)/lp).floor()*lp;assert_eq!(tick-origin,128.0);}
+    }
+    #[test]
+    #[ignore = "controlled release rendering workload"]
+    fn clip_envelope_render_benchmark() {
+        use std::{hint::black_box,time::Instant,sync::Arc};
+        use banaforge_audio::sample::SampleData;
+        let source=Waveform::new(Arc::new(SampleData {sample_rate:48000,left:vec![0.25;96000].into(),..Default::default()}));
+        let ctx=egui::Context::default();let m=crate::ui::offscreen::metrics();
+        let wave=Wave {frames:96000,per_beat:24000.0,reversed:false};
+        let mesh=super::super::wave_mesh(&source,wave,&[(60.0,20.0)],((0.0,4.0/640.0),(20.0,640)),1.0,Color32::GRAY);
+        let mut clip=Clip::default();clip.loop_len_beats=4.0;clip.file.sample=Some(Box::default());
+        for points_count in [2,32,128] {
+            for k in 0..2 {
+                let pts=(0..points_count).map(|i|Point {tick:i as u32*511/(points_count-1) as u32,value:if i%2==0 {8000}else{58000},shape:Shape {kind:if i%3==0 {ShapeKind::Square}else{ShapeKind::Smooth},tension:50}}).collect();
+                points::set_points(&mut clip,PointKey::Envelope(k),pts);
+            }
+            for repeat in 1..=3 {
+                for enabled in [false,true] {
+                    // Warm fonts, curve caches and egui before timing; source mesh is an unchanged cached Arc.
+                    let frame=||ctx.run(egui::RawInput {screen_rect:Some(Rect::from_min_size(Pos2::ZERO,vec2(700.0,1500.0))),..Default::default()},|ctx| {
+                        let painter=ctx.layer_painter(egui::LayerId::background());
+                        for i in 0..8 {
+                            let shift=vec2(0.0,i as f32*170.0);
+                            let mut mesh=mesh.as_ref().clone();mesh.translate(shift);
+                            painter.add(mesh);
+                            if enabled {super::paint(&painter,&clip,BLOCK.translate(shift),axis(),&m);}
+                        }
+                    });
+                    for _ in 0..3 {black_box(frame());}
+                    let start=Instant::now();let mut output=frame();
+                    for _ in 0..63 {output=frame();black_box(&output);}
+                    let paint=start.elapsed().as_secs_f64()*1000.0/64.0;
+                    let start=Instant::now();let mut primitives=ctx.tessellate(output.shapes.clone(),1.0);
+                    for _ in 0..63 {primitives=ctx.tessellate(output.shapes.clone(),1.0);black_box(&primitives);}
+                    let tess=start.elapsed().as_secs_f64()*1000.0/64.0;
+                    let vertices:usize=primitives.iter().map(|p|match &p.primitive {egui::epaint::Primitive::Mesh(m)=>m.vertices.len(),_=>0}).sum();
+                    let indices:usize=primitives.iter().map(|p|match &p.primitive {egui::epaint::Primitive::Mesh(m)=>m.indices.len(),_=>0}).sum();
+                    println!("CLIP_ENVELOPE_BENCH points={points_count} enabled={enabled} repeat={repeat} clips=8 paint_ms={paint:.6} tess_ms={tess:.6} vertices={vertices} indices={indices}");
+                }
+            }
+        }
+    }
+
 }
