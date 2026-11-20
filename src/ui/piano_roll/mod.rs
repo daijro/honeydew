@@ -3730,19 +3730,24 @@ fn paint_notes(
                     let half = (wave.height() * 0.42).max(px);
                     let ink = Color32::from_rgb(116, 255, 235);
                     let maximum = peaks.iter().copied().fold(0.0_f32, f32::max).max(0.000_001);
-                    let quality = crate::ui::waveform_quality::WaveformQuality::current(painter.ctx());
+                    let quality =
+                        crate::ui::waveform_quality::WaveformQuality::current(painter.ctx());
                     let group = quality.group();
                     for (j, peaks) in peaks.chunks(group).enumerate() {
                         let peak = peaks.iter().copied().fold(0.0_f32, f32::max);
                         let index = j * group;
-                        let x = wave.left() + (index as f32 + (peaks.len() - 1) as f32 * 0.5) / 47.0 * wave.width();
+                        let x = wave.left()
+                            + (index as f32 + (peaks.len() - 1) as f32 * 0.5) / 47.0 * wave.width();
                         let amp = (peak / maximum).clamp(0.0, 1.0) * half;
                         let segment = [
                             pos2(x, wave.center().y - amp),
                             pos2(x, wave.center().y + amp),
                         ];
                         if quality != crate::ui::waveform_quality::WaveformQuality::Performance {
-                            painter.line_segment(segment, egui::Stroke::new(px * 3.0, Color32::from_rgb(8, 17, 29)));
+                            painter.line_segment(
+                                segment,
+                                egui::Stroke::new(px * 3.0, Color32::from_rgb(8, 17, 29)),
+                            );
                         }
                         painter.line_segment(segment, egui::Stroke::new(px, ink));
                     }

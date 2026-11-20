@@ -1057,8 +1057,14 @@ mod tests {
     #[test]
     fn waveform_quality_is_high_by_default_saved_and_independent_of_audio() {
         use crate::ui::waveform_quality::WaveformQuality;
-        assert_eq!(Settings::load(&stored("{}" )).waveform_quality, WaveformQuality::High);
-        assert_eq!(Settings::load(&stored(r#"{"waveformQuality":"Invalid"}"#)).waveform_quality, WaveformQuality::High);
+        assert_eq!(
+            Settings::load(&stored("{}")).waveform_quality,
+            WaveformQuality::High
+        );
+        assert_eq!(
+            Settings::load(&stored(r#"{"waveformQuality":"Invalid"}"#)).waveform_quality,
+            WaveformQuality::High
+        );
         for quality in WaveformQuality::ALL {
             let mut mem = Mem::default();
             let mut s = Settings::default();

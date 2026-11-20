@@ -147,9 +147,15 @@ fn waveform(
     let stride = quality.stride(1, width);
     let mut mesh = Mesh::default();
     for ((samples, summary), row) in channels.zip(wave_rows(rect, sample.right.is_some())) {
-        for (i, peak) in peaks(samples, summary, per_column * stride as f64, 0.0, width.div_ceil(stride))
-            .into_iter()
-            .enumerate()
+        for (i, peak) in peaks(
+            samples,
+            summary,
+            per_column * stride as f64,
+            0.0,
+            width.div_ceil(stride),
+        )
+        .into_iter()
+        .enumerate()
         {
             let x = x0 + i as f32 * px * stride as f32;
             let width = (px * stride as f32).min(x0 + width as f32 * px - x);

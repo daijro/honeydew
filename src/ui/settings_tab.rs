@@ -243,14 +243,22 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 
 // Explicit platform inputs let host tests exercise mobile filtering too.
 fn platform_row_visible(r: &Row, desktop: bool, web: bool) -> bool {
-    !(web && matches!(r.kind, Kind::Dropdown(Choice::SampleMemory) | Kind::AudioInput))
-        && (desktop || (!matches!(r.kind, Kind::InstallSounds | Kind::BufferSize)
-            && !matches!(r.label, "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status")))
+    !(web
+        && matches!(
+            r.kind,
+            Kind::Dropdown(Choice::SampleMemory) | Kind::AudioInput
+        ))
+        && (desktop
+            || (!matches!(r.kind, Kind::InstallSounds | Kind::BufferSize)
+                && !matches!(
+                    r.label,
+                    "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
+                )))
 }
 
 /// Every row of the SETTINGS tab, in order.
 // The raw buffer slider is desktop-only; mobile has one fewer settings row.
-const ROWS: [Row; 71 + cfg!(desktop) as usize] = {
+const ROWS: [Row; 72 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -314,7 +322,10 @@ const ROWS: [Row; 71 + cfg!(desktop) as usize] = {
             "Continuous scrolling during playback",
             Toggle(|s| &mut s.continuous_scroll),
         ),
-        row("Track activity indicators", Toggle(|s| &mut s.track_activity_indicators)),
+        row(
+            "Track activity indicators",
+            Toggle(|s| &mut s.track_activity_indicators),
+        ),
         row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
             "Show CPU and RAM meters",
@@ -833,7 +844,12 @@ impl SettingsTab {
                     crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
                 }
                 if matches!(choice, Choice::WaveformQuality) {
-                    crate::ui::tooltip::tip(ui, button_rect, "Display only. High preserves current detail; Balanced groups more peaks; Performance draws separated vertical amplitude bars. Audio quality and timing are unchanged.", None);
+                    crate::ui::tooltip::tip(
+                        ui,
+                        button_rect,
+                        "Display only. High preserves current detail; Balanced groups more peaks; Performance draws separated vertical amplitude bars. Audio quality and timing are unchanged.",
+                        None,
+                    );
                 }
                 if matches!(choice, Choice::SampleMemory) {
                     let tip = "The most memory SFZ and DW Sampler samples take. Past it, each keeps its start in memory and plays the rest from disk. Auto: the memory available, less a margin.";
@@ -1245,8 +1261,11 @@ impl Choice {
     /// The items in menu order, as (stored value, label).
     fn items(self) -> Vec<(usize, String)> {
         match self {
-            Choice::WaveformQuality => crate::ui::waveform_quality::WaveformQuality::ALL.into_iter()
-                .enumerate().map(|(i, q)| (i, q.label().to_owned())).collect(),
+            Choice::WaveformQuality => crate::ui::waveform_quality::WaveformQuality::ALL
+                .into_iter()
+                .enumerate()
+                .map(|(i, q)| (i, q.label().to_owned()))
+                .collect(),
             Choice::SoundMode => SOUND_MODES
                 .iter()
                 .map(|&(id, label)| (usize::from(id), label.to_owned()))
@@ -1294,7 +1313,12 @@ impl Choice {
     fn set(self, s: &mut Settings, value: usize) {
         match self {
             Choice::SoundMode => s.sound_mode = value as u8,
-            Choice::WaveformQuality => s.waveform_quality = crate::ui::waveform_quality::WaveformQuality::ALL.get(value).copied().unwrap_or_default(),
+            Choice::WaveformQuality => {
+                s.waveform_quality = crate::ui::waveform_quality::WaveformQuality::ALL
+                    .get(value)
+                    .copied()
+                    .unwrap_or_default()
+            }
             Choice::Theme => (s.theme, s.custom_theme) = (value as u32, String::new()),
             Choice::Animation => (s.animations, s.inertia) = (value == 0, value != 2),
             Choice::SampleMemory => s.sample_memory_limit = value as u8,
@@ -1421,7 +1445,14 @@ mod tests {
         assert_eq!(index("Waveform Quality:"), index("Sound mode:") + 1);
         let row = &ROWS[index("Waveform Quality:")];
         assert!(platform_row_visible(row, false, false));
-        assert_eq!(Choice::WaveformQuality.items().iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), ["High Quality", "Balanced", "Performance"]);
+        assert_eq!(
+            Choice::WaveformQuality
+                .items()
+                .iter()
+                .map(|p| p.1.as_str())
+                .collect::<Vec<_>>(),
+            ["High Quality", "Balanced", "Performance"]
+        );
         let mut s = Settings::default();
         for (i, q) in WaveformQuality::ALL.into_iter().enumerate() {
             Choice::WaveformQuality.set(&mut s, i);
@@ -1432,13 +1463,19 @@ mod tests {
 
     #[test]
     fn mobile_sound_mode_is_visible_in_the_actual_settings_filter() {
-        let mobile: Vec<_> = ROWS.iter().filter(|r| platform_row_visible(r, false, false))
-            .map(|r| r.label).collect();
+        let mobile: Vec<_> = ROWS
+            .iter()
+            .filter(|r| platform_row_visible(r, false, false))
+            .map(|r| r.label)
+            .collect();
         assert!(mobile.contains(&"Sound mode:"));
         assert!(!mobile.contains(&"Audio buffer size"));
         assert!(!mobile.contains(&"MCP:"));
-        assert!(ROWS.iter().filter(|r| platform_row_visible(r, true, false))
-            .any(|r| r.label == "Sound mode:"));
+        assert!(
+            ROWS.iter()
+                .filter(|r| platform_row_visible(r, true, false))
+                .any(|r| r.label == "Sound mode:")
+        );
     }
 
     #[test]
@@ -1571,7 +1608,10 @@ mod tests {
         #[cfg(not(desktop))]
         #[cfg(not(desktop))]
         {
-            assert_eq!(labels(Choice::SoundMode), ["NATIVE", "FAST", "SAFE", "ULTRA SAFE"]);
+            assert_eq!(
+                labels(Choice::SoundMode),
+                ["NATIVE", "FAST", "SAFE", "ULTRA SAFE"]
+            );
             assert_eq!(values(Choice::SoundMode), [3, 1, 0, 2]);
         }
         assert_eq!(
@@ -1619,7 +1659,10 @@ mod tests {
             assert_eq!(SOUND_MODES, [(0, "STANDARD"), (1, "MULTITRACK")]);
         }
         #[cfg(not(desktop))]
-        assert_eq!(SOUND_MODES, [(3, "NATIVE"), (1, "FAST"), (0, "SAFE"), (2, "ULTRA SAFE")]);
+        assert_eq!(
+            SOUND_MODES,
+            [(3, "NATIVE"), (1, "FAST"), (0, "SAFE"), (2, "ULTRA SAFE")]
+        );
     }
 
     #[test]
@@ -2045,11 +2088,17 @@ mod tests {
                 "{at}"
             );
             assert!(
-                (centre("Enable background audio (iOS Only)") - first - if cfg!(desktop) { 4.0 * u } else { 2.0 * u }).abs() < 0.01,
+                (centre("Enable background audio (iOS Only)")
+                    - first
+                    - if cfg!(desktop) { 4.0 * u } else { 2.0 * u })
+                .abs()
+                    < 0.01,
                 "{at}"
             );
             assert!(
-                (centre("Sound mode:") - first - if cfg!(desktop) { 6.0 * u } else { 4.0 * u }).abs() < 0.01,
+                (centre("Sound mode:") - first - if cfg!(desktop) { 6.0 * u } else { 4.0 * u })
+                    .abs()
+                    < 0.01,
                 "{at}"
             );
             for label in ["Multi core processing", "Sound mode:", "Input device:"] {

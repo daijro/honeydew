@@ -45,9 +45,7 @@ use crate::song::{
     TimeSig,
 };
 use crate::theme::{Rgba, Theme, ThemeColors, channel_color};
-use crate::ui::audio_editor::{
-    self, Action, Wave, columns, stretch_of, stretch_ratio, wave_rows,
-};
+use crate::ui::audio_editor::{self, Action, Wave, columns, stretch_of, stretch_ratio, wave_rows};
 use crate::ui::automation::pop_scale;
 use crate::ui::buttons::bubble_button;
 use crate::ui::edit_keys::{self, EditKey};
@@ -2370,7 +2368,8 @@ fn waveform(
     let rows = wave_rows(area, source.summary.len() > 1);
     let volume = audio_editor::volume::envelope(
         &crate::song::points::points(clip, crate::song::points::PointKey::Envelope(0)),
-        audio_editor::waveform_level_gain(clip.file.sample.as_deref()));
+        audio_editor::waveform_level_gain(clip.file.sample.as_deref()),
+    );
     let painter = painter.with_clip_rect(painter.clip_rect().intersect(area));
     let passes =
         ((from - base) / lp).floor().max(0.0) as u64..((to - base) / lp).ceil().max(0.0) as u64;
@@ -2384,7 +2383,16 @@ fn waveform(
         let width = ((axis.x(b) - x0) / px).ceil() as usize;
         let left = (axis.tick(x0) - at) / ppq;
         let span = ((left, beats_per_px), (x0, width));
-        painter.add(egui::Shape::Mesh(quality_wave_mesh(source, wave, &rows, span, px, ink, Some(&volume), crate::ui::waveform_quality::WaveformQuality::current(painter.ctx()))));
+        painter.add(egui::Shape::Mesh(quality_wave_mesh(
+            source,
+            wave,
+            &rows,
+            span,
+            px,
+            ink,
+            Some(&volume),
+            crate::ui::waveform_quality::WaveformQuality::current(painter.ctx()),
+        )));
     }
 }
 
@@ -2427,17 +2435,31 @@ fn mesh_bytes(mesh: &Mesh) -> usize {
 /// caller's arbitrary beat/frame coordinate system. MIDI never calls this.
 /// At far zoom use large blocks; close zoom keeps exact device-pixel detail.
 pub(crate) fn waveform_column_stride(
-    frames_per_pixel: f64, sample_rate: u32, pixels_per_point: f32, width: usize,
+    frames_per_pixel: f64,
+    sample_rate: u32,
+    pixels_per_point: f32,
+    width: usize,
 ) -> usize {
     let density = f64::from(pixels_per_point.max(1.0));
     let seconds = frames_per_pixel / f64::from(sample_rate.max(1)) * density;
-    let logical = if seconds >= 1.6 { 32.0 }
-        else if seconds >= 0.4 { 16.0 }
-        else if seconds >= 0.1 { 8.0 }
-        else if seconds >= 0.025 { 4.0 }
-        else if seconds >= 0.008 { 2.0 }
-        else { 0.0 };
-    let zoom = if logical == 0.0 { 1 } else { (logical * density).ceil() as usize };
+    let logical = if seconds >= 1.6 {
+        32.0
+    } else if seconds >= 0.4 {
+        16.0
+    } else if seconds >= 0.1 {
+        8.0
+    } else if seconds >= 0.025 {
+        4.0
+    } else if seconds >= 0.008 {
+        2.0
+    } else {
+        0.0
+    };
+    let zoom = if logical == 0.0 {
+        1
+    } else {
+        (logical * density).ceil() as usize
+    };
     zoom.max(width.div_ceil(2048)).max(1).min(width.max(1))
 }
 
@@ -2453,25 +2475,48 @@ pub(crate) fn wave_mesh(
     px: f32,
     ink: Color32,
 ) -> std::sync::Arc<Mesh> {
-    enveloped_wave_mesh(source, wave, rows, ((left, beats_per_px), (x0, width)), px, ink, None)
+    enveloped_wave_mesh(
+        source,
+        wave,
+        rows,
+        ((left, beats_per_px), (x0, width)),
+        px,
+        ink,
+        None,
+    )
 }
 
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn enveloped_wave_mesh(
-    source: &Waveform, wave: Wave, rows: &[(f32, f32)],
+    source: &Waveform,
+    wave: Wave,
+    rows: &[(f32, f32)],
     ((left, beats_per_px), (x0, width)): ((f64, f64), (f32, usize)),
-    px: f32, ink: Color32,
+    px: f32,
+    ink: Color32,
     volume: Option<&std::sync::Arc<audio_editor::volume::VolumeEnvelope>>,
 ) -> std::sync::Arc<Mesh> {
-    quality_wave_mesh(source, wave, rows, ((left, beats_per_px), (x0, width)), px, ink, volume, Default::default())
+    quality_wave_mesh(
+        source,
+        wave,
+        rows,
+        ((left, beats_per_px), (x0, width)),
+        px,
+        ink,
+        volume,
+        Default::default(),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn quality_wave_mesh(
-    source: &Waveform, wave: Wave, rows: &[(f32, f32)],
+    source: &Waveform,
+    wave: Wave,
+    rows: &[(f32, f32)],
     ((left, beats_per_px), (x0, width)): ((f64, f64), (f32, usize)),
-    px: f32, ink: Color32,
+    px: f32,
+    ink: Color32,
     volume: Option<&std::sync::Arc<audio_editor::volume::VolumeEnvelope>>,
     quality: crate::ui::waveform_quality::WaveformQuality,
 ) -> std::sync::Arc<Mesh> {
@@ -2511,20 +2556,37 @@ pub(crate) fn quality_wave_mesh(
         return mesh;
     }
     let mut mesh = Mesh::default();
-    let stride = quality.stride(waveform_column_stride(beats_per_px * wave.per_beat,
-        source.data.sample_rate, px.recip(), width), width);
+    let stride = quality.stride(
+        waveform_column_stride(
+            beats_per_px * wave.per_beat,
+            source.data.sample_rate,
+            px.recip(),
+            width,
+        ),
+        width,
+    );
     let full = width / stride;
     let column_px = px * stride as f32;
     for (channel, ((samples, summary), &row)) in source.channels().zip(rows).enumerate() {
-        let overview = |left: f64, span: f64, width| source.overview_columns(
-            channel, wave.frames, wave.reversed, left * wave.per_beat, span * wave.per_beat, width);
+        let overview = |left: f64, span: f64, width| {
+            source.overview_columns(
+                channel,
+                wave.frames,
+                wave.reversed,
+                left * wave.per_beat,
+                span * wave.per_beat,
+                width,
+            )
+        };
         let span = beats_per_px * stride as f64;
         let cols = overview(left, span, full)
             .unwrap_or_else(|| columns(samples, summary, wave, left, span, full));
         for (i, peak) in cols.into_iter().enumerate() {
             let x = x0 + i as f32 * column_px;
             let beat = left + i as f64 * span;
-            let gain = volume.map_or(1.0, |v| v.column_gain(beat * f64::from(PPQ), (beat + span) * f64::from(PPQ)));
+            let gain = volume.map_or(1.0, |v| {
+                v.column_gain(beat * f64::from(PPQ), (beat + span) * f64::from(PPQ))
+            });
             let y = audio_editor::column_span(peak.0 * gain, peak.1 * gain, row.0, row.1, px);
             let (x, w) = quality.column(x, column_px, px);
             mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + w, y), ink);
@@ -2538,8 +2600,14 @@ pub(crate) fn quality_wave_mesh(
             let peaks = overview(tail_left, span, 1)
                 .unwrap_or_else(|| columns(samples, summary, wave, tail_left, span, 1));
             let x = x0 + full as f32 * column_px;
-            let gain = volume.map_or(1.0, |v| v.column_gain(tail_left * f64::from(PPQ), (tail_left + span) * f64::from(PPQ)));
-            let y = audio_editor::column_span(peaks[0].0 * gain, peaks[0].1 * gain, row.0, row.1, px);
+            let gain = volume.map_or(1.0, |v| {
+                v.column_gain(
+                    tail_left * f64::from(PPQ),
+                    (tail_left + span) * f64::from(PPQ),
+                )
+            });
+            let y =
+                audio_editor::column_span(peaks[0].0 * gain, peaks[0].1 * gain, row.0, row.1, px);
             let (x, w) = quality.column(x, px * tail as f32, px);
             mesh.add_colored_rect(Rect::from_x_y_ranges(x..=x + w, y), ink);
         }
@@ -2555,7 +2623,10 @@ pub(crate) fn quality_wave_mesh(
             while cache.len() >= 256
                 || cache
                     .iter()
-                    .map(|entry| mesh_bytes(&entry.mesh) + entry.volume.as_ref().map_or(0, |v| v.memory_bytes()))
+                    .map(|entry| {
+                        mesh_bytes(&entry.mesh)
+                            + entry.volume.as_ref().map_or(0, |v| v.memory_bytes())
+                    })
                     .sum::<usize>()
                     + retained_bytes
                     > BUDGET
@@ -2585,49 +2656,100 @@ mod waveform_mesh_cache_tests {
     fn volume_envelope_waveform_geometry_updates_without_touching_overlapping_sources() {
         use crate::song::points::Point;
         let source = Waveform::new(Arc::new(SampleData {
-            left: vec![0.5; 4096].into(), sample_rate: 48000, ..Default::default()
+            left: vec![0.5; 4096].into(),
+            sample_rate: 48000,
+            ..Default::default()
         }));
         let pcm = source.data.left.clone();
-        let controls = |value| [Point { tick: 0, value, ..Default::default() }];
+        let controls = |value| {
+            [Point {
+                tick: 0,
+                value,
+                ..Default::default()
+            }]
+        };
         let quiet = audio_editor::volume::envelope(&controls(10000), 1.0);
         let loud = audio_editor::volume::envelope(&controls(55910), 1.0);
-        let wave = Wave { frames: 4096, per_beat: 4096.0, reversed: false };
+        let wave = Wave {
+            frames: 4096,
+            per_beat: 4096.0,
+            reversed: false,
+        };
         let draw = |envelope: &Arc<audio_editor::volume::VolumeEnvelope>| {
-            enveloped_wave_mesh(&source, wave, &[(20.0, 16.0)],
-                ((0.0, 1.0 / 64.0), (0.0, 64)), 1.0, Color32::RED, Some(envelope))
+            enveloped_wave_mesh(
+                &source,
+                wave,
+                &[(20.0, 16.0)],
+                ((0.0, 1.0 / 64.0), (0.0, 64)),
+                1.0,
+                Color32::RED,
+                Some(envelope),
+            )
         };
         let a = draw(&quiet);
         let b = draw(&loud);
-        assert!(!Arc::ptr_eq(&a, &b), "envelope changes must invalidate geometry");
-        assert!(Arc::ptr_eq(&b, &draw(&loud)), "unchanged envelopes reuse geometry");
-        let height = |mesh: &Mesh| mesh.vertices.iter().map(|v| (v.pos.y - 20.0).abs()).fold(0.0_f32, f32::max);
+        assert!(
+            !Arc::ptr_eq(&a, &b),
+            "envelope changes must invalidate geometry"
+        );
+        assert!(
+            Arc::ptr_eq(&b, &draw(&loud)),
+            "unchanged envelopes reuse geometry"
+        );
+        let height = |mesh: &Mesh| {
+            mesh.vertices
+                .iter()
+                .map(|v| (v.pos.y - 20.0).abs())
+                .fold(0.0_f32, f32::max)
+        };
         assert!(height(&b) > height(&a));
-        assert!(Arc::ptr_eq(&a, &draw(&quiet)), "overlapping clips keep separate cached envelopes");
+        assert!(
+            Arc::ptr_eq(&a, &draw(&quiet)),
+            "overlapping clips keep separate cached envelopes"
+        );
         assert_eq!(source.data.left, pcm);
     }
 
     #[test]
     fn waveform_lod_is_progressive_density_aware_and_restores_close_detail() {
         for density in [1.0_f32, 2.0, 3.0] {
-            let stride = |seconds| waveform_column_stride(
-                seconds * 48000.0 / f64::from(density), 48000, density, 2048);
+            let stride = |seconds| {
+                waveform_column_stride(seconds * 48000.0 / f64::from(density), 48000, density, 2048)
+            };
             assert_eq!(stride(0.0001), 1);
             let levels: Vec<_> = [0.01, 0.03, 0.12, 0.5, 2.0].map(stride).into();
             assert!(levels.windows(2).all(|p| p[0] < p[1]));
             assert_eq!(stride(2.0), (32.0 * density) as usize);
-            assert_eq!(stride(0.0001), 1, "zooming back in restores device-pixel detail");
+            assert_eq!(
+                stride(0.0001),
+                1,
+                "zooming back in restores device-pixel detail"
+            );
         }
     }
 
     #[test]
     fn waveform_lod_uses_audio_time_not_beat_or_frame_coordinate_names() {
         let source = Waveform::new(Arc::new(SampleData {
-            left: vec![0.5; 65536].into(), sample_rate: 48000, ..Default::default()
+            left: vec![0.5; 65536].into(),
+            sample_rate: 48000,
+            ..Default::default()
         }));
         let before = source.data.left.clone();
-        let draw = |per_beat, bpp| wave_mesh(&source,
-            Wave { frames: 65536, per_beat, reversed: false },
-            &[(10.0, 8.0)], ((0.0, bpp), (0.0, 1024)), 1.0, Color32::RED);
+        let draw = |per_beat, bpp| {
+            wave_mesh(
+                &source,
+                Wave {
+                    frames: 65536,
+                    per_beat,
+                    reversed: false,
+                },
+                &[(10.0, 8.0)],
+                ((0.0, bpp), (0.0, 1024)),
+                1.0,
+                Color32::RED,
+            )
+        };
         let beats = draw(48000.0, 0.5);
         let frames = draw(1.0, 24000.0);
         assert_eq!(beats.vertices, frames.vertices);
@@ -2649,16 +2771,35 @@ mod waveform_mesh_cache_tests {
         pcm[15] = 1.0;
         pcm[31] = -1.0;
         let source = Waveform::new(Arc::new(SampleData {
-            left: pcm.into(), sample_rate: 48000, ..Default::default()
+            left: pcm.into(),
+            sample_rate: 48000,
+            ..Default::default()
         }));
         for reversed in [false, true] {
-            let wave = Wave { frames: 4096, per_beat: 256.0, reversed };
+            let wave = Wave {
+                frames: 4096,
+                per_beat: 256.0,
+                reversed,
+            };
             for width in [64, 65] {
-                let mesh = wave_mesh(&source, wave, &[(10.0, 8.0)],
-                    ((0.0, 1.0 / 8.0), (0.0, width)), 1.0, Color32::RED);
+                let mesh = wave_mesh(
+                    &source,
+                    wave,
+                    &[(10.0, 8.0)],
+                    ((0.0, 1.0 / 8.0), (0.0, width)),
+                    1.0,
+                    Color32::RED,
+                );
                 let stride = waveform_column_stride(32.0, 48000, 1.0, width);
                 assert!(mesh.vertices.len() <= width.div_ceil(stride) * 4);
-                let detailed = columns(&source.data.left, &source.summary[0], wave, 0.0, 1.0 / 8.0, width);
+                let detailed = columns(
+                    &source.data.left,
+                    &source.summary[0],
+                    wave,
+                    0.0,
+                    1.0 / 8.0,
+                    width,
+                );
                 let lo = detailed.iter().map(|p| p.0).fold(0.0_f32, f32::min);
                 let hi = detailed.iter().map(|p| p.1).fold(0.0_f32, f32::max);
                 assert!(mesh.vertices.iter().any(|v| v.pos.y <= 10.0 - hi * 8.0));
@@ -2695,7 +2836,10 @@ mod waveform_mesh_cache_tests {
         let second = draw(Color32::RED);
         assert_eq!(first.vertices, second.vertices);
         assert_eq!(first.indices, second.indices);
-        assert!(Arc::ptr_eq(&first, &second), "cache hits share vertex/index buffers");
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "cache hits share vertex/index buffers"
+        );
         WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 1));
         draw(Color32::GREEN);
         WAVE_MESHES.with(|cache| assert_eq!(cache.borrow().len(), 2));
@@ -5927,16 +6071,43 @@ mod waveform_quality_tests {
     use std::sync::Arc;
 
     fn source(frames: usize) -> Waveform {
-        let samples: Vec<_> = (0..frames).map(|i| {
-            let envelope = 0.1 + 0.8 * ((i as f32 * 0.0001).sin() * 0.5 + 0.5);
-            (i as f32 * 0.031).sin() * envelope
-        }).collect();
-        Waveform::new(Arc::new(SampleData { sample_rate: 48000, left: samples.clone().into(), right: Some(samples.into()), ..Default::default() }))
+        let samples: Vec<_> = (0..frames)
+            .map(|i| {
+                let envelope = 0.1 + 0.8 * ((i as f32 * 0.0001).sin() * 0.5 + 0.5);
+                (i as f32 * 0.031).sin() * envelope
+            })
+            .collect();
+        Waveform::new(Arc::new(SampleData {
+            sample_rate: 48000,
+            left: samples.clone().into(),
+            right: Some(samples.into()),
+            ..Default::default()
+        }))
     }
 
-    fn draw(source: &Waveform, q: Quality, left: f64, width: usize, fpp: f64, px: f32, reversed: bool) -> Arc<Mesh> {
-        quality_wave_mesh(source, Wave { frames: source.data.frames(), per_beat: 1.0, reversed },
-            &[(20.0, 15.0), (60.0, 15.0)], ((left, fpp), (7.0, width)), px, Color32::GREEN, None, q)
+    fn draw(
+        source: &Waveform,
+        q: Quality,
+        left: f64,
+        width: usize,
+        fpp: f64,
+        px: f32,
+        reversed: bool,
+    ) -> Arc<Mesh> {
+        quality_wave_mesh(
+            source,
+            Wave {
+                frames: source.data.frames(),
+                per_beat: 1.0,
+                reversed,
+            },
+            &[(20.0, 15.0), (60.0, 15.0)],
+            ((left, fpp), (7.0, width)),
+            px,
+            Color32::GREEN,
+            None,
+            q,
+        )
     }
 
     #[test]
@@ -5947,15 +6118,24 @@ mod waveform_quality_tests {
         let mut meshes = Vec::new();
         for q in Quality::ALL {
             let a = draw(&source, q, 3.0, 1025, 16.0, 1.0, false);
-            assert!(Arc::ptr_eq(&a, &draw(&source, q, 3.0, 1025, 16.0, 1.0, false)));
+            assert!(Arc::ptr_eq(
+                &a,
+                &draw(&source, q, 3.0, 1025, 16.0, 1.0, false)
+            ));
             meshes.push(a);
         }
         assert!(meshes[0].vertices.len() > meshes[1].vertices.len());
         assert!(meshes[1].vertices.len() > meshes[2].vertices.len());
-        assert!(Arc::ptr_eq(&meshes[0], &draw(&source, Quality::High, 3.0, 1025, 16.0, 1.0, false)));
+        assert!(Arc::ptr_eq(
+            &meshes[0],
+            &draw(&source, Quality::High, 3.0, 1025, 16.0, 1.0, false)
+        ));
         for quad in meshes[2].vertices.chunks_exact(4) {
             let min = quad.iter().map(|v| v.pos.x).fold(f32::INFINITY, f32::min);
-            let max = quad.iter().map(|v| v.pos.x).fold(f32::NEG_INFINITY, f32::max);
+            let max = quad
+                .iter()
+                .map(|v| v.pos.x)
+                .fold(f32::NEG_INFINITY, f32::max);
             assert!((max - min - 1.0).abs() < 0.001);
         }
         assert_eq!(source.data.left, original);
@@ -5968,17 +6148,39 @@ mod waveform_quality_tests {
             for px in [1.0, 0.5, 1.0 / 3.0] {
                 let mut data = vec![0.0; 4096];
                 data[if reversed { 4095 - 700 } else { 700 }] = 1.0;
-                let source = Waveform::new(Arc::new(SampleData { sample_rate: 48000, left: data.into(), ..Default::default() }));
+                let source = Waveform::new(Arc::new(SampleData {
+                    sample_rate: 48000,
+                    left: data.into(),
+                    ..Default::default()
+                }));
                 for q in Quality::ALL {
-                    let mesh = quality_wave_mesh(&source, Wave { frames: 4096, per_beat: 1.0, reversed }, &[(20.0, 15.0)],
-                        ((0.0, 4.0), (7.0, 1025)), px, Color32::GREEN, None, q);
-                    assert!(mesh.vertices.iter().any(|v| v.pos.y == 5.0), "transient disappeared in {q:?}");
+                    let mesh = quality_wave_mesh(
+                        &source,
+                        Wave {
+                            frames: 4096,
+                            per_beat: 1.0,
+                            reversed,
+                        },
+                        &[(20.0, 15.0)],
+                        ((0.0, 4.0), (7.0, 1025)),
+                        px,
+                        Color32::GREEN,
+                        None,
+                        q,
+                    );
+                    assert!(
+                        mesh.vertices.iter().any(|v| v.pos.y == 5.0),
+                        "transient disappeared in {q:?}"
+                    );
                     for v in &mesh.vertices {
                         assert!(v.pos.x >= 7.0 && v.pos.x <= 7.0 + 1025.0 * px + 0.001);
                     }
-                    let stride = q.stride(waveform_column_stride(4.0, 48000, px.recip(), 1025), 1025);
+                    let stride =
+                        q.stride(waveform_column_stride(4.0, 48000, px.recip(), 1025), 1025);
                     let start = 7.0 + (175 / stride * stride) as f32 * px;
-                    assert!(mesh.vertices.iter().any(|v| v.pos.y == 5.0 && v.pos.x >= start && v.pos.x <= start + stride as f32 * px));
+                    assert!(mesh.vertices.iter().any(|v| v.pos.y == 5.0
+                        && v.pos.x >= start
+                        && v.pos.x <= start + stride as f32 * px));
                 }
             }
         }
@@ -5992,34 +6194,56 @@ mod waveform_quality_tests {
         let source = source(48000 * 32);
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput::default(), |_| {});
-        for (case, width, fpp, px) in [("close", 1024, 1.0, 1.0), ("medium", 1024, 64.0, 1.0),
-            ("overview", 1024, 1024.0, 1.0), ("hidpi", 2048, 16.0, 0.5)] {
+        for (case, width, fpp, px) in [
+            ("close", 1024, 1.0, 1.0),
+            ("medium", 1024, 64.0, 1.0),
+            ("overview", 1024, 1024.0, 1.0),
+            ("hidpi", 2048, 16.0, 0.5),
+        ] {
             for repeat in 1..=3 {
                 for q in Quality::ALL {
                     WAVE_MESHES.with(|c| c.borrow_mut().clear());
                     let start = Instant::now();
                     for _ in 0..64 {
                         WAVE_MESHES.with(|c| c.borrow_mut().clear());
-                        for clip in 0..8 { black_box(draw(&source, q, clip as f64 * 128.0, width, fpp, px, false)); }
+                        for clip in 0..8 {
+                            black_box(draw(&source, q, clip as f64 * 128.0, width, fpp, px, false));
+                        }
                     }
                     let cold = start.elapsed().as_secs_f64();
-                    let meshes: Vec<_> = (0..8).map(|i| draw(&source, q, i as f64 * 128.0, width, fpp, px, false)).collect();
+                    let meshes: Vec<_> = (0..8)
+                        .map(|i| draw(&source, q, i as f64 * 128.0, width, fpp, px, false))
+                        .collect();
                     let start = Instant::now();
-                    for _ in 0..256 { for clip in 0..8 { black_box(draw(&source, q, clip as f64 * 128.0, width, fpp, px, false)); } }
+                    for _ in 0..256 {
+                        for clip in 0..8 {
+                            black_box(draw(&source, q, clip as f64 * 128.0, width, fpp, px, false));
+                        }
+                    }
                     let warm = start.elapsed().as_secs_f64();
                     let start = Instant::now();
                     for _ in 0..128 {
-                        let shapes = meshes.iter().map(|mesh| egui::epaint::ClippedShape {
-                            clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(4096.0, 100.0)), shape: egui::Shape::Mesh(mesh.clone()),
-                        }).collect();
+                        let shapes = meshes
+                            .iter()
+                            .map(|mesh| egui::epaint::ClippedShape {
+                                clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(4096.0, 100.0)),
+                                shape: egui::Shape::Mesh(mesh.clone()),
+                            })
+                            .collect();
                         black_box(ctx.tessellate(shapes, px.recip()));
                     }
                     let submit = start.elapsed().as_secs_f64();
                     let vertices: usize = meshes.iter().map(|m| m.vertices.len()).sum();
                     let indices: usize = meshes.iter().map(|m| m.indices.len()).sum();
                     let bytes: usize = meshes.iter().map(|m| mesh_bytes(m)).sum();
-                    println!("WAVE_BENCH case={case} mode={q:?} repeat={repeat} frames={} clips=8 width={width} fpp={fpp} ppp={} cold_512_ms={:.6} warm_2048_ms={:.6} tessellate_128_ms={:.6} vertices={vertices} indices={indices} geometry_bytes={bytes}",
-                        source.data.frames(), px.recip(), cold * 1000.0, warm * 1000.0, submit * 1000.0);
+                    println!(
+                        "WAVE_BENCH case={case} mode={q:?} repeat={repeat} frames={} clips=8 width={width} fpp={fpp} ppp={} cold_512_ms={:.6} warm_2048_ms={:.6} tessellate_128_ms={:.6} vertices={vertices} indices={indices} geometry_bytes={bytes}",
+                        source.data.frames(),
+                        px.recip(),
+                        cold * 1000.0,
+                        warm * 1000.0,
+                        submit * 1000.0
+                    );
                 }
             }
         }

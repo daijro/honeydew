@@ -598,9 +598,18 @@ pub fn spacer_wave(
     let fpp = frames as f64 / width.max(1) as f64;
     let rows = wave_rows(spacer, wave.summary.len() > 1);
     let span = ((0.0, fpp), (x0, width));
-    painter.with_clip_rect(painter.clip_rect().intersect(spacer)).add(
-        egui::Shape::Mesh(crate::ui::clips::quality_wave_mesh(wave, fit, &rows, span, px, ink, None, crate::ui::waveform_quality::WaveformQuality::current(painter.ctx()))));
-
+    painter
+        .with_clip_rect(painter.clip_rect().intersect(spacer))
+        .add(egui::Shape::Mesh(crate::ui::clips::quality_wave_mesh(
+            wave,
+            fit,
+            &rows,
+            span,
+            px,
+            ink,
+            None,
+            crate::ui::waveform_quality::WaveformQuality::current(painter.ctx()),
+        )));
 }
 
 /// A drum value area's centre band: 1 U tall across `values` at its centre.

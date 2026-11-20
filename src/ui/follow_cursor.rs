@@ -209,9 +209,21 @@ mod tests {
         frame(&ctx, &mut cursor, vec![], true, false);
         // Visual cap ends at x319.2/y20.48 at this scale; enlarged touch zone extends to x328.8/y31.
         let p = pos2(324.0, 25.0);
-        assert!(frame(&ctx, &mut cursor, vec![Event::PointerMoved(p), button(p, true)], true, false));
+        assert!(frame(
+            &ctx,
+            &mut cursor,
+            vec![Event::PointerMoved(p), button(p, true)],
+            true,
+            false
+        ));
         let end = pos2(484.0, 25.0);
-        frame(&ctx, &mut cursor, vec![Event::PointerMoved(end), button(end, false)], true, false);
+        frame(
+            &ctx,
+            &mut cursor,
+            vec![Event::PointerMoved(end), button(end, false)],
+            true,
+            false,
+        );
         assert!((cursor.fraction() - 0.45).abs() < 0.002);
     }
 
