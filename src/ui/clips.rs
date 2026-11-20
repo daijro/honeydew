@@ -594,7 +594,8 @@ impl Clips {
             .filter(|(_, rect)| rect.intersects(grid))
             .collect();
         blocks.sort_by_key(|&(r, _)| Some(r) == self.selected);
-        if self.envelopes.show(ui, app, &blocks, self.selected, grid, axis, Some(drag_unit)) {
+        if (!self.row.owns_pointer(pos) || self.envelopes.busy())
+            && self.envelopes.show(ui, app, &blocks, self.selected, grid, axis, Some(drag_unit)) {
             pressed = false;
             landed = None;
             self.touch = None;

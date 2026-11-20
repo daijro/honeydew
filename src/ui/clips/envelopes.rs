@@ -126,9 +126,9 @@ struct Drag {
 }
 struct Menu { clip: ClipRef, lane: usize, index: usize, frame: Rect, original: Vec<Point>, expected: Vec<Point>, shaping: Shaping }
 #[derive(Default)]
-pub(super) struct Editor { drag: Option<Drag>, menu: Option<Menu>, owned: bool }
+pub(super) struct Editor { drag: Option<Drag>, menu: Option<Menu>, owned: bool, editing: Option<ClipRef> }
 impl Editor {
-    pub fn finish(&mut self) -> bool { let active = self.drag.take().is_some() || self.menu.take().is_some(); self.owned = false; active }
+    pub fn finish(&mut self) -> bool { let a = self.drag.take().is_some(); let b = self.menu.take().is_some(); let active = a || b; self.owned = false; active }
     pub fn busy(&self) -> bool { self.drag.is_some() || self.menu.is_some() || self.owned }
     pub fn show(&mut self, ui: &mut egui::Ui, app: &mut AppCtx, blocks: &[(ClipRef, Rect)], selected: Option<ClipRef>, grid: Rect, axis: TimeAxis, snap: Option<f64>) -> bool {
         self.owned = false;
@@ -192,6 +192,12 @@ impl Editor {
         let a = area(clip_box(b, app.cx.m), app.cx.m);
         if a.height() < app.cx.m.u(0.65) { return false; }
         let Some((lane, lane_rect)) = lanes(a).into_iter().enumerate().find(|(_,v)| v.contains(p)) else { return false; };
+        let label_left = b.left().max(grid.left());
+        if p.x <= label_left + app.cx.m.u(1.0) {
+            self.editing = if self.editing == Some(r) { None } else { Some(r) };
+            self.owned = true;
+            return true;
+        }
         let key = PointKey::Envelope(lane as i16);
         let original = points::points(clip, key);
         let Some(lp) = clip.loop_ticks() else { return false; };
@@ -200,6 +206,7 @@ impl Editor {
         let values = value_rect(lane_rect, app.cx.m);
         let closest = original.iter().enumerate().map(|(i,point)| (i, xy(f64::from(point.tick), points::unit(point.value), origin, axis, values).distance(p)))
             .filter(|(_,d)| *d < app.cx.m.u(0.4)).min_by(|a,b| a.1.total_cmp(&b.1)).map(|v| v.0);
+        if self.editing != Some(r) && closest.is_none() { return false; }
         let mut pts = original.clone();
         let index = closest.unwrap_or_else(|| {
             let tick = axis.tick(p.x) - origin;
@@ -240,7 +247,7 @@ mod clip_envelope_tests {
             let mut song=Song::default();song.add_channel(ChannelKind::AudioClip);
             let clip=song.channels[1].lanes[0].add_clip(0,4.0);clip.file.sample=Some(Box::default());
             let r=ClipRef{channel:1,lane:0,id:clip.id};
-            let mut s=Self {off:Offscreen::new(),editor:Editor::default(),song,edits:Vec::new(),selected:Some(r)};
+            let mut s=Self {off:Offscreen::new(),editor:Editor {editing:Some(r),..Default::default()},song,edits:Vec::new(),selected:Some(r)};
             s.frame(vec![]);s
         }
         fn frame(&mut self,events:Vec<egui::Event>) {
