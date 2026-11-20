@@ -1,10 +1,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use banaforge_audio::sample::{SampleData, SampleMeta};
+use banaforge_audio::sample_edit::peaks;
 use eframe::egui::epaint::ClippedShape;
 use eframe::egui::{Color32, Pos2, Rect, Shape, UiBuilder, Vec2, pos2, vec2};
-use honeydew_audio::sample::{SampleData, SampleMeta};
-use honeydew_audio::sample_edit::peaks;
 
 use super::*;
 use crate::audio_link::AudioLink;
@@ -982,7 +982,7 @@ impl AppRig {
 fn a_clip_on_a_project_made_wav_shows_its_waveform_and_a_vol_drag_is_one_undo_step() {
     let mut files = ProjectFiles::with_provider(Box::new(MemFiles::default()));
     let tone: Vec<f32> = (0..22_050).map(|i| (i as f32 * 0.05).sin() * 0.8).collect();
-    let bytes = honeydew_audio::wav_writer::float32_wav(44_100, &[tone]);
+    let bytes = banaforge_audio::wav_writer::float32_wav(44_100, &[tone]);
     files.keep_user_file(Path::new("My Samples/tone.wav"), bytes);
     let mut song = song();
     slot(&mut song).file.path = Some(user("My Samples/tone.wav"));
@@ -1696,4 +1696,33 @@ fn a_second_finger_cancels_a_stretch_drag() {
     fresh.run(vec![]);
     assert_ne!(rig.ed.handle.unwrap().center(), handle);
     assert_eq!(rig.ed.handle, fresh.ed.handle);
+}
+
+#[test]
+fn waveform_quality_changes_actual_editor_geometry_but_not_song_or_source() {
+    use crate::ui::waveform_quality::WaveformQuality as Quality;
+    let mut rig = Rig::new(song(), Some(sample(1000, vec![0.5; 1000], None)));
+    let before = rig.song.clone();
+    let data = rig.sample.as_ref().unwrap().data.clone();
+    let summary = rig.sample.as_ref().unwrap().summary.clone();
+    let color = wave_color(&rig.song);
+    let high = rig.quads(color);
+    let mut count = high.len();
+    for q in [Quality::Balanced, Quality::Performance] {
+        q.publish(&rig.off.ctx);
+        rig.run(vec![]);
+        let cols = rig.quads(color);
+        assert!(cols.len() < count);
+        count = cols.len();
+        if q == Quality::Performance {
+            assert!(cols.iter().all(|r| (r.width() - 1.0).abs() < 0.001));
+            assert!(cols.windows(2).all(|p| p[1].left() > p[0].right()));
+        }
+    }
+    Quality::High.publish(&rig.off.ctx);
+    rig.run(vec![]);
+    assert_eq!(rig.quads(color), high);
+    assert_eq!(rig.song, before);
+    assert!(Arc::ptr_eq(&rig.sample.as_ref().unwrap().data, &data));
+    assert!(Arc::ptr_eq(&rig.sample.as_ref().unwrap().summary, &summary));
 }

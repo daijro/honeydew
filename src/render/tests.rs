@@ -639,7 +639,7 @@ fn every_module_song() -> (Song, SampleCache) {
         let t = (i % 11_025) as f32 / 44_100.0;
         0.8 * (std::f32::consts::TAU * 440.0 * t).sin() * (-t / 0.02).exp()
     });
-    let wav = honeydew_audio::wav_writer::float32_wav(44_100, &[burst.collect::<Vec<_>>()]);
+    let wav = banaforge_audio::wav_writer::float32_wav(44_100, &[burst.collect::<Vec<_>>()]);
     let sf2 = include_bytes!("../../crates/audio/tests/fixtures/sine.sf2");
     let mut samples = SampleCache::default();
     samples.load(&song, &|path| match path {

@@ -8,6 +8,25 @@
 
 use eframe::egui;
 
+/// Japanese metadata/lyrics must not become tofu after correct CP932 decoding.
+/// M PLUS 1p is SIL OFL 1.1; only used after the app and standard fallback fonts.
+fn japanese_fallback(fonts: &mut egui::FontDefinitions) {
+    const NAME: &str = "MPLUS1p-Japanese";
+    fonts.font_data.insert(
+        NAME.into(),
+        std::sync::Arc::new(
+            egui::FontData::from_static(include_bytes!("../assets/fonts/MPLUS1p-Regular.ttf"))
+                .tweak(egui::FontTweak {
+                    scale: 2048.0 / 2789.0,
+                    ..Default::default()
+                }),
+        ),
+    );
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts.families.entry(family).or_default().push(NAME.into());
+    }
+}
+
 /// Makes the app font the first `Proportional` font, and draws every `Proportional` font at the app font's em.
 #[cfg(has_app_font)]
 pub fn install(ctx: &egui::Context) {
@@ -41,12 +60,17 @@ pub fn install(ctx: &egui::Context) {
         .entry(egui::FontFamily::Proportional)
         .or_default()
         .insert(0, NAME.to_owned());
+    japanese_fallback(&mut fonts);
     ctx.set_fonts(fonts);
 }
 
 /// No app font available: keep egui's defaults.
 #[cfg(not(has_app_font))]
-pub fn install(_ctx: &egui::Context) {}
+pub fn install(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    japanese_fallback(&mut fonts);
+    ctx.set_fonts(fonts);
+}
 
 #[cfg(all(test, has_app_font))]
 mod tests {

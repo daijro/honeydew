@@ -747,3 +747,15 @@ fn a_knob_in_a_zero_height_rect_draws_nothing_out_of_bounds() {
         assert!(all_finite(&output.shapes));
     }
 }
+
+#[test]
+fn disabled_sliders_ignore_double_click_reset() {
+    for kind in [Kind::HSlider, Kind::VSlider] {
+        let mut rig = Rig::new(kind, 0.9);
+        rig.default = 0.25;
+        rig.disabled = true;
+        rig.click(RECT.center());
+        rig.click(RECT.center());
+        assert_eq!(rig.value, 0.9);
+    }
+}

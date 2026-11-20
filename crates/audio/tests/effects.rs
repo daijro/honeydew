@@ -1,4 +1,4 @@
-use honeydew_audio::{AudioEffect, EffectError, ProcessContext, effect_info};
+use banaforge_audio::{AudioEffect, EffectError, ProcessContext, effect_info};
 
 const CTX: ProcessContext = ProcessContext {
     sample_rate: 48_000.0,
@@ -885,7 +885,7 @@ fn the_pitcher_note_mask_goes_through_the_public_effect_api() {
     let mut pitcher = AudioEffect::new(25, CTX.sample_rate).unwrap();
     assert_eq!(
         pitcher.pitcher_notes(),
-        Some(honeydew_audio::pitcher::DEFAULT_NOTES)
+        Some(banaforge_audio::pitcher::DEFAULT_NOTES)
     );
     let only_e: [bool; 12] = std::array::from_fn(|note| note == 4);
     pitcher.set_pitcher_notes(only_e).unwrap();

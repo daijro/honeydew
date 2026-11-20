@@ -2955,7 +2955,7 @@ fn a_touch_and_each_move_paint_the_current_rows_step_under_x() {
     );
 }
 
-/// Honeydew change (#127): a drag keeps to the column it started on while it drifts sideways, until it moves
+/// BanaForge change (#127): a drag keeps to the column it started on while it drifts sideways, until it moves
 /// clearly sideways (past the 0.5 U calm distance, more across than up or down).
 #[test]
 fn a_mostly_vertical_lane_drag_that_drifts_sideways_paints_only_its_column() {

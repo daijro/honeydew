@@ -2,7 +2,7 @@
 
 use eframe::egui::{Color32, Id, Rect, Ui, pos2, vec2};
 
-use honeydew_audio::analysis;
+use banaforge_audio::analysis;
 
 use super::leveller::animate;
 use super::live_analysis;
@@ -406,7 +406,7 @@ mod tests {
     fn a_feed_fills_each_bar_by_its_channels_rms_and_marks_its_peak() {
         // Left at −30 dB, right at −60 (silent): the left fill is half the bar, (−30/60 + 1)·barH; its peak marker
         // sits on the 66 dB law at −30 dB, after the lines. The right meter draws no fill and no marker.
-        use honeydew_audio::MeterSnapshot;
+        use banaforge_audio::MeterSnapshot;
         let feed = [-30.0, -60.0];
         for ppp in [1.0, 2.0] {
             let m = metrics(ppp);

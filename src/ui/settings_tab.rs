@@ -119,7 +119,7 @@ fn generated_mcp_token() -> String {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).expect("the operating system random source is unavailable");
     let mut token = String::with_capacity(8 + bytes.len() * 2);
-    token.push_str("honeydew_");
+    token.push_str("banaforge_");
     for byte in bytes {
         use std::fmt::Write;
         write!(token, "{byte:02x}").expect("writing to a String cannot fail");
@@ -141,12 +141,13 @@ enum Kind {
     Toggle(fn(&mut Settings) -> &mut bool),
     /// The output buffer target slider, with a native/default position at zero.
     BufferSize,
+    WaveformGap,
     McpPort,
     McpToken,
     McpStatus,
     /// A disabled toggle fixed in this state.
     FixedToggle(bool),
-    /// `Enable audio recording latency compensation`: ON compensates (Honeydew change, #129: it was inverted),
+    /// `Enable audio recording latency compensation`: ON compensates (BanaForge change, #129: it was inverted),
     /// with `Calibrate` beside it while ON.
     Latency,
     /// A wide light button showing the current item; a tap opens the popup of items.
@@ -214,6 +215,7 @@ const PLUGIN_ROWS: [Row; 4] = [
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Choice {
     SoundMode,
+    WaveformQuality,
     Theme,
     /// `Animation`: `Full`, `Reduced` (no animations) or `Minimal` (no scroll inertia either).
     Animation,
@@ -239,8 +241,24 @@ const fn row(label: &'static str, kind: Kind) -> Row {
     Row { label, kind }
 }
 
+// Explicit platform inputs let host tests exercise mobile filtering too.
+fn platform_row_visible(r: &Row, desktop: bool, web: bool) -> bool {
+    !(web
+        && matches!(
+            r.kind,
+            Kind::Dropdown(Choice::SampleMemory) | Kind::AudioInput
+        ))
+        && (desktop
+            || (!matches!(r.kind, Kind::InstallSounds | Kind::BufferSize)
+                && !matches!(
+                    r.label,
+                    "MCP:" | "Enable MCP control" | "Port" | "Authentication token" | "Status"
+                )))
+}
+
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 54] = {
+// The raw buffer slider is desktop-only; mobile has one fewer settings row.
+const ROWS: [Row; 72 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -256,6 +274,7 @@ const ROWS: [Row; 54] = {
         row("Scan Bluetooth MIDI Devices", Scan),
         row("Audio:", Header),
         row("Multi core processing", Toggle(|s| &mut s.multi_core)),
+        #[cfg(desktop)]
         row("Audio buffer size", BufferSize),
         row(
             "Enable background audio (iOS Only)",
@@ -266,6 +285,7 @@ const ROWS: [Row; 54] = {
             },
         ),
         row("Sound mode:", Dropdown(Choice::SoundMode)),
+        row("Waveform Quality:", Dropdown(Choice::WaveformQuality)),
         row("Sample memory limit:", Dropdown(Choice::SampleMemory)),
         row("Recording:", Header),
         row("Audio input:", AudioInput),
@@ -302,6 +322,10 @@ const ROWS: [Row; 54] = {
             "Continuous scrolling during playback",
             Toggle(|s| &mut s.continuous_scroll),
         ),
+        row(
+            "Track activity indicators",
+            Toggle(|s| &mut s.track_activity_indicators),
+        ),
         row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
             "Show CPU and RAM meters",
@@ -321,6 +345,41 @@ const ROWS: [Row; 54] = {
         row("Port", McpPort),
         row("Authentication token", McpToken),
         row("Status", McpStatus),
+        row("Vocal Synth:", Header),
+        row(
+            "Desktop vocal workspace",
+            Toggle(|s| &mut s.vocal_desktop_workspace),
+        ),
+        row(
+            "Show track inspector",
+            Toggle(|s| &mut s.vocal_inspector_visible),
+        ),
+        row(
+            "Show voicebank browser",
+            Toggle(|s| &mut s.vocal_browser_visible),
+        ),
+        row(
+            "Large touch controls",
+            Toggle(|s| &mut s.vocal_large_controls),
+        ),
+        row(
+            "Follow vocal playhead",
+            Toggle(|s| &mut s.vocal_follow_playhead),
+        ),
+        row("Waveform", FixedDropdown("")),
+        row("Show waveform", Toggle(|s| &mut s.vocal_waveform_enabled)),
+        row(
+            "Show top lyric bar",
+            Toggle(|s| &mut s.vocal_lyric_bar_enabled),
+        ),
+        row("Waveform gap below notes", WaveformGap),
+        row("Editor Mode", FixedDropdown("")),
+        row("Simple mode", Toggle(|s| &mut s.vocal_simple_mode)),
+        row("Default voice picker", FixedDropdown("Coming soon")),
+        row("Pitch-bend sensitivity", FixedDropdown("Coming soon")),
+        row("Auto-load last voicebank", FixedToggle(false)),
+        row("Phoneme dictionary language", FixedDropdown("Coming soon")),
+        row("Vocal renderer", FixedDropdown("Procedural voice")),
         row("Advanced:", Header),
         row("Share logs", DisabledButton),
         row("Restore demo songs", RestoreDemos),
@@ -495,26 +554,7 @@ impl SettingsTab {
         };
         let rows: Vec<_> = rows
             .iter()
-            .filter(|r| {
-                let web = cfg!(target_arch = "wasm32");
-                !(web
-                    && matches!(
-                        r.kind,
-                        Kind::Dropdown(Choice::SampleMemory) | Kind::AudioInput
-                    ))
-                    && (cfg!(desktop)
-                        || (!matches!(
-                            r.kind,
-                            Kind::Dropdown(Choice::SoundMode) | Kind::InstallSounds
-                        ) && !matches!(
-                            r.label,
-                            "MCP:"
-                                | "Enable MCP control"
-                                | "Port"
-                                | "Authentication token"
-                                | "Status"
-                        )))
-            })
+            .filter(|r| platform_row_visible(r, cfg!(desktop), cfg!(target_arch = "wasm32")))
             .collect();
         let plugins = if self.plugins { &PLUGIN_ROWS[..] } else { &[] };
         let at = (rows.iter().position(|r| r.label == "Advanced:")).unwrap_or(rows.len());
@@ -644,7 +684,9 @@ impl SettingsTab {
         let (m, colors) = (cx.m, &cx.theme.colors);
         // Headers and the metronome row take the whole slot; the other rows are a control row, centred in it.
         let r = match row.kind {
-            Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize => slot,
+            Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize | Kind::WaveformGap => {
+                slot
+            }
             _ => Rect::from_center_size(slot.center(), vec2(slot.width(), m.u(ROW_H))),
         };
         let text = colors.text.to_color32();
@@ -724,7 +766,7 @@ impl SettingsTab {
             Kind::Toggle(_) | Kind::FixedToggle(_) | Kind::Latency => {
                 // The rect starts 0.5 U left of the column and ends at its right edge; the latency one is 2.5 U
                 // shorter, for `Calibrate`, which is 2.5 U wide at the right end, only while the toggle is ON
-                // (compensating; Honeydew change, #129).
+                // (compensating; BanaForge change, #129).
                 let latency = matches!(row.kind, Kind::Latency);
                 let shorter = if latency { LATENCY_SHORTER } else { 0.0 };
                 let rect = Rect::from_x_y_ranges(
@@ -734,7 +776,7 @@ impl SettingsTab {
                 if latency && s.latency_compensation {
                     let at = right(CALIBRATE_W, BUTTON_H);
                     let b = Button::new(id.with("calibrate"), at, "Calibrate", false, colors);
-                    // On phones too (Honeydew change, #129): it asks for the microphone as REC does.
+                    // On phones too (BanaForge change, #129): it asks for the microphone as REC does.
                     self.calibrate |= button(ui, cx, &b, true).clicked();
                 }
                 let (on, field) = match row.kind {
@@ -798,8 +840,16 @@ impl SettingsTab {
                     #[cfg(desktop)]
                     let sound_mode_tip = "STANDARD: general-purpose mode with broad device compatibility.\nMULTITRACK: experimental; FL-style per-input multitrack routing is not implemented yet. The buffer slider works in either mode.";
                     #[cfg(not(desktop))]
-                    let sound_mode_tip = "ULTRASAFE: largest buffer; maximum stability and compatibility, highest latency.\nSAFE: moderately large buffer; fewer glitches with more latency.\nFAST: small buffer; lower latency but more CPU/dropout risk.\nNATIVE: device/OS default audio behavior.";
+                    let sound_mode_tip = "NATIVE: Android Oboe low-latency path (AAudio where recommended, OpenSL ES fallback).\nFAST: OpenSL ES, low-latency request, 256-frame callback target.\nSAFE: OpenSL ES, 1024-frame callback target.\nULTRA SAFE: OpenSL ES, 2048-frame callback target. Device limits may change actual buffers; diagnostics report accepted values. Higher buffers trade responsiveness for headroom. iOS retains its audio-session buffer.";
                     crate::ui::tooltip::tip(ui, button_rect, sound_mode_tip, None);
+                }
+                if matches!(choice, Choice::WaveformQuality) {
+                    crate::ui::tooltip::tip(
+                        ui,
+                        button_rect,
+                        "Display only. High preserves current detail; Balanced groups more peaks; Performance draws separated vertical amplitude bars. Audio quality and timing are unchanged.",
+                        None,
+                    );
                 }
                 if matches!(choice, Choice::SampleMemory) {
                     let tip = "The most memory SFZ and DW Sampler samples take. Past it, each keeps its start in memory and plays the rest from disk. Auto: the memory available, less a margin.";
@@ -850,6 +900,16 @@ impl SettingsTab {
                 );
                 let c = level_control(id, body, text);
                 h_slider(ui, cx, &c, &mut s.metronome_level, |_| String::new());
+            }
+            Kind::WaveformGap => {
+                let (line, body) = r.split_top_bottom_at_y(r.top() + m.u(LEVEL_LABEL_H));
+                label(ui, line, FontSize::Pt10);
+                let mut value = f32::from(s.vocal_waveform_offset_y.min(40)) / 40.0;
+                let c = level_control(id, body, text);
+                h_slider(ui, cx, &c, &mut value, |v| {
+                    format!("{} rows", (v * 40.0).round() as u8)
+                });
+                s.vocal_waveform_offset_y = (value.clamp(0.0, 1.0) * 40.0).round() as u8;
             }
             Kind::BufferSize => {
                 let (line, body) = r.split_top_bottom_at_y(r.top() + m.u(LEVEL_LABEL_H));
@@ -1201,6 +1261,11 @@ impl Choice {
     /// The items in menu order, as (stored value, label).
     fn items(self) -> Vec<(usize, String)> {
         match self {
+            Choice::WaveformQuality => crate::ui::waveform_quality::WaveformQuality::ALL
+                .into_iter()
+                .enumerate()
+                .map(|(i, q)| (i, q.label().to_owned()))
+                .collect(),
             Choice::SoundMode => SOUND_MODES
                 .iter()
                 .map(|&(id, label)| (usize::from(id), label.to_owned()))
@@ -1232,6 +1297,7 @@ impl Choice {
     fn get(self, s: &Settings) -> usize {
         match self {
             Choice::SoundMode => usize::from(s.sound_mode),
+            Choice::WaveformQuality => s.waveform_quality as usize,
             // A theme of the user's is no built-in one.
             Choice::Theme if !s.custom_theme.is_empty() => usize::MAX,
             Choice::Theme => s.theme as usize,
@@ -1247,6 +1313,12 @@ impl Choice {
     fn set(self, s: &mut Settings, value: usize) {
         match self {
             Choice::SoundMode => s.sound_mode = value as u8,
+            Choice::WaveformQuality => {
+                s.waveform_quality = crate::ui::waveform_quality::WaveformQuality::ALL
+                    .get(value)
+                    .copied()
+                    .unwrap_or_default()
+            }
             Choice::Theme => (s.theme, s.custom_theme) = (value as u32, String::new()),
             Choice::Animation => (s.animations, s.inertia) = (value == 0, value != 2),
             Choice::SampleMemory => s.sample_memory_limit = value as u8,
@@ -1368,6 +1440,45 @@ mod tests {
     }
 
     #[test]
+    fn waveform_quality_selector_is_live_and_next_to_sound_mode_on_mobile() {
+        use crate::ui::waveform_quality::WaveformQuality;
+        assert_eq!(index("Waveform Quality:"), index("Sound mode:") + 1);
+        let row = &ROWS[index("Waveform Quality:")];
+        assert!(platform_row_visible(row, false, false));
+        assert_eq!(
+            Choice::WaveformQuality
+                .items()
+                .iter()
+                .map(|p| p.1.as_str())
+                .collect::<Vec<_>>(),
+            ["High Quality", "Balanced", "Performance"]
+        );
+        let mut s = Settings::default();
+        for (i, q) in WaveformQuality::ALL.into_iter().enumerate() {
+            Choice::WaveformQuality.set(&mut s, i);
+            assert_eq!(s.waveform_quality, q);
+            assert_eq!(Choice::WaveformQuality.get(&s), i);
+        }
+    }
+
+    #[test]
+    fn mobile_sound_mode_is_visible_in_the_actual_settings_filter() {
+        let mobile: Vec<_> = ROWS
+            .iter()
+            .filter(|r| platform_row_visible(r, false, false))
+            .map(|r| r.label)
+            .collect();
+        assert!(mobile.contains(&"Sound mode:"));
+        assert!(!mobile.contains(&"Audio buffer size"));
+        assert!(!mobile.contains(&"MCP:"));
+        assert!(
+            ROWS.iter()
+                .filter(|r| platform_row_visible(r, true, false))
+                .any(|r| r.label == "Sound mode:")
+        );
+    }
+
+    #[test]
     fn rows_follow_the_spec_table_in_order() {
         let labels: Vec<&str> = ROWS.iter().map(|r| r.label).collect();
         assert_eq!(
@@ -1379,9 +1490,11 @@ mod tests {
                 "Scan Bluetooth MIDI Devices",
                 "Audio:",
                 "Multi core processing",
+                #[cfg(desktop)]
                 "Audio buffer size",
                 "Enable background audio (iOS Only)",
                 "Sound mode:",
+                "Waveform Quality:",
                 "Sample memory limit:",
                 "Recording:",
                 "Audio input:",
@@ -1403,6 +1516,7 @@ mod tests {
                 "Show range labels on keyboard",
                 "Keyboard in pickers",
                 "Continuous scrolling during playback",
+                "Track activity indicators",
                 "Show hidden tracks",
                 "Show CPU and RAM meters",
                 "Show performance overlay",
@@ -1413,6 +1527,23 @@ mod tests {
                 "Port",
                 "Authentication token",
                 "Status",
+                "Vocal Synth:",
+                "Desktop vocal workspace",
+                "Show track inspector",
+                "Show voicebank browser",
+                "Large touch controls",
+                "Follow vocal playhead",
+                "Waveform",
+                "Show waveform",
+                "Show top lyric bar",
+                "Waveform gap below notes",
+                "Editor Mode",
+                "Simple mode",
+                "Default voice picker",
+                "Pitch-bend sensitivity",
+                "Auto-load last voicebank",
+                "Phoneme dictionary language",
+                "Vocal renderer",
                 "Advanced:",
                 "Share logs",
                 "Restore demo songs",
@@ -1440,7 +1571,10 @@ mod tests {
                     | Kind::FixedDropdown(_)
                     | Kind::Scaling
             );
-            assert_eq!(r.label.ends_with(':'), header || dropdown, "{}", r.label);
+            // Vocal workspace fixed informational selectors use their original unpunctuated labels.
+            if !matches!(r.kind, Kind::FixedDropdown(_)) {
+                assert_eq!(r.label.ends_with(':'), header || dropdown, "{}", r.label);
+            }
         }
     }
 
@@ -1453,7 +1587,7 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 15 } else { 14 });
+        assert_eq!(toggles.len(), if cfg!(target_os = "ios") { 24 } else { 23 });
         for (label, field) in &toggles {
             let mut s = Settings::default();
             *field(&mut s) = !*field(&mut s);
@@ -1478,8 +1612,11 @@ mod tests {
         #[cfg(not(desktop))]
         #[cfg(not(desktop))]
         {
-            assert_eq!(labels(Choice::SoundMode), ["NATIVE"]);
-            assert_eq!(values(Choice::SoundMode), [3]);
+            assert_eq!(
+                labels(Choice::SoundMode),
+                ["NATIVE", "FAST", "SAFE", "ULTRA SAFE"]
+            );
+            assert_eq!(values(Choice::SoundMode), [3, 1, 0, 2]);
         }
         assert_eq!(
             labels(Choice::Theme),
@@ -1526,7 +1663,10 @@ mod tests {
             assert_eq!(SOUND_MODES, [(0, "STANDARD"), (1, "MULTITRACK")]);
         }
         #[cfg(not(desktop))]
-        assert_eq!(SOUND_MODES, [(3, "NATIVE")]);
+        assert_eq!(
+            SOUND_MODES,
+            [(3, "NATIVE"), (1, "FAST"), (0, "SAFE"), (2, "ULTRA SAFE")]
+        );
     }
 
     #[test]
@@ -1581,7 +1721,7 @@ mod tests {
     impl Rig {
         /// Tall enough to show every row (2 U each) without scrolling.
         fn new() -> Self {
-            Self::with_height(3000.0)
+            Self::with_height((ROWS.len() as f32 + 2.0) * ROW_PITCH * 32.0)
         }
 
         fn with_height(height: f32) -> Self {
@@ -1946,16 +2086,23 @@ mod tests {
             let centre = |label: &str| rig.rect_of(row_id(index(label))).center().y;
             // Three rows in a section, then a dropdown and the next header's toggle: one pitch each.
             let first = centre("Multi core processing");
+            #[cfg(desktop)]
             assert!(
                 (centre("Audio buffer size") - first - 2.5 * u).abs() < 0.01,
                 "{at}"
             );
             assert!(
-                (centre("Enable background audio (iOS Only)") - first - 4.0 * u).abs() < 0.01,
+                (centre("Enable background audio (iOS Only)")
+                    - first
+                    - if cfg!(desktop) { 4.0 * u } else { 2.0 * u })
+                .abs()
+                    < 0.01,
                 "{at}"
             );
             assert!(
-                (centre("Sound mode:") - first - 6.0 * u).abs() < 0.01,
+                (centre("Sound mode:") - first - if cfg!(desktop) { 6.0 * u } else { 4.0 * u })
+                    .abs()
+                    < 0.01,
                 "{at}"
             );
             for label in ["Multi core processing", "Sound mode:", "Input device:"] {
@@ -1997,7 +2144,7 @@ mod tests {
             let (u, t) = (m.u(1.0), m.t());
             let column_right = rig.width - 2.0 * u;
             let fills = fills(&rig);
-            assert_eq!(toggles().count(), 19);
+            assert_eq!(toggles().count(), 29);
             for r in toggles() {
                 let at = format!("ppp {ppp} scale {scale}: `{}`", r.label);
                 let control = rig.rect_of(row_id(index(r.label)));
@@ -2358,7 +2505,7 @@ mod tests {
         );
     }
 
-    /// Honeydew change (#129, #130): ON compensates (the earlier toggle compensated while OFF); it is ON by default.
+    /// BanaForge change (#129, #130): ON compensates (the earlier toggle compensated while OFF); it is ON by default.
     #[test]
     fn the_latency_toggle_is_on_while_it_compensates_and_a_tap_turns_it_off() {
         let mut rig = Rig::new();
@@ -2372,7 +2519,7 @@ mod tests {
 
     #[test]
     fn calibrate_shows_only_while_the_latency_toggle_is_on_and_a_tap_asks_the_app() {
-        // Compensation is on exactly when the toggle is ON (Honeydew change, #129), and `Calibrate` is visible only
+        // Compensation is on exactly when the toggle is ON (BanaForge change, #129), and `Calibrate` is visible only
         // then, on phones too. The toggle is then 2.5 U shorter and `Calibrate`, 2.5 U wide, takes the right end of the
         // row.
         let mut rig = Rig::new();
@@ -3029,7 +3176,7 @@ mod tests {
 
     #[test]
     fn the_original_content_rows_show_the_folder_and_open_it() {
-        let folder = std::path::PathBuf::from("/home/me/.local/share/honeydew/Original Content");
+        let folder = std::path::PathBuf::from("/home/me/.local/share/banaforge/Original Content");
         let mut rig = Rig::at(1.0, DEFAULT_UI_SCALE, 20.0);
         // Without a content folder (the web) the rows are not there.
         assert!(

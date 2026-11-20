@@ -2,7 +2,7 @@
 id = "proc-kick"
 kind = "samples"
 path = "Samples/Electronic Kick/"
-source = "honeydew"
+source = "banaforge"
 render = "kick"
 variant = [
   { name = "Kick F1 Short", tune = 43.65, decay = 0.18 },

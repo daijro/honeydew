@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 branch=${PUBLIC_BRANCH:-public}
-msg=${1:-"Honeydew $(git describe --tags --always HEAD)"}
+msg=${1:-"BanaForge $(git describe --tags --always HEAD)"}
 [ -z "$(git status --porcelain)" ] || echo "note: uncommitted changes are not published (HEAD only)" >&2
 
 index=$(mktemp)

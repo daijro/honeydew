@@ -1,0 +1,56 @@
+name: Export performance investigation
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths: ['.github/workflows/export-performance.yml']
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Build optimized benchmark (excluded from measured runs)
+        run: |
+          set +e
+          cargo test --release --lib export_pipeline_benchmark --no-run > /tmp/benchmark-build.log 2>&1
+          result=$?
+          cat /tmp/benchmark-build.log
+          if [ "$result" -ne 0 ]; then
+            grep -E -A20 -B2 'error\[|error:|panicked' /tmp/benchmark-build.log | head -c 25000 | python3 -c 'import sys; print("::error::" + sys.stdin.read().replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))'
+          fi
+          exit "$result"
+      - name: Controlled baseline and candidate, isolated processes
+        run: |
+          mkdir -p benchmark-results
+          uname -a > benchmark-results/host.txt
+          lscpu >> benchmark-results/host.txt
+          for format in wav flac mp3 ogg; do
+            for repeat in 1 2 3; do
+              for mode in baseline candidate; do
+                BANA_EXPORT_BENCH_MODE=$mode BANA_EXPORT_BENCH_FORMAT=$format /usr/bin/time -v -o benchmark-results/$format-$mode-$repeat.resources cargo test --release --lib export_pipeline_benchmark -- --ignored --nocapture --test-threads=1 > benchmark-results/$format-$mode-$repeat.log 2>&1
+              done
+            done
+          done
+      - name: Publish compact measurements
+        if: always()
+        run: |
+          for file in benchmark-results/*.log; do
+            echo "$file"
+            grep -E 'BENCH |export-profile|FAILED|error:' "$file" || true
+          done | tee benchmark-results/summary.txt
+          cat benchmark-results/summary.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Compare medians and decoded PCM fingerprints
+        run: python3 tools/analyze-export-benchmark.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: export-performance-measurements
+          path: benchmark-results

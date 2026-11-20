@@ -1,4 +1,4 @@
-//! `Import MIDI Tracks`' picker (a Honeydew addition, #113, in place of the system's file
+//! `Import MIDI Tracks`' picker (a BanaForge addition, #113, in place of the system's file
 //! picker): the side browser panel of [`PresetPicker`], titled [`TITLE`], over the whole user folder's MIDI files,
 //! opening in `My MIDI`. A pick closes it and goes on as the system picker's file did
 //! ([`crate::project_files::ProjectFiles::midi_picked`]): one MIDI channel into the channel at once, more through the

@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use honeydew_audio::device::AudioRenderer;
+use banaforge_audio::device::AudioRenderer;
 
 use super::*;
 use crate::audio_engine::SongAudioEngine;

@@ -597,7 +597,7 @@
   "folder": "karoryfer-string-cyborgs-prepared",
   "title": "String Cyborgs sampler textures",
   "page": "https://github.com/sfzinstruments/karoryfer.string-cyborgs",
-  "author": "Karoryfer Samples; sampler maps by Honeydew contributors",
+  "author": "Karoryfer Samples; sampler maps by BanaForge contributors",
   "spdx": "CC0-1.0",
   "archives": [
    {
@@ -994,10 +994,10 @@
   "notes": "Full tree incl. \"Miscellania Raw\" and \"VSCO 1 Percussion\". Strings include every available bowed/plucked articulation and the separate harp; filenames use different octave conventions by instrument and articulation, checked against recorded pitch."
  },
  {
-  "folder": "honeydew",
-  "title": "Honeydew procedural sounds",
+  "folder": "banaforge",
+  "title": "BanaForge procedural sounds",
   "page": "",
-  "author": "The Honeydew contributors",
+  "author": "The BanaForge contributors",
   "spdx": "CC0-1.0",
   "notes": "Synthesized at build time by tools/content-build/src/procedural from content/recipes/procedural; no source files."
  },
@@ -1008,7 +1008,7 @@
   "author": "Lawrence Fritts and the University of Iowa Electronic Music Studios",
   "spdx": "LicenseRef-Iowa-MIS",
   "notice": "LICENSE.txt",
-  "credit": "Stereo ff violin, viola, cello and double bass recordings, arco and pizzicato. Honeydew selects, retunes, resamples and loops/shortens recordings; no endorsement is implied.",
+  "credit": "Stereo ff violin, viola, cello and double bass recordings, arco and pizzicato. BanaForge selects, retunes, resamples and loops/shortens recordings; no endorsement is implied.",
   "archives": [
    {
     "url": "https://theremin.music.uiowa.edu/sound%20files/MIS%20Pitches%20-%202014/Strings/Violin/Violin.arco.ff.sulG.G3.stereo.aif",
@@ -1671,7 +1671,7 @@
   ],
   "retrieved": "2026-10-14",
   "attrib": "yes",
-  "credit": "Greg Sullivan: Yamaha CP80 Electric Grand Piano, Hohner Pianet T (type 2), Wurlitzer EP200 Electric Piano; SFZ mapping and fixes by kinwie. Licensed under Creative Commons Attribution 3.0 Unported, https://creativecommons.org/licenses/by/3.0/. Source: https://github.com/sfzinstruments/GregSullivan.E-Pianos. Honeydew adaptations: neutral preset names, DW Sampler mapping, resampling and 16-bit FLAC encoding, gain normalization, trimmed decays and note-off envelopes; upstream release samples, per-region gain/start/end controls and ARIA controls are not reproduced. No endorsement is implied.",
+  "credit": "Greg Sullivan: Yamaha CP80 Electric Grand Piano, Hohner Pianet T (type 2), Wurlitzer EP200 Electric Piano; SFZ mapping and fixes by kinwie. Licensed under Creative Commons Attribution 3.0 Unported, https://creativecommons.org/licenses/by/3.0/. Source: https://github.com/sfzinstruments/GregSullivan.E-Pianos. BanaForge adaptations: neutral preset names, DW Sampler mapping, resampling and 16-bit FLAC encoding, gain normalization, trimmed decays and note-off envelopes; upstream release samples, per-region gain/start/end controls and ARIA controls are not reproduced. No endorsement is implied.",
   "notice": "unpacked/GregSullivan.E-Pianos/LICENSE",
   "notes": "Author permission and CC BY 3.0 declaration are in the pinned upstream README.md. All three sampled instruments are included; no upstream scripts run."
  },
@@ -1692,7 +1692,7 @@
   "retrieved": "2026-10-14",
   "attrib": "no",
   "notice": "LICENSE",
-  "notes": "Meta Piano v1.0.0: 88-key felt-damped upright, four velocity layers. Source WAV archive includes SFZ and SHA256SUMS. Honeydew keeps all four dynamics at one point per minor third with 6 s tails; no velocity crossfade or random pitch/amplitude."
+  "notes": "Meta Piano v1.0.0: 88-key felt-damped upright, four velocity layers. Source WAV archive includes SFZ and SHA256SUMS. BanaForge keeps all four dynamics at one point per minor third with 6 s tails; no velocity crossfade or random pitch/amplitude."
  },
  {
   "folder": "meta-steel-guitar",
@@ -1777,7 +1777,7 @@
   "folder": "karoryfer-emilyguitar-rendered",
   "title": "Emilyguitar voiced renders",
   "page": "https://github.com/sfzinstruments/karoryfer.emilyguitar",
-  "author": "Karoryfer Samples (D. Smolken); offline preparation by Honeydew contributors",
+  "author": "Karoryfer Samples (D. Smolken); offline preparation by BanaForge contributors",
   "spdx": "CC0-1.0",
   "archives": [
    {

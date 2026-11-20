@@ -1,4 +1,4 @@
-use honeydew_audio::pitcher2::{DEFAULT_PARAMS, Pitcher2Error, Pitcher2State};
+use banaforge_audio::pitcher2::{DEFAULT_PARAMS, Pitcher2Error, Pitcher2State};
 use std::f32::consts::TAU;
 
 #[test]

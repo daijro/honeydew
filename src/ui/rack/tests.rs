@@ -9,7 +9,7 @@ use crate::song::{AutomationTarget, ChannelKind, Raw, SendState, SynthKind};
 use crate::theme::theme_by_id;
 use crate::ui::ctrl_menu::{CtrlAction, Touch};
 use crate::ui::offscreen::key_tap;
-use honeydew_audio::instrument::KEY_LEARN;
+use banaforge_audio::instrument::KEY_LEARN;
 
 // ---- the height table ----
 
@@ -595,7 +595,7 @@ fn the_browsers_rack_preset_goes_where_paste_puts_the_same_modules() {
     // One `+`, one placement. A [MiniSynth, Reverb] preset into [Arpeggiator (2), Distortion (3)] from `+` is appended
     // at the bottom in file order (loading appends).
     let rack = || channel(ChannelKind::Rack, &[51, 6]);
-    let modules = preset(&[0, 53, 32]);
+    let modules = preset(&[0, 54, 32]);
     let ats = [
         InsertAt::End,
         InsertAt::Above(3),
@@ -653,7 +653,7 @@ fn paste_inserts_every_compatible_module_in_clipboard_order_with_fresh_ids_and_s
 }
 
 #[test]
-fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
+fn paste_skips_instruments_off_a_notes_lane_and_ids_above_53() {
     // A drums, audio, effect-track or master channel's primary lane is no notes lane: the MiniSynth is skipped.
     let mut channels = [
         ChannelKind::Drums,
@@ -671,9 +671,9 @@ fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
         );
         assert_eq!(types(&ch.rack), [51, 6], "{:?}", ch.kind);
     }
-    // Nothing compatible (an instrument, and 53, past the last module id): nothing changes, and a `Replace` keeps
+    // Nothing compatible (an instrument, and 54, past the last module id): nothing changes, and a `Replace` keeps
     // its module.
-    let clipboard = preset(&[0, 53]);
+    let clipboard = preset(&[0, 54]);
     let mut ch = channel(ChannelKind::Drums, &[6]);
     let kept = ch.clone();
     assert_eq!(
@@ -682,7 +682,7 @@ fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
     );
     assert_eq!(paste(&mut ch, &[], InsertAt::End), Outcome::Nothing);
     assert_eq!(ch, kept);
-    // A notes lane takes the instrument, beside its own; 53 never.
+    // A notes lane takes the instrument, beside its own; 54 never.
     let mut ch = channel(ChannelKind::Instrument, &[2]);
     assert_eq!(
         paste(&mut ch, &clipboard, InsertAt::End),
@@ -2548,7 +2548,7 @@ fn load_drumset_asks_for_the_drumset_picker() {
 
 // ---- Live meters: each card posts its module's meter from the output snapshot for the panel's draws ----
 
-use honeydew_audio::MeterSnapshot;
+use banaforge_audio::MeterSnapshot;
 
 /// The rects filled in `fill` inside control `n` of the rig's card of `ui_height` U, in drawing order.
 fn fills(rig: &Rig, ui_height: f32, n: u32, fill: Color32) -> Vec<Rect> {

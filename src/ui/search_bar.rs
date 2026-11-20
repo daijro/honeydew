@@ -202,7 +202,7 @@ pub(crate) struct RowLook<'a> {
     pub mark: Option<Mark<'a>>,
 }
 
-/// What a picker row shows at its right end (a Honeydew addition, #109, #123): a folder's
+/// What a picker row shows at its right end (a BanaForge addition, #109, #123): a folder's
 /// `›` (icon 10), a file's extension (an audio file's too), dimmed as a search row's path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Mark<'a> {

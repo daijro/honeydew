@@ -166,6 +166,21 @@ impl ExportFormat {
         }
     }
 
+    /// Real encoding settings selected by the existing quality preset.
+    pub fn encoding_summary(self, high: bool) -> &'static str {
+        match (self, high) {
+            (Self::Wav, false) => "Stereo PCM 16-bit",
+            (Self::Wav, true) => "Stereo float 32-bit",
+            (Self::Flac, false) => "Stereo FLAC 16-bit",
+            (Self::Flac, true) => "Stereo FLAC 24-bit",
+            (Self::Mp3, false) => "Stereo MP3 192 kbps",
+            (Self::Mp3, true) => "Stereo MP3 320 kbps",
+            (Self::Ogg, false) => "Stereo Vorbis quality 0.4",
+            (Self::Ogg, true) => "Stereo Vorbis quality 1.0",
+            _ => "Project export",
+        }
+    }
+
     /// The folder under the user folder its files go to.
     pub fn folder(self) -> &'static str {
         use ExportFormat::*;
@@ -522,7 +537,7 @@ impl SaveDialog {
             l.estimate.center(),
             Align2::CENTER_CENTER,
             // The PROJECT tab's `Project Length:` form.
-            format!("Estimated length: {}", duration(secs.max(0.0) as u64)),
+            format!("{} · {}", duration(secs.max(0.0) as u64), self.format.encoding_summary(self.render.high_quality)),
             m.font_id(FontSize::Pt8),
             text.gamma_multiply(DIM_ALPHA),
         );

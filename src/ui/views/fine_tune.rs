@@ -9,8 +9,8 @@
 //! as the dialog closes mid-drag. A gone param (its module deleted, or its channel deleted or undone away) closes the
 //! dialog.
 
+use banaforge_audio::device::AudioCommand;
 use eframe::egui;
-use honeydew_audio::device::AudioCommand;
 
 use super::{AppCtx, Nav};
 use crate::params::TextCx;
@@ -52,7 +52,7 @@ pub fn show(
     };
     let dialog = Dialog {
         title: &param.title,
-        ink: channel_color(ch.hue, app.cx.theme).to_color32(),
+        ink: channel_color(ch.color_token(), app.cx.theme).to_color32(),
         reset: param.reset,
     };
     let text = |v| param.spec.display_text_in(v, env);

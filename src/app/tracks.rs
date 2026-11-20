@@ -5,11 +5,11 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use honeydew_audio::device::AudioCommand;
+use banaforge_audio::device::AudioCommand;
 
 use eframe::egui;
 
-use super::HoneydewApp;
+use super::BanaForgeApp;
 use crate::project_files::{MESSAGE_TAG, PresetSource};
 use crate::sample_cache::SampleKey;
 use crate::smf::{self, import::ImportOpts};
@@ -41,7 +41,7 @@ pub(super) enum Asked {
     /// `Delete empty tracks?`, asked once the track's clips are gone: yes deletes the track too.
     DeleteTrack { channel: i32, lane: usize },
     /// What a playlist `Delete` left empty, asked after its step: yes deletes it into that step. By index: any change
-    /// of the channels or tracks drops the question ([`HoneydewApp::rekey`]).
+    /// of the channels or tracks drops the question ([`BanaForgeApp::rekey`]).
     Emptied(Emptied),
     /// `Replace sample...`'s `Replace the sample in N clips?` (issue #64): yes gives every clip playing `from` the file
     /// at `path` ([`replace_sample`]).
@@ -267,7 +267,7 @@ fn delete_question(song: &Song, index: usize) -> &'static str {
     }
 }
 
-impl HoneydewApp {
+impl BanaForgeApp {
     /// Carries out the track menu's `op` for track `lane` of channel `channel`. `tick` is the transport position
     /// before the edit. Each song change is one undo step; `Insert Channel` is [`Self::insert_channel`].
     pub(super) fn track_op(&mut self, channel: usize, lane: usize, op: TrackOp, tick: u64) {
@@ -995,7 +995,7 @@ impl HoneydewApp {
         let rekey = |channel: &mut usize| rk.channel(*channel).map(|c| *channel = c).is_some();
         nav.overlays.retain_mut(|o| match o {
             // The open rack follows the current channel, the one in a gone channel's place
-            // too ([`HoneydewApp::rack_follows`]), and a drag of the gone one's control ends.
+            // too ([`BanaForgeApp::rack_follows`]), and a drag of the gone one's control ends.
             Overlay::Rack(channel) => {
                 if !rekey(channel) {
                     (*channel, *stop_drag) = (selected, true);
@@ -1015,7 +1015,7 @@ impl HoneydewApp {
             | Overlay::FineTune { channel, .. }
             | Overlay::ModuleSamplePicker { channel, .. }
             | Overlay::InstrumentBuilder { channel, .. }
-            | Overlay::LemonEditor { channel, .. }
+            | Overlay::BananaEditor { channel, .. }
             | Overlay::CcPicker(channel) => rekey(channel),
             // The clip's track.
             Overlay::ClipSamplePicker(key) | Overlay::ReplaceSamplePicker(key) => rk
@@ -1036,6 +1036,8 @@ impl HoneydewApp {
             | Overlay::PresetDialog { .. }
             | Overlay::SampleName { .. }
             | Overlay::Busy { .. }
+            | Overlay::ExportProgress { .. }
+            | Overlay::ExportResult { .. }
             | Overlay::LearnCc
             // Its channel is kept by id.
             | Overlay::MidiImport

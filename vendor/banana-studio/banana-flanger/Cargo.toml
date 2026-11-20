@@ -1,0 +1,25 @@
+[package]
+name = "banana-flanger"
+description = "Banana Flanger: Banana Studio's flanger as a VST3 / CLAP plugin"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+doctest = false
+
+[features]
+# Compiled into Banana Studio: no exported plugin entry points (they would clash with the other built-in plugins).
+linked = []
+# BanaForge (vendored addition): the editor draws into BanaForge's own window (`os-plugkit`'s `embed`).
+embed = ["banana-small-fx/embed"]
+
+[dependencies]
+nih_plug = { path = "../../nih-plug" }
+banana-small-fx = { path = "../banana-small-fx" }
+os-plugkit = { path = "../os-plugkit" }
+
+# Upstream allows a lint that Rust 1.91 (BanaForge's CI) does not know yet.
+[lints.rust]
+unknown_lints = "allow"

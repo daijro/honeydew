@@ -1,0 +1,118 @@
+name: Waveform quality validation and measurements
+on:
+  workflow_dispatch:
+  push:
+    branches: ["arena/**"]
+    paths:
+      - '.github/workflows/waveform-quality.yml'
+      - 'src/ui/waveform_quality.rs'
+      - 'src/ui/clips.rs'
+      - 'src/ui/audio_editor/**'
+      - 'tools/analyze-waveform-benchmark.py'
+jobs:
+  controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Resolve Android dependency and format changed files
+        run: |
+          set +e
+          cargo metadata --format-version 1 > /tmp/metadata.json 2>/tmp/prepare.log
+          rc=$?
+          if [ "$rc" -eq 0 ]; then
+            rustfmt --edition 2024 --config skip_children=true src/ui/waveform_quality.rs src/ui/follow_cursor.rs src/ui/clips.rs src/ui/audio_editor/mod.rs src/ui/audio_editor/tests.rs src/ui/picker_preview.rs src/ui/graph_lane.rs src/ui/piano_roll/mod.rs src/ui/settings_tab.rs src/panels/inst/slicer.rs src/settings.rs src/app.rs src/ui/mod.rs >> /tmp/prepare.log 2>&1
+            rc=$?
+          fi
+          python3 - <<'PY'
+          import pathlib
+          s=pathlib.Path('/tmp/prepare.log').read_text()[-24000:]
+          for i in range(0,len(s),3000):
+              print('::notice title=prepare-log::'+s[i:i+3000].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
+          [ "$rc" -eq 0 ] || exit "$rc"
+          git diff > /tmp/prepared.patch
+          python3 - <<'PY'
+          import base64, pathlib, zlib
+          s=base64.b64encode(zlib.compress(pathlib.Path('/tmp/prepared.patch').read_bytes(), 9)).decode()
+          for i in range(0,len(s),4000):
+              print(f'::notice title=prepared-patch-{i:08}::{s[i:i+4000]}')
+          PY
+      - name: Control and offline-render regressions
+        run: |
+          result=0
+          for filter in waveform_quality ui::audio_editor::tests waveform_mesh_cache_tests ui::settings_tab::tests ui::follow_cursor::tests ui::main_screen::tests ui::picker_preview::tests panels::inst::slicer render::tests; do
+            cargo test --lib "$filter" >> /tmp/controls.log 2>&1 || result=$?
+          done
+          cargo test -p banaforge-audio device::tests >> /tmp/controls.log 2>&1 || result=$?
+          cat /tmp/controls.log
+          python3 - <<'PY'
+          import pathlib
+          summaries=[s for s in pathlib.Path('/tmp/controls.log').read_text().splitlines() if s.startswith('test result:')]
+          print('::notice title=Test summaries::'+'; '.join(summaries))
+          PY
+          if [ "$result" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          s=pathlib.Path('/tmp/controls.log').read_text()
+          lines=s.splitlines()
+          parts=[]
+          for i,line in enumerate(lines):
+              if any(x in line for x in ('error[','error:', 'FAILED', 'panicked', 'failures:')):
+                  parts.extend(lines[max(0,i-2):i+15])
+          msg='\n'.join(parts)[-45000:]
+          for i in range(0,len(msg),3000):
+              print('::error::'+msg[i:i+3000].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
+          fi
+          exit "$result"
+
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Build release benchmark outside timings
+        run: |
+          set +e
+          cargo test --release --lib waveform_quality_render_benchmark --no-run > /tmp/build.log 2>&1
+          rc=$?
+          cat /tmp/build.log
+          if [ "$rc" -ne 0 ]; then
+            python3 - <<'PY'
+          import pathlib
+          lines=pathlib.Path('/tmp/build.log').read_text().splitlines()
+          msg='\n'.join(lines[-100:])
+          for i in range(0,len(msg),3000):
+              print('::error::'+msg[i:i+3000].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
+          fi
+          exit "$rc"
+      - name: Measure geometry generation, cache hits and egui tessellation
+        run: |
+          mkdir -p benchmark-results
+          lscpu > benchmark-results/host.txt
+          /usr/bin/time -v -o benchmark-results/process-resources.txt cargo test --release --lib waveform_quality_render_benchmark -- --ignored --nocapture --test-threads=1 > benchmark-results/waveforms.log 2>&1
+      - name: Compare mode medians
+        run: |
+          python3 tools/analyze-waveform-benchmark.py
+          cat benchmark-results/REPORT.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: waveform-quality-measurements
+          path: benchmark-results

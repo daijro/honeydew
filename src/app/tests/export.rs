@@ -1,8 +1,8 @@
 //! The Save dialog's exports and PROJECT `Quick Render` in the app: the dialog kept from frame to frame, the
 //! render in slices behind the busy screen, the overwrite question, the flashes and the errors.
 
+use banaforge_audio::sample::decode;
 use eframe::egui::Shape;
-use honeydew_audio::sample::decode;
 
 use super::*;
 use crate::project_files::export::{NO_SOUND, RENDER_FAILED};
@@ -76,7 +76,7 @@ impl Rig {
             }
             self.frame(vec![]);
             for o in &self.app.nav.overlays {
-                if let Overlay::Busy { title } = o
+                if let Overlay::ExportProgress { title, .. } = o
                     && titles.last() != Some(title)
                 {
                     titles.push(title.clone());
@@ -111,14 +111,15 @@ fn save_wav_render_writes_a_file_that_decodes_back() {
     assert!(rig.shows("New Song.wav"), "the render page");
     rig.click(dialog().render.center());
     // The dialog closes and the busy screen takes its place.
-    assert!(matches!(rig.overlays()[..], [Overlay::Busy { .. }]));
+    assert!(matches!(rig.overlays()[..], [Overlay::ExportProgress { .. }]));
     let titles = rig.finish_export();
     assert_eq!(
         titles,
         [
             "Rendering \"New Song.wav\"",
             "Processing \"New Song.wav\"",
-            "Encoding \"New Song.wav\""
+            "Encoding \"New Song.wav\"",
+            "Finalizing \"New Song.wav\""
         ]
     );
     let file = written(&mem, "My Tracks/New Song.wav").expect("written");
@@ -130,7 +131,7 @@ fn save_wav_render_writes_a_file_that_decodes_back() {
     rig.frame(vec![]);
     rig.frame(vec![]);
     assert!(rig.shows("Render complete") && rig.shows("Saved to: My Tracks/New Song.wav"));
-    rig.click(rig.text_rect("Open My Tracks").center());
+    rig.click(rig.text_rect("OPEN MY TRACKS").center());
     assert_eq!(
         rig.overlays(),
         [Overlay::MainMenu(crate::ui::views::MenuTab::Songs)]
@@ -177,11 +178,12 @@ fn the_busy_screen_shows_the_title_and_takes_the_clicks() {
     rig.render_page(WAV);
     rig.click(dialog().render.center());
     rig.frame(vec![]);
+    rig.frame(vec![]); // The new Area has one invisible sizing frame.
     assert!(rig.app.export.is_some());
     assert!(rig.shows("Rendering \"New Song.wav\""));
     // The logo lies under it.
     rig.click(LOGO);
-    assert!(matches!(rig.overlays()[..], [Overlay::Busy { .. }]));
+    assert!(matches!(rig.overlays()[..], [Overlay::ExportProgress { .. }]));
     rig.finish_export();
 }
 
@@ -274,7 +276,7 @@ fn an_existing_file_asks_cancel_keeps_the_dialog_and_replace_renders_over_it() {
     rig.frame(vec![]);
     rig.click_id(message_item(2));
     rig.frame(vec![]);
-    assert!(matches!(rig.overlays()[..], [Overlay::Busy { .. }]));
+    assert!(matches!(rig.overlays()[..], [Overlay::ExportProgress { .. }]));
     rig.finish_export();
     let file = written(&mem, "My Tracks/New Song.wav").unwrap();
     assert!(decode(&file).is_ok());
@@ -300,7 +302,7 @@ fn quick_render_renders_the_last_format_with_the_kept_options_and_no_dialog() {
     assert_eq!(decoded.left.len(), 96_000);
     assert!(matches!(
         rig.overlays()[..],
-        [Overlay::MainMenu(MenuTab::Project), Overlay::Message { .. }]
+        [Overlay::MainMenu(MenuTab::Project), Overlay::ExportResult { .. }]
     ));
 }
 
@@ -315,7 +317,7 @@ fn a_silent_song_shows_the_song_has_no_sound() {
     rig.frame(vec![]);
     assert!(matches!(
         &rig.overlays()[..],
-        [Overlay::Message { lines, .. }] if lines == &[NO_SOUND]
+        [Overlay::ExportResult { lines, success: false, .. }] if lines[0] == NO_SOUND
     ));
     assert!(mem.0.borrow().files.is_empty());
 }
@@ -339,22 +341,10 @@ fn split_writes_each_stem_into_its_folder_with_its_progress_and_says_where() {
     assert!(rig.shows("Enable master FX"), "shown with Split on");
     rig.click(dialog().render.center());
     rig.frame(vec![]);
-    // The two lines of the busy title are each centred.
-    let rows = (rig.out.shapes.iter())
-        .find_map(|s| match &s.shape {
-            Shape::Text(t) if t.galley.text().starts_with("Exporting channel") => Some(
-                t.galley
-                    .rows
-                    .iter()
-                    .map(|r| t.pos.x + r.rect().center().x)
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        })
-        .expect("the busy title");
-    assert_eq!(rows.len(), 2);
-    assert!((rows[0] - rows[1]).abs() < 1.0, "{rows:?}");
-    assert!((rows[0] - 585.0).abs() < 1.0, "{rows:?}");
+    // The redesigned responsive screen names the actual stem and reports pass frames.
+    assert!(rig.overlays().iter().any(|o| matches!(o,
+        Overlay::ExportProgress { title, done, total, .. }
+            if title.starts_with("Exporting channel 1:") && done <= total)));
     let titles = rig.finish_export();
     for title in [
         format!("Exporting channel 1: {name}\nEncoding \"{name}.wav\""),
@@ -379,7 +369,7 @@ fn split_writes_each_stem_into_its_folder_with_its_progress_and_says_where() {
     rig.frame(vec![]);
     assert!(matches!(
         &rig.overlays()[..],
-        [Overlay::Message { lines, .. }] if lines[1] == format!("Saved to: {folder}")
+        [Overlay::ExportResult { lines, success: true, .. }] if lines[1] == format!("Saved to: {folder}")
     ));
     assert!(!rig.app.files.modified());
 }
@@ -410,7 +400,7 @@ fn a_stem_that_cannot_be_written_ends_the_export_with_one_message() {
     );
     assert!(matches!(
         &rig.overlays()[..],
-        [Overlay::Message { lines, .. }] if lines == &[RENDER_FAILED, "disk full"]
+        [Overlay::ExportResult { lines, success: false, .. }] if lines == &[RENDER_FAILED, "Stem file write: disk full"]
     ));
     assert_eq!(rig.flash_text(), None);
 }
@@ -432,18 +422,48 @@ fn a_render_is_tagged_with_the_songs_metadata_unless_write_tags_is_off() {
     meta.author = "Ivan".into();
     meta.genre = "House".into();
     let tagged = render(&mut rig, "Beat");
-    let encoder = format!("Honeydew {}", env!("CARGO_PKG_VERSION"));
+    let encoder = format!("BanaForge {}", env!("CARGO_PKG_VERSION"));
     let tags = [
         ("TITLE", "Beat"),
         ("ARTIST", "Ivan"),
         ("GENRE", "House"),
         ("ENCODER", &encoder),
     ];
-    let info = honeydew_audio::wav_writer::info_chunk(&tags);
+    let info = banaforge_audio::wav_writer::info_chunk(&tags);
     // After RIFF, WAVE and the 26-byte `fmt ` chunk.
     assert_eq!(tagged[38..38 + info.len()], info[..]);
     rig.app.settings.write_tags = false;
     let plain = render(&mut rig, "Plain");
     assert_eq!(&plain[38..42], b"data", "no LIST chunk");
     assert_eq!(decode(&plain).unwrap(), decode(&tagged).unwrap());
+}
+
+#[test]
+fn export_cancel_drops_processing_without_saving_or_changing_project() {
+    let (mut rig, mem) = Rig::exporting();
+    let before = rig.app.song.clone();
+    rig.render_page(WAV);
+    rig.click(dialog().render.center());
+    assert!(rig.app.export.is_some());
+    rig.frame(vec![]);
+    rig.frame(vec![]);
+    rig.click(rig.text_rect("CANCEL EXPORT").center());
+    assert!(rig.app.export.is_none());
+    for _ in 0..3 { rig.frame(vec![]); }
+    assert!(mem.0.borrow().files.is_empty());
+    assert_eq!(rig.app.song, before);
+    assert!(!rig.overlays().iter().any(|o| matches!(o, Overlay::ExportProgress { .. } | Overlay::ExportResult { success: true, .. })));
+}
+
+#[test]
+fn export_again_returns_to_real_settings_and_completion_waits_for_user() {
+    let (mut rig, _) = Rig::exporting();
+    rig.render_page(WAV);
+    rig.click(dialog().render.center());
+    rig.finish_export();
+    for _ in 0..3 { rig.frame(vec![]); }
+    assert!(rig.overlays().iter().any(|o| matches!(o, Overlay::ExportResult { success: true, .. })));
+    rig.click(rig.text_rect("EXPORT AGAIN").center());
+    rig.frame(vec![]);
+    assert!(rig.overlays().iter().any(|o| matches!(o, Overlay::SaveDialog { .. })));
 }

@@ -59,7 +59,7 @@ where
         }
     }
 
-    // Honeydew (vendored change): a browser build has no threads; the task runs at once, on the calling thread.
+    // BanaForge (vendored change): a browser build has no threads; the task runs at once, on the calling thread.
     #[cfg(target_arch = "wasm32")]
     pub fn schedule(&self, task: T) -> bool {
         let _ = &self.worker_thread;
@@ -88,7 +88,7 @@ static HANDLE_MAP: LazyLock<Mutex<anymap3::Map<dyn std::any::Any + Send>>> =
 impl<T: Send + 'static, E: MainThreadExecutor<T> + 'static> WorkerThread<T, E> {
     fn spawn() -> Self {
         let (tasks_sender, tasks_receiver) = channel::bounded(super::TASK_QUEUE_CAPACITY);
-        // Honeydew (vendored change): no worker thread in a browser build (`schedule` runs the tasks).
+        // BanaForge (vendored change): no worker thread in a browser build (`schedule` runs the tasks).
         #[cfg(target_arch = "wasm32")]
         let join_handle = {
             drop(tasks_receiver);
@@ -111,7 +111,7 @@ impl<T: Send + 'static, E: MainThreadExecutor<T> + 'static> WorkerThread<T, E> {
 
 impl<T, E> Drop for WorkerThread<T, E> {
     fn drop(&mut self) {
-        // Honeydew (vendored change): a browser build has no worker thread to stop.
+        // BanaForge (vendored change): a browser build has no worker thread to stop.
         if cfg!(target_arch = "wasm32") {
             return;
         }

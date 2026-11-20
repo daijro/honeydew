@@ -6,7 +6,7 @@ use super::*;
 use crate::song::{DrumKit, Event, LaneKind, SamplerSlot};
 use crate::theme::channel_color;
 use crate::ui::drums::{self, Ctl};
-use honeydew_audio::drums::PadSample;
+use banaforge_audio::drums::PadSample;
 
 /// A widget of the piano roll, of the step sequencer, of channel 1's drum editor, or of its strip `row`.
 fn roll(name: &str) -> egui::Id {
@@ -805,8 +805,8 @@ fn a_stretch_plays_its_first_8192_frames_at_once_and_the_rest_as_the_worker_stre
     // the first 8192 frames render at once and the pad plays the new, partly filled buffer (a new engine now, which
     // takes over the voices); the rest renders into that buffer on the pick worker, and once it lands the engine is
     // rebuilt with the whole render. No cache walk renders it.
-    use honeydew_audio::device::AudioRenderer;
-    use honeydew_audio::drums::STREAM_FRAMES;
+    use banaforge_audio::device::AudioRenderer;
+    use banaforge_audio::drums::STREAM_FRAMES;
     let mut rig = stretch_rig();
     let renders = rig.app.audio.samples.renders();
     let held = hold_worker();
@@ -1467,10 +1467,10 @@ fn the_rolls_key_labels_follow_the_middle_c_and_key_names_settings() {
     rig.slide_split();
     // The key column, left of the grid and below the ruler: the roll opens on middle C.
     let keys = Rect::from_min_max(pos2(0.0, EDITOR_TOP + RULER), pos2(1.5 * U, PANEL_TOP));
-    assert_eq!(rig.texts_in(keys), ["C5"]);
+    assert!(rig.texts_in(keys).is_empty());
     rig.app.settings.middle_c_is_c4 = true;
     rig.frame(vec![]);
-    assert_eq!(rig.texts_in(keys), ["C4"]);
+    assert!(rig.texts_in(keys).is_empty());
     // `Show key names on keyboard and piano roll` (#77): the other keys' names too, with no octave, and under
     // Chromatic none on a black key, as on the keyboard.
     rig.app.settings.key_names = true;
@@ -1480,6 +1480,9 @@ fn the_rolls_key_labels_follow_the_middle_c_and_key_names_settings() {
         assert!(names.contains(&name.to_owned()), "{name}: {names:?}");
     }
     assert!(!names.iter().any(|n| n.contains('#')), "{names:?}");
+    rig.app.settings.key_names = false;
+    rig.frame(vec![]);
+    assert!(rig.texts_in(keys).is_empty());
 }
 
 #[test]
@@ -3659,7 +3662,7 @@ mod samples {
         );
         // The desktop's picker has no `Import`.
         rig.app.files =
-            ProjectFiles::on_disk(&std::env::temp_dir().join("honeydew-u09-no-such-folder"));
+            ProjectFiles::on_disk(&std::env::temp_dir().join("banaforge-u09-no-such-folder"));
         // It opens at the pad's sample's folder, which this user folder lacks.
         row_item(&mut rig, STEPS, 1, (0, 0));
         rig.frame(vec![]);
@@ -3891,7 +3894,7 @@ fn a_mini_mixer_edit_reaches_the_audio_as_set_param_and_saves_no_undo_step() {
 
 #[test]
 fn the_drum_strips_meters_show_each_slots_peak_from_the_engine() {
-    use honeydew_audio::device::{ModuleKey, ModuleMeter};
+    use banaforge_audio::device::{ModuleKey, ModuleMeter};
     // The mixer is out (`drum_rig`): the rows' meters are horizontal bars along the bottom of each row's page.
     let mut rig = drum_rig();
     let ink = channel_color(rig.app.song.channels[1].hue, &rig.app.theme).to_color32();
@@ -3909,7 +3912,7 @@ fn the_drum_strips_meters_show_each_slots_peak_from_the_engine() {
             channel: 1,
             instance_id,
         },
-        value: honeydew_audio::MeterSnapshot {
+        value: banaforge_audio::MeterSnapshot {
             peak_left,
             peak_right,
             ..Default::default()
@@ -4521,4 +4524,56 @@ fn play_and_space_play_and_stop_under_the_generate_panel_which_stays_open() {
     rig.frame(vec![space(true), space(false)]);
     assert!(!rig.app.main_screen.playing);
     assert!(open(&rig));
+}
+
+#[test]
+fn vocal_studio_only_wraps_a_vocal_rack_and_restores_the_normal_editor() {
+    let mut rig = Rig::new();
+    rig.app
+        .add_bare_channel(ChannelKind::Synth(SynthKind::VocalSynth), 0);
+    rig.click(OUTSIDE);
+    rig.edit(1);
+    rig.slide_split();
+    rig.frame(vec![]);
+    fn has_studio(shapes: &[egui::epaint::ClippedShape]) -> bool {
+        fn text(shape: &Shape) -> bool {
+            match shape {
+                Shape::Text(t) => t.galley.text() == "BANAFORGE / VOCAL STUDIO",
+                Shape::Vec(v) => v.iter().any(text),
+                _ => false,
+            }
+        }
+        shapes.iter().any(|s| text(&s.shape))
+    }
+    assert!(has_studio(&rig.out.shapes));
+    fn control(shapes: &[egui::epaint::ClippedShape], label: &str) -> Pos2 {
+        shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                Shape::Text(t) if t.galley.text() == label => {
+                    Some(t.visual_bounding_rect().center())
+                }
+                _ => None,
+            })
+            .expect("workspace transport control is visible")
+    }
+    let play = control(&rig.out.shapes, "▶ Play");
+    rig.click(play);
+    rig.frame(vec![]); // The transport changed after the click frame painted its label.
+    assert!(rig.app.main_screen.playing);
+    let stop = control(&rig.out.shapes, "Ⅱ Stop");
+    rig.click(stop);
+    assert!(!rig.app.main_screen.playing);
+    let global_theme = rig.app.theme.clone();
+    rig.app.settings.vocal_desktop_workspace = false;
+    rig.frame(vec![]);
+    assert!(!has_studio(&rig.out.shapes));
+    rig.app.settings.vocal_desktop_workspace = true;
+    rig.app.song.channels[1].rack.modules.clear();
+    rig.app.song.channels[1]
+        .rack
+        .add(SynthKind::MiniSynth.type_id());
+    rig.frame(vec![]);
+    assert!(!has_studio(&rig.out.shapes));
+    assert_eq!(rig.app.theme, global_theme);
 }
