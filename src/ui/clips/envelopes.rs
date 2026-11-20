@@ -3,10 +3,13 @@ use super::*;
 use crate::song::points::{self, Point, PointKey};
 use crate::ui::automation::shape::{self, Shaping};
 
-const COLORS: [Color32; 2] = [
-    Color32::from_rgb(255, 213, 64),
-    Color32::from_rgb(80, 222, 255),
-];
+/// Scan existing events without allocation; untouched clips never prepare/tessellate curves.
+fn used(clip: &Clip, lane: usize) -> bool {
+    let default = base(clip, lane);
+    clip.events.iter().any(|event| matches!(event,
+        Event::Envelope { env_param, value, control: true, .. }
+        if *env_param == lane as i16 && points::raw(*value) != default))
+}
 
 pub(super) fn lanes(area: Rect) -> [Rect; 2] {
     let top = if area.height() >= 64.0 {
@@ -103,6 +106,9 @@ fn xy(tick: f64, value: f32, origin: f64, axis: TimeAxis, r: Rect) -> Pos2 {
 
 /// Bounded by visible pixels, not clip duration or the number of quantized audio events.
 pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, m: &Metrics) {
+    let display = crate::ui::envelope_display::EnvelopeDisplay::current(painter.ctx());
+    if !display.visible || (!used(clip, 0) && !used(clip, 1)) { return; }
+    let colors = [display.color(0), display.color(1)];
     if area.height() < m.u(0.65) {
         return;
     }
@@ -121,28 +127,14 @@ pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, 
         return;
     }
     for (k, lane) in lanes(area).into_iter().enumerate() {
+        if !used(clip, k) { continue; }
         let p = painter.with_clip_rect(visible.intersect(lane));
-        p.rect_filled(
-            lane,
-            0.0,
-            Color32::from_rgba_unmultiplied(
-                8,
-                14,
-                24,
-                if area.height() >= 64.0 { 220 } else { 75 },
-            ),
-        );
-        p.hline(
-            lane.x_range(),
-            lane.top(),
-            Stroke::new(px, COLORS[k].gamma_multiply(0.45)),
-        );
         let values = value_rect(lane, m);
         if k == 1 {
             p.hline(
                 lane.x_range(),
                 values.center().y,
-                Stroke::new(px, COLORS[k].gamma_multiply(0.2)),
+                Stroke::new(px, colors[k].gamma_multiply(0.2)),
             );
         }
         let pts = points::points(clip, PointKey::Envelope(k as i16));
@@ -211,7 +203,7 @@ pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, 
                     values,
                 ));
             }
-            p.add(egui::Shape::line(line, Stroke::new(1.5 * px, COLORS[k])));
+            p.add(egui::Shape::line(line, Stroke::new(1.5 * px, colors[k])));
             for point in pts
                 .iter()
                 .filter(|p| f64::from(p.tick) >= first && f64::from(p.tick) <= last)
@@ -231,31 +223,11 @@ pub(super) fn paint(painter: &Painter, clip: &Clip, area: Rect, axis: TimeAxis, 
                 p.circle_stroke(
                     at,
                     m.u(0.10).min(values.height() * 0.3).max(px * 2.0),
-                    Stroke::new(px, COLORS[k]),
+                    Stroke::new(px, colors[k]),
                 );
             }
         }
-        let label = Rect::from_min_size(
-            pos2(visible.left(), lane.top()),
-            vec2(m.u(1.0), lane.height()),
-        );
-        p.rect_filled(label, 0.0, Color32::from_rgba_unmultiplied(8, 14, 24, 235));
-        p.text(
-            label.center(),
-            Align2::CENTER_CENTER,
-            if k == 0 { "VOL" } else { "PAN" },
-            m.font_id(FontSize::Pt8),
-            COLORS[k],
-        );
-        if k == 1 && visible.width() > m.u(3.0) {
-            p.text(
-                pos2(visible.right() - m.u(0.1), lane.center().y),
-                Align2::RIGHT_CENTER,
-                "↑R · C · ↓L",
-                m.font_id(FontSize::Pt8),
-                COLORS[k].gamma_multiply(0.7),
-            );
-        }
+
     }
 }
 
@@ -296,6 +268,8 @@ impl Editor {
         active
     }
     pub fn status(&self, ui: &egui::Ui, cx: &UiCtx, b: Rect, r: ClipRef, grid: Rect) {
+        let display = crate::ui::envelope_display::EnvelopeDisplay::current(ui.ctx());
+        if !display.visible { return; }
         let a = area(b, cx.m);
         if a.height() < cx.m.u(0.65) {
             return;
@@ -309,14 +283,14 @@ impl Editor {
                 ui.painter_at(grid).rect_stroke(
                     lane,
                     0.0,
-                    Stroke::new(1.0 / cx.m.ppp(), COLORS[k]),
+                    Stroke::new(1.0 / cx.m.ppp(), display.color(k)),
                     StrokeKind::Inside,
                 );
             }
             crate::ui::tooltip::tip(
                 ui,
                 label,
-                "Tap VOL or PAN to arm both clip lanes for editing (tap again to exit). Drag a point; tap empty lane space to add. Hold or right-click a point for curve shape and tension. PAN: top = right, middle = center, bottom = left. Clip header/waveform still move the clip.",
+                "Double-tap a selected audio clip to arm both envelope lanes (double-tap again to exit). Yellow = volume; cyan = pan by default. Drag a point; tap empty lane space to add. Hold or right-click a point for curve shape and tension. PAN: top = right, middle = center, bottom = left. Clip header/waveform still move the clip.",
                 None,
             );
         }
@@ -354,7 +328,7 @@ impl Editor {
                 Id::new("playlist-envelope-shape"),
                 menu.frame,
                 (&mut menu.shaping, own),
-                COLORS[menu.lane],
+                crate::ui::envelope_display::EnvelopeDisplay::current(ui.ctx()).color(menu.lane),
             )
             .close;
             let new = menu.shaping.on(&menu.original, &selection);
@@ -450,6 +424,7 @@ impl Editor {
             self.owned = true;
             return true;
         }
+        if !crate::ui::envelope_display::EnvelopeDisplay::current(ui.ctx()).visible { return false; }
         if cancel || app.covered || !(pressed || secondary) {
             return false;
         }
@@ -480,8 +455,8 @@ impl Editor {
         else {
             return false;
         };
-        let label_left = b.left().max(grid.left());
-        if p.x <= label_left + app.cx.m.u(1.0) {
+        // Double-tap a selected clip to arm point creation without covering its waveform.
+        if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
             self.editing = if self.editing == Some(r) {
                 None
             } else {
@@ -695,6 +670,38 @@ mod clip_envelope_tests {
                 PointKey::Envelope(lane),
             )
         }
+    }
+    #[test]
+    fn clip_envelope_display_only_meaningful_lanes_and_thousands_untouched() {
+        let mut clip = empty_clip();
+        clip.file.sample = Some(Box::default());
+        assert!(!used(&clip, 0) && !used(&clip, 1));
+        let default = base(&clip, 0);
+        points::set_points(&mut clip, PointKey::Envelope(0), vec![Point { tick: 0, value: default, ..Default::default() }]);
+        assert!(!used(&clip, 0));
+        points::set_points(&mut clip, PointKey::Envelope(0), vec![Point { tick: 0, value: 12000, ..Default::default() }]);
+        assert!(used(&clip, 0) && !used(&clip, 1));
+        points::set_points(&mut clip, PointKey::Envelope(1), vec![Point { tick: 0, value: 0, ..Default::default() }]);
+        assert!(used(&clip, 0) && used(&clip, 1));
+        points::set_points(&mut clip, PointKey::Envelope(0), vec![]);
+        assert!(!used(&clip, 0) && used(&clip, 1));
+        let before = clip.clone();
+        let mut off = Offscreen::new();
+        off.frame(vec![], &mut |ui, cx| {
+            let hidden = crate::ui::envelope_display::EnvelopeDisplay { visible: false, ..Default::default() };
+            hidden.publish(ui.ctx());
+            let n = ui.painter().add(egui::Shape::Noop);
+            paint(ui.painter(), &clip, BLOCK, axis(), cx.m);
+            let _ = n;
+        });
+        assert_eq!(clip, before);
+        CURVES.with(|c| c.borrow_mut().clear());
+        let untouched = empty_clip();
+        off.frame(vec![], &mut |ui, cx| {
+            crate::ui::envelope_display::EnvelopeDisplay::default().publish(ui.ctx());
+            for _ in 0..10000 { paint(ui.painter(), &untouched, BLOCK, axis(), cx.m); }
+        });
+        CURVES.with(|c| assert!(c.borrow().is_empty()));
     }
     #[test]
     fn clip_envelope_playlist_create_drag_live_cancel_and_one_undo_transaction() {

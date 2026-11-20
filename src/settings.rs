@@ -184,6 +184,7 @@ pub struct Settings {
     /// Display-only policy, independent of the audio output profile.
     #[serde(rename = "waveformQuality")]
     pub waveform_quality: crate::ui::waveform_quality::WaveformQuality,
+    pub envelope_display: crate::ui::envelope_display::EnvelopeDisplay,
     /// `Enable audio recording latency compensation` (our own key): ON compensates. BanaForge change (#129, #130): the
     /// earlier `reclatency` toggle compensated while OFF or unset; a load moves it here once, keeping whether it
     /// compensated ([`migrate_keys`]). On by default, as the earlier unset key compensated.
@@ -422,6 +423,7 @@ impl Default for Settings {
             background_audio: false,
             sound_mode: DEFAULT_SOUND_MODE,
             waveform_quality: Default::default(),
+            envelope_display: Default::default(),
             latency_compensation: true,
             multitrack_recording: false,
             count_in: true,
@@ -880,6 +882,7 @@ mod tests {
                 .map(|&(id, _)| id)
                 .unwrap_or(d.sound_mode),
             waveform_quality: crate::ui::waveform_quality::WaveformQuality::Balanced,
+            envelope_display: Default::default(),
             latency_compensation: !d.latency_compensation,
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,

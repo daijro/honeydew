@@ -190,6 +190,7 @@ enum Kind {
     ForgetPluginFolders,
     /// `Theme creator`: the label and an `Edit` button, which opens the theme creator ([`SettingsTab::take_creator`]).
     ThemeCreator,
+    EnvelopeColors,
 }
 
 /// What the plugin rows asked the app for ([`SettingsTab::take_plugin_action`]).
@@ -258,7 +259,7 @@ fn platform_row_visible(r: &Row, desktop: bool, web: bool) -> bool {
 
 /// Every row of the SETTINGS tab, in order.
 // The raw buffer slider is desktop-only; mobile has one fewer settings row.
-const ROWS: [Row; 72 + cfg!(desktop) as usize] = {
+const ROWS: [Row; 75 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -307,6 +308,9 @@ const ROWS: [Row; 72 + cfg!(desktop) as usize] = {
         row("Scale is currently limited to", ScaleLimit),
         row("Animation:", Dropdown(Choice::Animation)),
         row("Application:", Header),
+        row("Edit:", Header),
+        row("Show Playlist envelopes", Toggle(|s| &mut s.envelope_display.visible)),
+        row("VOL / PAN colors", EnvelopeColors),
         row("Enable ghost notes", Toggle(|s| &mut s.ghost_notes)),
         row(
             "Show key names on keyboard and piano roll",
@@ -669,6 +673,7 @@ impl SettingsTab {
         }
         ui.set_clip_rect(outer_clip);
         self.popup(ui, cx, settings);
+        crate::ui::envelope_display::panel(ui.ctx(), &mut settings.envelope_display);
     }
 
     /// Draws row `index` in its `slot` of the list (a pitch tall) and applies its edit.
@@ -1056,6 +1061,10 @@ impl SettingsTab {
             Kind::SignIn => {
                 label(ui, before(button_rect), FontSize::Pt10);
                 light_button(ui, button_rect, "Sign In", false);
+            }
+            Kind::EnvelopeColors => {
+                label(ui, before(button_rect), FontSize::Pt10);
+                if light_button(ui, button_rect, "Colors", true) { crate::ui::envelope_display::open(ui.ctx()); }
             }
             Kind::ThemeCreator => {
                 label(ui, before(button_rect), FontSize::Pt10);
@@ -1510,6 +1519,9 @@ mod tests {
                 "Scale is currently limited to",
                 "Animation:",
                 "Application:",
+                "Edit:",
+                "Show Playlist envelopes",
+                "VOL / PAN colors",
                 "Enable ghost notes",
                 "Show key names on keyboard and piano roll",
                 "Set middle C to C4",

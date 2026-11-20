@@ -50,7 +50,7 @@ jobs:
           result=0
           cargo test --lib --no-run >> /tmp/controls.log 2>&1 || result=$?
           if [ "$result" -eq 0 ]; then
-          for filter in clip_envelope ui::audio_editor::tests song::points flm:: audio_link::edits audio_engine::merge audio_engine::audio_clips ui::main_screen::tests ui::clips::tests render::tests; do
+          for filter in clip_envelope ui::envelope_display ui::settings_tab::tests::rows_follow settings::tests:: ui::audio_editor::tests song::points flm:: audio_link::edits audio_engine::merge audio_engine::audio_clips ui::main_screen::tests ui::clips::tests render::tests; do
             cargo test --lib "$filter" >> /tmp/controls.log 2>&1 || result=$?
           done
           fi
