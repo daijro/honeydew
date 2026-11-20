@@ -266,7 +266,7 @@ mod clip_envelope_tests {
             let r=self.selected.unwrap();let mut edit=None;
             let song=&mut self.song;let editor=&mut self.editor;
             self.off.frame(events,&mut |ui,cx| {
-                let mut app=AppCtx {cx:*cx,regions:Regions::new(ui.max_rect(),cx.m),song,audio:&mut audio,selected:&mut selected,snapshot:None,playing:true,armed:false,previewing:false,middle_c_is_c4:false,settings:&mut settings,ghost_notes:true,files:&mut files,edit:None,answer:None,covered:false,playhead:None,seek:None,midi_devices:&[],midi_rescan:false};
+                let mut app=AppCtx {cx:*cx,regions:Regions::new(ui.max_rect(),cx.m),song:&mut *song,audio:&mut audio,selected:&mut selected,snapshot:None,playing:true,armed:false,previewing:false,middle_c_is_c4:false,settings:&mut settings,ghost_notes:true,files:&mut files,edit:None,answer:None,covered:false,playhead:None,seek:None,midi_devices:&[],midi_rescan:false};
                 let grid = ui.max_rect();
                 editor.show(ui,&mut app,&[(r,BLOCK)],Some(r),grid,axis(),None);
                 edit=app.edit;
