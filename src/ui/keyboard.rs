@@ -1778,7 +1778,7 @@ mod tests {
             enabled: false,
             ..PLAY
         };
-        let shapes = drawn(input, &Settings { key_names: true, ..Settings::default() }, vec![]);
+        let shapes = drawn(input, &Settings::default(), vec![]);
         assert_eq!(top_fill(&shapes, pos2(32.0, 537.0)), Some(white));
         assert!(texts(&shapes).is_empty());
     }
@@ -1940,7 +1940,7 @@ mod tests {
             lock: Some((1, MAJOR)),
             ..PLAY
         };
-        let shapes = drawn(input, &Settings::default(), vec![]);
+        let shapes = drawn(input, &Settings { key_names: true, ..Settings::default() }, vec![]);
         let first = texts(&shapes).into_iter().next().map(|t| (t.0, t.1));
         let wkd = colors.white_key_disabled.to_color32();
         assert_eq!(first, Some(("C#4".into(), wkd)));

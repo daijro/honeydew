@@ -520,6 +520,318 @@ dependencies = [
 ]
 
 [[package]]
+name = "banaforge"
+version = "0.5.19"
+dependencies = [
+ "android-activity",
+ "banaforge-audio",
+ "banana-3x-osc",
+ "banana-balance",
+ "banana-chorus",
+ "banana-delay",
+ "banana-drum-sampler",
+ "banana-fast-distortion",
+ "banana-filter",
+ "banana-flanger",
+ "banana-formula-controller",
+ "banana-parametric-eq-2",
+ "banana-peak-controller",
+ "banana-phaser",
+ "banana-sampler",
+ "banana-slicer",
+ "banana-soft-clipper",
+ "banana-stereo-enhancer",
+ "banana-stereo-shaper",
+ "banana-transient-processor",
+ "banana-vocoder",
+ "block2 0.5.1",
+ "citrus",
+ "crc32fast",
+ "eframe",
+ "encoding_rs",
+ "getrandom 0.3.4",
+ "jni 0.21.1",
+ "libc",
+ "midir",
+ "miniz_oxide 0.9.1",
+ "objc2 0.5.3",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.2.2",
+ "objc2-foundation 0.3.2",
+ "objc2-ui-kit",
+ "os-clap",
+ "os-engine",
+ "os-host",
+ "os-plugkit",
+ "os-theme",
+ "os-ui",
+ "os-vst2",
+ "os-vst3",
+ "png 0.18.1",
+ "pollster",
+ "press",
+ "pulp-filter",
+ "rayon",
+ "rfd",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tesla",
+ "unicode-normalization",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "webbrowser",
+ "wgpu",
+ "windows-sys 0.61.2",
+ "x11rb",
+]
+
+[[package]]
+name = "banaforge-audio"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "crossbeam-channel",
+ "oboe",
+ "ogg",
+ "os-engine",
+ "rusty_mp3",
+ "symphonia 0.5.5",
+ "zvidlib-vorbis-encoder",
+]
+
+[[package]]
+name = "banana-3x-osc"
+version = "0.0.1"
+dependencies = [
+ "host-rfd",
+ "nih_plug",
+ "os-engine",
+ "os-hostlink",
+ "os-model",
+ "os-plugkit",
+ "os-theme",
+ "os-ui",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "banana-balance"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-chorus"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-delay"
+version = "0.0.1"
+dependencies = [
+ "nih_plug",
+ "os-engine",
+ "os-hostlink",
+ "os-plugkit",
+ "os-theme",
+ "os-ui",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "banana-drum-sampler"
+version = "0.0.1"
+dependencies = [
+ "banana-sampler",
+ "host-rfd",
+ "nih_plug",
+ "os-dsp",
+ "os-engine",
+ "os-hostlink",
+ "os-plugkit",
+ "os-theme",
+ "os-ui",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "banana-fast-distortion"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-filter"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-flanger"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-formula-controller"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-engine",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-parametric-eq-2"
+version = "0.0.1"
+dependencies = [
+ "nih_plug",
+ "os-engine",
+ "os-hostlink",
+ "os-plugkit",
+ "os-theme",
+ "os-ui",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "banana-peak-controller"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-engine",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-phaser"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-sampler"
+version = "0.0.1"
+dependencies = [
+ "host-rfd",
+ "nih_plug",
+ "os-dsp",
+ "os-engine",
+ "os-hostlink",
+ "os-model",
+ "os-paths",
+ "os-plugkit",
+ "os-theme",
+ "os-ui",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "banana-slicer"
+version = "0.0.1"
+dependencies = [
+ "host-rfd",
+ "nih_plug",
+ "os-dsp",
+ "os-engine",
+ "os-hostlink",
+ "os-plugkit",
+ "os-theme",
+ "os-ui",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "banana-small-fx"
+version = "0.0.1"
+dependencies = [
+ "nih_plug",
+ "os-dsp",
+ "os-engine",
+ "os-hostlink",
+ "os-plugkit",
+ "os-theme",
+ "os-ui",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "banana-soft-clipper"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-stereo-enhancer"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-stereo-shaper"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-transient-processor"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-plugkit",
+]
+
+[[package]]
+name = "banana-vocoder"
+version = "0.0.1"
+dependencies = [
+ "banana-small-fx",
+ "nih_plug",
+ "os-engine",
+ "os-plugkit",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1962,88 +2274,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
-name = "banaforge"
-version = "0.5.19"
-dependencies = [
- "android-activity",
- "block2 0.5.1",
- "citrus",
- "crc32fast",
- "eframe",
- "encoding_rs",
- "getrandom 0.3.4",
- "banaforge-audio",
- "jni 0.21.1",
- "banana-3x-osc",
- "banana-balance",
- "banana-chorus",
- "banana-delay",
- "banana-drum-sampler",
- "banana-fast-distortion",
- "banana-filter",
- "banana-flanger",
- "banana-formula-controller",
- "banana-parametric-eq-2",
- "banana-peak-controller",
- "banana-phaser",
- "banana-sampler",
- "banana-slicer",
- "banana-soft-clipper",
- "banana-stereo-enhancer",
- "banana-stereo-shaper",
- "banana-transient-processor",
- "banana-vocoder",
- "libc",
- "midir",
- "miniz_oxide 0.9.1",
- "objc2 0.5.3",
- "objc2 0.6.5",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.2.2",
- "objc2-foundation 0.3.2",
- "objc2-ui-kit",
- "os-clap",
- "os-engine",
- "os-host",
- "os-plugkit",
- "os-theme",
- "os-ui",
- "os-vst2",
- "os-vst3",
- "png 0.18.1",
- "pollster",
- "press",
- "pulp-filter",
- "rayon",
- "rfd",
- "serde",
- "serde_json",
- "sha2",
- "tesla",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "unicode-normalization",
- "web-sys",
- "webbrowser",
- "wgpu",
- "windows-sys 0.61.2",
- "x11rb",
-]
-
-[[package]]
-name = "banaforge-audio"
-version = "0.1.0"
-dependencies = [
- "cpal",
- "crossbeam-channel",
- "ogg",
- "os-engine",
- "rusty_mp3",
- "symphonia 0.5.5",
- "zvidlib-vorbis-encoder",
-]
-
-[[package]]
 name = "host-rfd"
 version = "0.0.1"
 dependencies = [
@@ -2339,235 +2569,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
-name = "banana-3x-osc"
-version = "0.0.1"
-dependencies = [
- "host-rfd",
- "nih_plug",
- "os-engine",
- "os-hostlink",
- "os-model",
- "os-plugkit",
- "os-theme",
- "os-ui",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "banana-balance"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-chorus"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-delay"
-version = "0.0.1"
-dependencies = [
- "nih_plug",
- "os-engine",
- "os-hostlink",
- "os-plugkit",
- "os-theme",
- "os-ui",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "banana-drum-sampler"
-version = "0.0.1"
-dependencies = [
- "host-rfd",
- "banana-sampler",
- "nih_plug",
- "os-dsp",
- "os-engine",
- "os-hostlink",
- "os-plugkit",
- "os-theme",
- "os-ui",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "banana-fast-distortion"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-filter"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-flanger"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-formula-controller"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-engine",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-parametric-eq-2"
-version = "0.0.1"
-dependencies = [
- "nih_plug",
- "os-engine",
- "os-hostlink",
- "os-plugkit",
- "os-theme",
- "os-ui",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "banana-peak-controller"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-engine",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-phaser"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-sampler"
-version = "0.0.1"
-dependencies = [
- "host-rfd",
- "nih_plug",
- "os-dsp",
- "os-engine",
- "os-hostlink",
- "os-model",
- "os-paths",
- "os-plugkit",
- "os-theme",
- "os-ui",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "banana-slicer"
-version = "0.0.1"
-dependencies = [
- "host-rfd",
- "nih_plug",
- "os-dsp",
- "os-engine",
- "os-hostlink",
- "os-plugkit",
- "os-theme",
- "os-ui",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "banana-small-fx"
-version = "0.0.1"
-dependencies = [
- "nih_plug",
- "os-dsp",
- "os-engine",
- "os-hostlink",
- "os-plugkit",
- "os-theme",
- "os-ui",
- "serde_json",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "banana-soft-clipper"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-stereo-enhancer"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-stereo-shaper"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-transient-processor"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-plugkit",
-]
-
-[[package]]
-name = "banana-vocoder"
-version = "0.0.1"
-dependencies = [
- "banana-small-fx",
- "nih_plug",
- "os-engine",
- "os-plugkit",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2737,7 +2738,7 @@ dependencies = [
  "parking_lot",
  "wasm-bindgen",
  "web-sys",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -3326,6 +3327,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "oboe"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8b61bebd49e5d43f5f8cc7ee2891c16e0f41ec7954d36bcb6c14c5e0de867fb"
+dependencies = [
+ "num-derive",
+ "num-traits",
+ "oboe-sys",
+]
+
+[[package]]
+name = "oboe-sys"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c8bb09a4a2b1d668170cfe0a7d5bc103f8999fb316c98099b6a9939c9f2e79d"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -4752,6 +4773,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinyvec"
+version = "1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfa5fdc3bce6191a1dbc8c02d5c8bffcf557bafa17c124c5264a458f1b0613fa"
+dependencies = [
+ "tinyvec_macros",
+]
+
+[[package]]
+name = "tinyvec_macros"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
 name = "tokio"
 version = "1.53.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4862,6 +4898,15 @@ name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5033c97c4262335cded6d6fc3e5c18ab755e1a3dc96376350f3d8e9f009ad956"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-segmentation"
@@ -6331,27 +6376,3 @@ checksum = "a17c521504be43d9123b0da8a6c028e2078900a44715fc673f27e26f0c95608c"
 dependencies = [
  "zvidlib-core",
 ]
-
-[[package]]
-name = "unicode-normalization"
-version = "0.1.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5033c97c4262335cded6d6fc3e5c18ab755e1a3dc96376350f3d8e9f009ad956"
-dependencies = [
- "tinyvec",
-]
-
-[[package]]
-name = "tinyvec"
-version = "1.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa5fdc3bce6191a1dbc8c02d5c8bffcf557bafa17c124c5264a458f1b0613fa"
-dependencies = [
- "tinyvec_macros",
-]
-
-[[package]]
-name = "tinyvec_macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"

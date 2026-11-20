@@ -39,8 +39,8 @@ jobs:
           [ "$rc" -eq 0 ] || exit "$rc"
           git diff > /tmp/prepared.patch
           python3 - <<'PY'
-          import base64, pathlib
-          s=base64.b64encode(pathlib.Path('/tmp/prepared.patch').read_bytes()).decode()
+          import base64, pathlib, zlib
+          s=base64.b64encode(zlib.compress(pathlib.Path('/tmp/prepared.patch').read_bytes(), 9)).decode()
           for i in range(0,len(s),4000):
               print(f'::notice title=prepared-patch-{i:08}::{s[i:i+4000]}')
           PY
