@@ -66,6 +66,8 @@ pub(super) fn open<R: AudioRenderer>(mode: BufferMode, rate: u32, state: Callbac
         .set_sharing_mode(SharingMode::Shared)
         .set_sample_rate(rate as i32)
         .set_format_conversion_allowed(true)
+        // Preserve the project rate even when a legacy route needs hardware-rate conversion.
+        .set_sample_rate_conversion_quality(oboe::SampleRateConversionQuality::Best)
         .set_format::<f32>()
         .set_channel_count::<Stereo>();
     if target > 0 {

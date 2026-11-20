@@ -745,7 +745,10 @@ impl<R: AudioRenderer> AudioOutput<R> {
         #[cfg(target_os = "android")]
         {
             output.android_stream = Some(android_output::open(mode, sample_rate, state)
-                .map_err(StartError::Android)?);
+                .map_err(|err| {
+                    android_output::diagnostic(format!("Audio profile {mode:?} failed: {err}; playback unavailable, project unchanged"));
+                    StartError::Android(err)
+                })?);
             return Ok(output);
         }
         #[cfg(not(target_os = "android"))]
