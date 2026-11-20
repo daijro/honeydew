@@ -15,7 +15,7 @@ for fmt in ('wav', 'flac', 'mp3', 'ogg'):
             log = (root / f'{fmt}-{mode}-{repeat}.log').read_text()
             bench = next(line for line in log.splitlines() if line.startswith('BENCH '))
             row = dict(re.findall(r'(\w+)=([^ ]+)', bench))
-            profile = next(line for line in log.splitlines() if line.startswith('export-profile '))
+            profile = next(line.split('export-profile ', 1)[1] for line in log.splitlines() if 'export-profile ' in line)
             row.update(dict(re.findall(r'(\w+)=([^ ]+)', profile)))
             resource = (root / f'{fmt}-{mode}-{repeat}.resources').read_text()
             for key, pattern in {
