@@ -4929,11 +4929,11 @@ mod tests {
         // Defaults: middle C (MIDI 60) is C5, no key names.
         let mut rig = Rig::with_synth();
         let texts = rig.texts();
-        assert!(has(&texts, "C4") && has(&texts, "C5"), "{texts:?}");
+        assert!(!has(&texts, "C4") && !has(&texts, "C5"), "{texts:?}");
         assert!(!has(&texts, "C3") && !has(&texts, "D"));
         rig.app.settings.middle_c_is_c4 = true;
         let texts = rig.texts();
-        assert!(has(&texts, "C3") && has(&texts, "C4"), "{texts:?}");
+        assert!(!has(&texts, "C3") && !has(&texts, "C4"), "{texts:?}");
         rig.app.settings.key_names = true;
         let texts = rig.texts();
         for name in ["C3", "D", "E", "F", "G", "A", "B"] {
@@ -4946,7 +4946,7 @@ mod tests {
         assert!(!has(&texts, "C"), "{texts:?}");
         rig.app.settings.key_names = false;
         let texts = rig.texts();
-        assert!(has(&texts, "C3") && !has(&texts, "D"), "{texts:?}");
+        assert!(!has(&texts, "C3") && !has(&texts, "D"), "{texts:?}");
     }
 
     #[test]

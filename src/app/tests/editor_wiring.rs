@@ -1467,10 +1467,10 @@ fn the_rolls_key_labels_follow_the_middle_c_and_key_names_settings() {
     rig.slide_split();
     // The key column, left of the grid and below the ruler: the roll opens on middle C.
     let keys = Rect::from_min_max(pos2(0.0, EDITOR_TOP + RULER), pos2(1.5 * U, PANEL_TOP));
-    assert_eq!(rig.texts_in(keys), ["C5"]);
+    assert!(rig.texts_in(keys).is_empty());
     rig.app.settings.middle_c_is_c4 = true;
     rig.frame(vec![]);
-    assert_eq!(rig.texts_in(keys), ["C4"]);
+    assert!(rig.texts_in(keys).is_empty());
     // `Show key names on keyboard and piano roll` (#77): the other keys' names too, with no octave, and under
     // Chromatic none on a black key, as on the keyboard.
     rig.app.settings.key_names = true;
@@ -1480,6 +1480,9 @@ fn the_rolls_key_labels_follow_the_middle_c_and_key_names_settings() {
         assert!(names.contains(&name.to_owned()), "{name}: {names:?}");
     }
     assert!(!names.iter().any(|n| n.contains('#')), "{names:?}");
+    rig.app.settings.key_names = false;
+    rig.frame(vec![]);
+    assert!(rig.texts_in(keys).is_empty());
 }
 
 #[test]

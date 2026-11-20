@@ -1000,6 +1000,19 @@ mod tests {
     }
 
     #[test]
+    fn key_names_and_every_sound_mode_survive_restart() {
+        for sound_mode in 0..=3 {
+            for key_names in [false, true] {
+                let mut mem = Mem::default();
+                let s = Settings { sound_mode, key_names, ..Settings::default() };
+                s.save(&mut mem);
+                let restored = Settings::load(&mem);
+                assert_eq!((restored.sound_mode, restored.key_names), (sound_mode, key_names));
+            }
+        }
+    }
+
+    #[test]
     fn settings_survive_a_save_and_load() {
         let mut mem = Mem::default();
         let s = changed();

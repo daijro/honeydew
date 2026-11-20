@@ -2342,8 +2342,25 @@ mod component {
     }
 
     #[test]
+    fn key_names_off_hides_all_labels_after_scrolling_and_reopening() {
+        let mut rig = Rig::new(vec![]);
+        assert!(key_labels(&rig).is_empty());
+        rig.opts.key_names = true;
+        rig.frame(vec![]);
+        assert!(!key_labels(&rig).is_empty());
+        rig.opts.key_names = false;
+        rows_at(&mut rig, 1.0);
+        assert!(key_labels(&rig).is_empty());
+        rig.roll = PianoRoll::for_channel(&rig.song, 1);
+        rig.frame(vec![]);
+        assert!(key_labels(&rig).is_empty());
+    }
+
+    #[test]
     fn a_c_label_starts_just_right_of_the_bar_centred_on_its_row_in_black_key_disabled() {
-        let rig = Rig::new(vec![]);
+        let mut rig = Rig::new(vec![]);
+        rig.opts.key_names = true;
+        rig.frame(vec![]);
         let grey = theme_by_id(0).colors.black_key_disabled.to_color32();
         let labels = key_labels(&rig);
         let (_, color, rect, size) = (labels.iter())
@@ -2362,6 +2379,7 @@ mod component {
         let mut rig = Rig::new(vec![]);
         let theme = theme_by_id(0);
         let ink = crate::theme::channel_color(rig.song.channels[1].hue, &theme).to_color32();
+        rig.opts.key_names = true;
         let size = |rig: &Rig| key_labels(rig).iter().find(|l| l.0 == "C6").map(|l| l.3);
         // 2 U rows: 0.95 × 64 px is over 12 pt (24 px).
         rows_at(&mut rig, 2.0);

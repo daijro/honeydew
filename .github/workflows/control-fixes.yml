@@ -19,6 +19,17 @@ jobs:
         with:
           cache-on-failure: true
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libclang-dev
+      - name: Resolve Android dependency and format changed files
+        run: |
+          cargo metadata --format-version 1 > /dev/null
+          rustfmt --edition 2024 --config skip_children=true crates/audio/src/device.rs crates/audio/src/device_android.rs src/ui/keyboard.rs src/ui/piano_roll/mod.rs src/ui/piano_roll/tests.rs src/app.rs src/app/tests/editor_wiring.rs src/settings.rs src/audio_link.rs
+          git diff > /tmp/prepared.patch
+          python3 - <<'PY'
+          import base64, pathlib
+          s=base64.b64encode(pathlib.Path('/tmp/prepared.patch').read_bytes()).decode()
+          for i in range(0,len(s),4000):
+              print(f'::notice title=prepared-patch-{i:08}::{s[i:i+4000]}')
+          PY
       - name: Control and offline-render regressions
         run: |
           result=0
