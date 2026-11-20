@@ -2310,6 +2310,7 @@ impl BanaForgeApp {
         crate::ui::anim::set_mode(ctx, self.settings.animations, self.settings.inertia);
         self.settings.waveform_quality.publish(ctx);
         self.settings.envelope_display.publish(ctx);
+        crate::ui::help::publish_icon_visibility(ctx, self.settings.show_information_buttons);
         // As the frame starts; the settings tab edits `self.settings` meanwhile.
         let shown = self.settings.clone();
         // The roll's rows tint for the live notes and the engine's keys alike: each channel's, for the roll to take its

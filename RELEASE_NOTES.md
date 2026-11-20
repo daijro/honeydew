@@ -1,3 +1,8 @@
+BanaForge 0.5.25 — optional contextual information icons
+
+- Settings → User interface → Show information buttons defaults ON. Turn it OFF to hide contextual icons and their touch targets throughout Playlist, Piano Roll, Mixer, Audio Editor and Settings; turn it ON to restore their original positions.
+- The preference persists independently of project files. Help content and already-open explanations are preserved. Audio processing, envelope data, other controls and their positions are unchanged.
+
 BanaForge 0.5.24 — PAN runtime restoration, stereo waveform prediction, contextual help
 
 - Reasserts each active audio clip's compiled VOL/PAN/SPEED at render-block boundaries; seek/relaunch restores base settings where no previous envelope step applies. Live envelope handover retains sample phase and sounding voices. PAN remains linear stereo balance: it attenuates the opposite channel, not folds its content into the other side.

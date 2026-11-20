@@ -259,7 +259,7 @@ fn platform_row_visible(r: &Row, desktop: bool, web: bool) -> bool {
 
 /// Every row of the SETTINGS tab, in order.
 // The raw buffer slider is desktop-only; mobile has one fewer settings row.
-const ROWS: [Row; 75 + cfg!(desktop) as usize] = {
+const ROWS: [Row; 76 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -307,6 +307,7 @@ const ROWS: [Row; 75 + cfg!(desktop) as usize] = {
         row("Scaling:", Scaling),
         row("Scale is currently limited to", ScaleLimit),
         row("Animation:", Dropdown(Choice::Animation)),
+        row("Show information buttons", Toggle(|s| &mut s.show_information_buttons)),
         row("Application:", Header),
         row("Edit:", Header),
         row(
@@ -675,6 +676,7 @@ impl SettingsTab {
             ui.painter().rect_filled(thumb, 0.0, ink);
         }
         ui.set_clip_rect(outer_clip);
+        crate::ui::help::publish_icon_visibility(ui.ctx(), settings.show_information_buttons);
         self.popup(ui, cx, settings);
         crate::ui::envelope_display::panel(ui.ctx(), &mut settings.envelope_display);
     }
@@ -1530,6 +1532,7 @@ mod tests {
                 "Scaling:",
                 "Scale is currently limited to",
                 "Animation:",
+                "Show information buttons",
                 "Application:",
                 "Edit:",
                 "Show Playlist envelopes",

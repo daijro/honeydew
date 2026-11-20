@@ -75,10 +75,20 @@ pub fn setting(label: &str) -> Option<Topic> {
         _ => None,
     }
 }
+/// Per-context display preference. Unset contexts default ON for existing users/tests.
+/// Does not clear open explanations or alter any audio/project state.
+pub fn publish_icon_visibility(ctx: &egui::Context, visible: bool) {
+    ctx.data_mut(|d| d.insert_temp(Id::new("contextual-help-icons-visible"), visible));
+}
+fn icons_visible(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(Id::new("contextual-help-icons-visible")))
+        .unwrap_or(true)
+}
+
 /// 30-point touch target around a smaller circular icon. Separate foreground area prevents parent drag handlers taking it.
 pub fn button(ctx: &egui::Context, at: egui::Pos2, topic: Topic) {
     let key = Id::new("contextual-help-open");
-    let response = egui::Area::new(Id::new(("help-icon", topic.title())))
+    let response = icons_visible(ctx).then(|| egui::Area::new(Id::new(("help-icon", topic.title())))
         .order(egui::Order::Foreground)
         .fixed_pos(at)
         .show(ctx, |ui| {
@@ -100,8 +110,8 @@ pub fn button(ctx: &egui::Context, at: egui::Pos2, topic: Topic) {
             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("About {}", topic.title())));
             response.on_hover_text(format!("About {}", topic.title()))
         })
-        .inner;
-    if response.clicked() {
+        .inner);
+    if response.as_ref().is_some_and(|r| r.clicked()) {
         ctx.data_mut(|d| d.insert_temp(key, topic));
     }
     let active = ctx.data(|d| d.get_temp::<Topic>(key));
@@ -129,7 +139,7 @@ pub fn button(ctx: &egui::Context, at: egui::Pos2, topic: Topic) {
             i.pointer.any_pressed()
                 && i.pointer
                     .interact_pos()
-                    .is_some_and(|p| !panel.response.rect.contains(p) && !response.rect.contains(p))
+                    .is_some_and(|p| !panel.response.rect.contains(p) && !response.as_ref().is_some_and(|r| r.rect.contains(p)))
         }) {
             open = false;
         }
@@ -150,11 +160,11 @@ pub fn corner(ctx: &egui::Context, area: Rect, topic: Topic) -> bool {
     button(ctx, at, topic);
     was_open
         || ctx.data(|d| d.get_temp::<Topic>(key)).is_some()
-        || ctx.input(|i| {
+        || (icons_visible(ctx) && ctx.input(|i| {
             i.pointer
                 .interact_pos()
                 .is_some_and(|p| Rect::from_min_size(at, vec2(30.0, 30.0)).contains(p))
-        })
+        }))
 }
 
 #[cfg(test)]
@@ -183,6 +193,29 @@ mod tests {
             None
         );
     }
+    #[test]
+    fn hidden_information_icons_have_no_hit_target_and_help_can_be_restored() {
+        let mut off = crate::ui::offscreen::Offscreen::new();
+        assert!(icons_visible(&off.ctx));
+        publish_icon_visibility(&off.ctx, false);
+        let mut draw = |ui: &mut egui::Ui, _: &crate::ui::UiCtx| {
+            assert!(!corner(ui.ctx(), Rect::from_min_size(pos2(0.0, 0.0), vec2(42.0, 80.0)), Topic::Envelopes));
+        };
+        off.frame(vec![], &mut draw);
+        off.click(pos2(25.0, 17.0), &mut draw);
+        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), None);
+        publish_icon_visibility(&off.ctx, true);
+        let mut draw = |ui: &mut egui::Ui, _: &crate::ui::UiCtx| button(ui.ctx(), pos2(10.0, 2.0), Topic::Envelopes);
+        off.frame(vec![], &mut draw);
+        off.click(pos2(25.0, 17.0), &mut draw);
+        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), Some(Topic::Envelopes));
+        publish_icon_visibility(&off.ctx, false);
+        off.frame(vec![], &mut draw);
+        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), Some(Topic::Envelopes));
+        off.frame(crate::ui::offscreen::key_tap(egui::Key::Escape, Default::default()), &mut draw);
+        assert_eq!(off.ctx.data(|d| d.get_temp::<Topic>(Id::new("contextual-help-open"))), None);
+    }
+
     #[test]
     fn contextual_help_copy_describes_stereo_limit_and_visual_only_switch() {
         assert!(Topic::AudioEditor.text().contains("attenuates"));

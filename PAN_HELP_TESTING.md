@@ -26,3 +26,7 @@ A reusable small circular i icon with a 30-point touch target opens compact scro
 - UI: quantized stereo preview gain/cache, help tap-to-open and Escape close, existing Playlist/Audio Editor gestures/sync/undo tests, project serialization, output-device regressions.
 - Build: Android ARM64 release APK with independent package metadata/content verification.
 - Physical acceptance still required: stereo headphones, phone speaker and Bluetooth routes; OS mono-audio OFF/ON; clean and effect-heavy racks; live point/shape drags during playback; short/landscape screen help positioning, outside dismissal and scroll; no accidental underlying edits; responsiveness on a large project. Synthetic tests cannot certify phone latency, FPS or absence of glitches.
+
+## Optional information icons
+
+Settings → User interface → Show information buttons defaults ON, including when older preferences lack the key. OFF suppresses every shared contextual icon and its touch target, including Settings icons, without clearing help content or dismissing an explanation already open. ON restores the same icon positions. The `showInformationButtons` application preference persists independently of projects and audio state. Added regression tests cover default/invalid preference fallback, saved ON/OFF round trips, hidden hit targets, re-enabling icons, and dismissing an already-open explanation while icons are hidden. These additional Rust tests must run in the next build environment; no local Rust toolchain is installed in this workspace.

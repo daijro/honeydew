@@ -185,6 +185,9 @@ pub struct Settings {
     #[serde(rename = "waveformQuality")]
     pub waveform_quality: crate::ui::waveform_quality::WaveformQuality,
     pub envelope_display: crate::ui::envelope_display::EnvelopeDisplay,
+    /// Visibility of contextual information icons only; help content remains available.
+    #[serde(rename = "showInformationButtons")]
+    pub show_information_buttons: bool,
     /// `Enable audio recording latency compensation` (our own key): ON compensates. BanaForge change (#129, #130): the
     /// earlier `reclatency` toggle compensated while OFF or unset; a load moves it here once, keeping whether it
     /// compensated ([`migrate_keys`]). On by default, as the earlier unset key compensated.
@@ -424,6 +427,7 @@ impl Default for Settings {
             sound_mode: DEFAULT_SOUND_MODE,
             waveform_quality: Default::default(),
             envelope_display: Default::default(),
+            show_information_buttons: true,
             latency_compensation: true,
             multitrack_recording: false,
             count_in: true,
@@ -883,6 +887,7 @@ mod tests {
                 .unwrap_or(d.sound_mode),
             waveform_quality: crate::ui::waveform_quality::WaveformQuality::Balanced,
             envelope_display: crate::ui::envelope_display::EnvelopeDisplay { visible: false, colors: [[20, 80, 255], [255, 255, 255]] },
+            show_information_buttons: false,
             latency_compensation: !d.latency_compensation,
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
@@ -1055,6 +1060,22 @@ mod tests {
             Settings::load(&stored(r#"{"playlistFollowPosition":65000}"#)).playlist_follow_position,
             950
         );
+    }
+
+    #[test]
+    fn information_buttons_default_on_and_persist_without_changing_other_preferences() {
+        assert!(Settings::load(&stored("{}")).show_information_buttons);
+        assert!(Settings::load(&stored(r#"{"showInformationButtons":"invalid"}"#)).show_information_buttons);
+        for visible in [false, true] {
+            let mut s = Settings::default();
+            s.show_information_buttons = visible;
+            let mut mem = Mem::default();
+            s.save(&mut mem);
+            let mut loaded = Settings::load(&mem);
+            assert_eq!(loaded.show_information_buttons, visible);
+            loaded.show_information_buttons = true;
+            assert_eq!(loaded, Settings::default());
+        }
     }
 
     #[test]
@@ -1285,6 +1306,7 @@ mod tests {
                 "screenOrientation",
                 "showHardwareMeters",
                 "showHiddenTracks",
+                "showInformationButtons",
                 "showKeyNames",
                 "showRangeIndexLabels",
                 "showTwoRows",
