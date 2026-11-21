@@ -78,14 +78,29 @@ impl Sf2z {
         }
         let patch = i32::from_le_bytes(b[0..4].try_into().ok()?);
         let count = u32::from_le_bytes(b[4..8].try_into().ok()?) as usize;
-        let stride = 4 + 4 * ZONE_FIELDS;
+        let stride = 10 + 4 * ZONE_FIELDS;
+        let old_stride = 4 + 4 * 16;
+        if count > 0 && b.len() == 8 + count * old_stride {
+            let mut zones = Vec::with_capacity(count);
+            for entry in b[8..].chunks_exact(old_stride).take(count) {
+                let zone = u16::from_le_bytes([entry[0], entry[1]]);
+                let mask = u64::from(u16::from_le_bytes([entry[2], entry[3]]));
+                let mut values = [0.0; ZONE_FIELDS];
+                for (i, slot) in values[..16].iter_mut().enumerate() {
+                    let at = 4 + 4 * i;
+                    *slot = f32::from_le_bytes(entry[at..at + 4].try_into().ok()?);
+                }
+                zones.push(ZoneOverride { zone, mask, values });
+            }
+            return Some(Self { patch, zones });
+        }
         let mut zones = Vec::with_capacity(count.min((b.len() - 8) / stride));
         for entry in b[8..].chunks_exact(stride).take(count) {
             let zone = u16::from_le_bytes([entry[0], entry[1]]);
-            let mask = u16::from_le_bytes([entry[2], entry[3]]);
+            let mask = u64::from_le_bytes(entry[2..10].try_into().ok()?);
             let mut values = [0.0; ZONE_FIELDS];
             for (i, slot) in values.iter_mut().enumerate() {
-                let at = 4 + 4 * i;
+                let at = 10 + 4 * i;
                 *slot = f32::from_le_bytes(entry[at..at + 4].try_into().ok()?);
             }
             zones.push(ZoneOverride { zone, mask, values });
@@ -94,7 +109,7 @@ impl Sf2z {
     }
 
     pub fn write(&self, cstm: Option<&[u8]>) -> Result<Vec<u8>, FlmError> {
-        let mut buf = Vec::with_capacity(8 + self.zones.len() * (4 + 4 * ZONE_FIELDS));
+        let mut buf = Vec::with_capacity(8 + self.zones.len() * (10 + 4 * ZONE_FIELDS));
         buf.extend_from_slice(&self.patch.to_le_bytes());
         buf.extend_from_slice(&(self.zones.len() as u32).to_le_bytes());
         for ov in &self.zones {

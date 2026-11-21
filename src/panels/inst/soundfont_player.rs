@@ -19,7 +19,11 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use eframe::egui::{Id, Rect, Sense, Ui};
+use eframe::egui::{
+    Color32, Id, Rect, ScrollArea, Sense, Ui, UiBuilder, pos2,
+    scroll_area::ScrollBarVisibility, vec2,
+};
+use crate::ui::UiCtx;
 
 use crate::flm::chunk::ContentPath;
 use crate::flm::sf2d::Sf2d;
@@ -50,6 +54,12 @@ const ZONE_PAGE: u32 = 7004;
 const ZONE_RESET: u32 = ZONE_RESET_KEY; // 7005
 const HAS_ZONES: &str = "sf2_zones";
 const ZONE_SEEDED: &str = "sf2_zone_seeded";
+
+const ZONE_PIANO: u32 = 7007;
+const ZONE_KEY_LO: &str = "sf2_key_lo";
+const ZONE_KEY_HI: &str = "sf2_key_hi";
+const ZONE_VEL_LO: &str = "sf2_vel_lo";
+const ZONE_VEL_HI: &str = "sf2_vel_hi";
 
 /// Honeydew change (GitHub #135): the card wiring's flag for a portrait phone-size window (`ui::rack`, whose
 /// card is taller there): the ten controls under the patch row take two rows of five, so their labels and values fit.
@@ -132,12 +142,12 @@ pub fn edit_zones(
             }
             out.sent.push((id, v));
             if let Some(ov) = sf2z.zones.iter_mut().find(|o| usize::from(o.zone) == sel) {
-                ov.mask |= 1 << f;
+                ov.mask |= 1u64 << f;
                 ov.values[f as usize] = v;
             } else {
                 let mut ov = ZoneOverride {
                     zone: sel as u16,
-                    mask: 1 << f,
+                    mask: 1u64 << f,
                     values: zones[sel].defaults,
                 };
                 ov.values[f as usize] = v;
@@ -196,6 +206,7 @@ pub fn wire(
     let zones = current_zones(module, fonts).map(|(_, z)| z).unwrap_or(&[]);
     state.flags.insert(HAS_ZONES, usize::from(!zones.is_empty()));
     if !zones.is_empty() {
+        state.settings.entry(ZONE_PAGE).or_insert(0.0);
         let sel = state.settings.get(&ZONE_SELECT).copied().unwrap_or(0.0).round().clamp(0.0, (zones.len() - 1) as f32) as usize;
         state.settings.insert(ZONE_SELECT, sel as f32);
         let z = &zones[sel];
@@ -216,6 +227,10 @@ pub fn wire(
             format!("{}/{}: {} ({range}{vel})", sel + 1, zones.len(), z.name)
         };
         state.texts.insert(ZONE_LABEL, label);
+        state.flags.insert(ZONE_KEY_LO, usize::from(z.keys[0]));
+        state.flags.insert(ZONE_KEY_HI, usize::from(z.keys[1]));
+        state.flags.insert(ZONE_VEL_LO, usize::from(z.vels[0]));
+        state.flags.insert(ZONE_VEL_HI, usize::from(z.vels[1]));
         let mut zh = std::collections::hash_map::DefaultHasher::new();
         (sel, module.file.custom_data.as_deref()).hash(&mut zh);
         let zkey = zh.finish() as usize;
@@ -228,7 +243,7 @@ pub fn wire(
                 && let Some(ov) = sf2z.zones.iter().find(|o| usize::from(o.zone) == sel)
             {
                 for f in 0..ZONE_FIELDS {
-                    if ov.mask & (1 << f) != 0 {
+                    if ov.mask & (1u64 << f) != 0 {
                         vals[f] = ov.values[f];
                     }
                 }
@@ -427,6 +442,222 @@ fn current_zones<'a>(module: &ModuleInstance, fonts: &'a SoundFonts) -> Option<(
     Some((sf2d.patch, &presets[idx].zones))
 }
 
+fn is_black_key(note: u8) -> bool {
+    matches!(note % 12, 1 | 3 | 6 | 8 | 10)
+}
+
+fn mod_time_text(v: f32) -> String {
+    if v <= 0.001 {
+        "0 ms".into()
+    } else {
+        let t = (20.0 * v.powi(3)).max(0.001);
+        if t >= 1.0 { format!("{t:.2} s") } else { format!("{} ms", (1000.0 * t).round()) }
+    }
+}
+fn mod_lfo_pitch_text(v: f32) -> String { format!("{:+} c", (2400.0 * v - 1200.0).round() as i32) }
+fn mod_env_pitch_text(v: f32) -> String { format!("{:+} c", (4800.0 * v - 2400.0).round() as i32) }
+fn mod_filter_text(v: f32) -> String { format!("{:+} c", (24000.0 * v - 12000.0).round() as i32) }
+fn mod_vol_text(v: f32) -> String { format!("{:+.1} dB", 48.0 * v - 24.0) }
+fn mod_key_text(v: f32) -> String { format!("{:+} c", (2400.0 * v - 1200.0).round() as i32) }
+
+const ZONE_TABS: [&str; 6] = [
+    "Vol Env",
+    "Mod Env",
+    "Mod Map",
+    "Pitch LFO",
+    "Mod LFO",
+    "Tone",
+];
+
+fn zone_tabs(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    id: Id,
+    rect: Rect,
+    _: &mut ModuleInstance,
+    state: &mut PanelState,
+    ink: Color32,
+) -> Vec<usize> {
+    let selected = state
+        .settings
+        .get(&ZONE_PAGE)
+        .copied()
+        .unwrap_or(0.0)
+        .round()
+        .clamp(0.0, (ZONE_TABS.len() - 1) as f32) as usize;
+    
+    if !state.settings.contains_key(&ZONE_PAGE) {
+        state.settings.insert(ZONE_PAGE, 0.0);
+        ui.ctx().request_repaint();
+    }
+
+    let t = cx.m.t();
+    let text_col = cx.theme.colors.text.to_color32();
+    let menu_fill = cx.theme.colors.menu_fill.to_color32();
+    let font = cx.m.font_id(FontSize::Pt10);
+
+    let mut scrolled = ui.new_child(UiBuilder::new().max_rect(rect));
+    ScrollArea::horizontal()
+        .id_salt(id.with("scroll"))
+        .max_width(rect.width())
+        .scroll_bar_visibility(ScrollBarVisibility::AlwaysHidden)
+        .show(&mut scrolled, |ui| {
+            let tab_w = rect.width() / 3.8;
+            let row_h = rect.height();
+            let total_w = tab_w * ZONE_TABS.len() as f32;
+            let (strip, _) = ui.allocate_exact_size(vec2(total_w, row_h), Sense::hover());
+            let painter = ui.painter();
+            for (i, label) in ZONE_TABS.iter().enumerate() {
+                let cell = Rect::from_min_size(
+                    pos2(strip.left() + i as f32 * tab_w, strip.top()),
+                    vec2(tab_w, row_h),
+                );
+                let resp = ui.interact(cell, id.with(("tab", i)), Sense::click());
+                if resp.clicked() && i != selected {
+                    state.settings.insert(ZONE_PAGE, i as f32);
+                    ui.ctx().request_repaint();
+                }
+                let active = i == selected;
+                let bar = cell.with_min_y(cell.bottom() - 2.0 * t);
+                let text_rect = cell.with_max_y(cell.bottom() - 3.0 * t);
+                if resp.is_pointer_button_down_on() {
+                    painter.rect_filled(cell, 0.0, text_col.gamma_multiply(0.1));
+                }
+                painter.rect_filled(bar, 0.0, if active { text_col } else { menu_fill });
+                painter.text(
+                    text_rect.center(),
+                    Align2::CENTER_CENTER,
+                    label,
+                    font.clone(),
+                    if active { text_col } else { ink },
+                );
+            }
+        });
+    Vec::new()
+}
+
+fn zone_piano(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    _: Id,
+    rect: Rect,
+    _: &mut ModuleInstance,
+    state: &mut PanelState,
+    ink: Color32,
+) -> Vec<usize> {
+    let k_lo = state.flags.get(ZONE_KEY_LO).copied().unwrap_or(0) as u8;
+    let k_hi = state.flags.get(ZONE_KEY_HI).copied().unwrap_or(127) as u8;
+    let v_lo = state.flags.get(ZONE_VEL_LO).copied().unwrap_or(0).min(127) as f32 / 127.0;
+    let v_hi = state.flags.get(ZONE_VEL_HI).copied().unwrap_or(127).min(127) as f32 / 127.0;
+
+    let px = 1.0 / cx.m.ppp();
+    let u = rect.height() / 1.45;
+    let pad_x = (0.35 * u).min(rect.width() * 0.05);
+    let pad_top = (0.14 * u).min(rect.height() * 0.12);
+    let pad_bot = (0.18 * u).min(rect.height() * 0.16);
+    let outer = Rect::from_min_max(
+        pos2(rect.left() + pad_x, rect.top() + pad_top),
+        pos2(rect.right() - pad_x, rect.bottom() - pad_bot),
+    );
+    if outer.width() <= 4.0 * px || outer.height() <= 4.0 * px {
+        return Vec::new();
+    }
+
+    let painter = ui.painter();
+    let bg = cx.theme.colors.menu_fill.to_color32();
+    let white_bg = cx.theme.colors.white_key_disabled.to_color32();
+    let black_bg = cx.theme.colors.black_key.to_color32();
+    let middle_c = cx.theme.colors.text.to_color32();
+    let ghost = Color32::from_rgba_unmultiplied(ink.r(), ink.g(), ink.b(), 65);
+    let black_ghost = Color32::from_rgba_unmultiplied(ink.r(), ink.g(), ink.b(), 40);
+    let mix = |x: u8, y: u8, t: f32| {
+        (f32::from(x) + (f32::from(y) - f32::from(x)) * t)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    let black_ink = Color32::from_rgb(
+        mix(black_bg.r(), ink.r(), 0.58),
+        mix(black_bg.g(), ink.g(), 0.58),
+        mix(black_bg.b(), ink.b(), 0.58),
+    );
+
+    let tray_r = (0.20 * u).min(outer.height() * 0.3);
+    let cheek = (tray_r * 0.55).max(2.0 * px);
+    let rail_top = (2.0 * px).max(0.05 * u);
+    let rail_bot = (2.0 * px).max(0.05 * u);
+    let inner = Rect::from_min_max(
+        pos2(outer.left() + cheek, outer.top() + rail_top),
+        pos2(outer.right() - cheek, outer.bottom() - rail_bot),
+    );
+    let kw = inner.width() / 75.0; // 75 white keys across MIDI 0..=127
+    let key_r = (kw * 0.24).clamp(px, 2.5 * px);
+
+    let round_bottom = |r: Rect, rad: f32, color: Color32| {
+        let rad = rad.min(r.width() * 0.49).min(r.height() * 0.49);
+        painter.rect_filled(r, rad, color);
+        if rad > 0.0 && r.height() > rad {
+            let top = Rect::from_min_max(r.min, pos2(r.right(), r.top() + rad));
+            painter.rect_filled(top, 0.0, color);
+        }
+    };
+    let paint_band = |kr: Rect, rad: f32, g: Color32, fill: Color32| {
+        round_bottom(kr, rad, g);
+        let top = kr.top() + kr.height() * v_lo;
+        let bot = (kr.top() + kr.height() * v_hi).max(top + px);
+        let band = Rect::from_min_max(pos2(kr.left(), top), pos2(kr.right(), bot));
+        if v_hi >= 0.98 {
+            round_bottom(band, rad, fill);
+        } else {
+            painter.rect_filled(band, 0.0, fill);
+        }
+    };
+
+    painter.rect_filled(outer, tray_r, bg);
+
+    // Pass 1: white keys.
+    let mut w = 0usize;
+    for note in 0..=127u8 {
+        if is_black_key(note) {
+            continue;
+        }
+        let x0 = inner.left() + w as f32 * kw;
+        let x1 = (inner.left() + (w + 1) as f32 * kw - px).max(x0 + px);
+        let kr = Rect::from_min_max(pos2(x0, inner.top()), pos2(x1, inner.bottom()));
+        round_bottom(kr, key_r, white_bg);
+        if note >= k_lo && note <= k_hi {
+            paint_band(kr, key_r, ghost, ink);
+        }
+        if note == 60 {
+            let dot = if note >= k_lo && note <= k_hi && v_hi > 0.85 { bg } else { middle_c };
+            painter.circle_filled(pos2(kr.center().x, kr.bottom() - 2.5 * px), 1.4 * px, dot);
+        }
+        w += 1;
+    }
+
+    // Pass 2: black keys over the boundaries.
+    let mut w = 0usize;
+    let bw = (kw * 0.65).max(2.0 * px);
+    let bh = inner.height() * 0.58;
+    for note in 0..=127u8 {
+        if !is_black_key(note) {
+            w += 1;
+            continue;
+        }
+        let cx_pos = inner.left() + w as f32 * kw;
+        let kr = Rect::from_min_max(
+            pos2(cx_pos - bw * 0.5, inner.top()),
+            pos2(cx_pos + bw * 0.5, inner.top() + bh),
+        );
+        round_bottom(kr.expand(px * 0.5), key_r + 0.5 * px, bg);
+        round_bottom(kr, key_r, black_bg);
+        if note >= k_lo && note <= k_hi {
+            paint_band(kr, key_r, black_ghost, black_ink);
+        }
+    }
+
+    Vec::new()
+}
+
 pub fn panel() -> Option<Panel> {
     let knobs = (0..SLOTS).map(|slot| {
         knob(knob_id(slot), "")
@@ -450,7 +681,7 @@ pub fn panel() -> Option<Panel> {
                     .momentary()
                     .margins(0.75, 0.75, 0.75, 0.75),
             ])
-            .h(Size::U(2.0)),
+            .h(Size::U(2.596)),
             hstack([
                 knob(2600, "Transpose").p(11),
                 knob(2700, "Fine Tune").p(6),
@@ -496,29 +727,77 @@ pub fn panel() -> Option<Panel> {
         .show(FILTER_SHOWN),
         vstack([
             hstack([
-                text_toggle(ZONE_PREV, "<").momentary().margins(0.3, 0.5, 0.3, 0.5),
-                text(ZONE_LABEL, "").align(Align2::CENTER_CENTER).ink(Ink::Text),
-                text_toggle(ZONE_NEXT, ">").momentary().margins(0.3, 0.5, 0.3, 0.5),
-                text_toggle(ZONE_RESET, "Reset").momentary().margins(0.3, 0.5, 0.3, 0.5),
-                list(ZONE_PAGE, "Env · LFO · Tone", Bar::Right),
+                text_toggle(ZONE_PREV, "<")
+                    .momentary()
+                    .w(Size::U(0.9))
+                    .margins(0.06, 0.05, 0.06, 0.05),
+                text(ZONE_LABEL, "")
+                    .align(Align2::CENTER_CENTER)
+                    .ink(Ink::Text)
+                    .w(Size::U(5.8)),
+                text_toggle(ZONE_NEXT, ">")
+                    .momentary()
+                    .w(Size::U(0.9))
+                    .margins(0.06, 0.05, 0.06, 0.05),
+                spacer(7008).w(Size::Flex(1.0)),
+                text_toggle(ZONE_RESET, "Reset")
+                    .momentary()
+                    .w(Size::U(2.0))
+                    .margins(0.06, 0.1, 0.06, 0.1),
             ])
-            .h(Size::U(2.0)),
+            .h(Size::U(1.05))
+            .margins(0.08, 0.35, 0.02, 0.35),
+            display(ZONE_PAGE)
+                .h(Size::U(0.95))
+                .margins(0.0, 0.35, 0.08, 0.35)
+                .draw(zone_tabs),
             hstack([
                 v_slider(7100, "Attack").value_text().value_fn(zone_time_text),
                 v_slider(7101, "Decay").value_text().value_fn(zone_time_text),
                 v_slider(7102, "Sustain").default(1.0).value_text().value_fn(zone_pct_text),
                 v_slider(7103, "Release").value_text().value_fn(zone_time_text),
             ])
+            .ml(0.2)
+            .mr(0.2)
             .show(Show::Setting(ZONE_PAGE, 0)),
             hstack([
-                knob(7104, "Vib Rate").default(8.176 / 20.0).value_fn(zone_rate_text),
-                v_slider(7105, "Vib Depth").default(0.5).value_text().value_fn(zone_cents_text),
-                v_slider(7106, "Vib Delay").value_text().value_fn(zone_delay_text),
-                knob(7107, "Mod Rate").default(8.176 / 20.0).value_fn(zone_rate_text),
-                v_slider(7108, "Mod Depth").default(0.5).value_text().value_fn(zone_cents_text),
-                v_slider(7109, "Mod Delay").value_text().value_fn(zone_delay_text),
+                knob(7118, "Delay").value_fn(mod_time_text),
+                v_slider(7119, "Attack").value_text().value_fn(mod_time_text),
+                knob(7120, "Hold").value_fn(mod_time_text),
+                v_slider(7121, "Decay").value_text().value_fn(mod_time_text),
+                v_slider(7122, "Sustain").default(1.0).value_text().value_fn(zone_pct_text),
+                v_slider(7123, "Release").value_text().value_fn(mod_time_text),
             ])
+            .ml(0.2)
+            .mr(0.2)
             .show(Show::Setting(ZONE_PAGE, 1)),
+            hstack([
+                knob(7124, "-> Pitch").default(0.5).value_fn(mod_env_pitch_text),
+                knob(7125, "-> Filter").default(0.5).value_fn(mod_filter_text),
+                knob(7126, "Key->Hold").default(0.5).value_fn(mod_key_text),
+                knob(7127, "Key->Decay").default(0.5).value_fn(mod_key_text),
+            ])
+            .ml(0.2)
+            .mr(0.2)
+            .show(Show::Setting(ZONE_PAGE, 2)),
+            hstack([
+                knob(7104, "Rate").default(8.176 / 20.0).value_fn(zone_rate_text),
+                v_slider(7105, "Depth").default(0.5).value_text().value_fn(zone_cents_text),
+                v_slider(7106, "Delay").value_text().value_fn(zone_delay_text),
+            ])
+            .ml(0.2)
+            .mr(0.2)
+            .show(Show::Setting(ZONE_PAGE, 3)),
+            hstack([
+                knob(7107, "Rate").default(8.176 / 20.0).value_fn(zone_rate_text),
+                v_slider(7109, "Delay").value_text().value_fn(zone_delay_text),
+                knob(7108, "-> Pitch").default(0.5).value_fn(mod_lfo_pitch_text),
+                knob(7116, "-> Filter").default(0.5).value_fn(mod_filter_text),
+                knob(7117, "-> Vol").default(0.5).value_fn(mod_vol_text),
+            ])
+            .ml(0.2)
+            .mr(0.2)
+            .show(Show::Setting(ZONE_PAGE, 4)),
             hstack([
                 knob(7110, "Cutoff").default(1.0).value_fn(zone_cutoff_text),
                 knob(7111, "Resonance").value_fn(zone_res_text),
@@ -527,7 +806,13 @@ pub fn panel() -> Option<Panel> {
                 knob(7114, "Pan").default(0.5).value_fn(zone_pan_text),
                 knob(7115, "Level").default(0.8).value_fn(zone_db_text),
             ])
-            .show(Show::Setting(ZONE_PAGE, 2)),
+            .ml(0.2)
+            .mr(0.2)
+            .show(Show::Setting(ZONE_PAGE, 5)),
+            display(ZONE_PIANO)
+                .h(Size::U(1.45))
+                .margins(0.0, 0.0, 0.0, 0.0)
+                .draw(zone_piano),
         ])
         .show(ZONE_LIST),
         text(7006, "No zones")
