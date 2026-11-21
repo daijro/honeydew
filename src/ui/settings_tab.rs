@@ -1293,7 +1293,11 @@ impl Choice {
     /// The items in menu order, as (stored value, label).
     fn items(self) -> Vec<(usize, String)> {
         match self {
-            Choice::NoteStyle => crate::ui::piano_roll::appearance::NoteStyle::ALL.into_iter().enumerate().map(|(i, s)| (i, s.label().to_owned())).collect(),
+            Choice::NoteStyle => crate::ui::piano_roll::appearance::NoteStyle::ALL
+                .into_iter()
+                .enumerate()
+                .map(|(i, s)| (i, s.label().to_owned()))
+                .collect(),
             Choice::WaveformQuality => crate::ui::waveform_quality::WaveformQuality::ALL
                 .into_iter()
                 .enumerate()
@@ -1347,7 +1351,12 @@ impl Choice {
     fn set(self, s: &mut Settings, value: usize) {
         match self {
             Choice::SoundMode => s.sound_mode = value as u8,
-            Choice::NoteStyle => s.piano_roll_note_style = crate::ui::piano_roll::appearance::NoteStyle::ALL.get(value).copied().unwrap_or_default(),
+            Choice::NoteStyle => {
+                s.piano_roll_note_style = crate::ui::piano_roll::appearance::NoteStyle::ALL
+                    .get(value)
+                    .copied()
+                    .unwrap_or_default()
+            }
             Choice::WaveformQuality => {
                 s.waveform_quality = crate::ui::waveform_quality::WaveformQuality::ALL
                     .get(value)
@@ -1485,7 +1494,11 @@ mod tests {
             assert_eq!(s.piano_roll_note_style, style);
             assert_eq!(Choice::NoteStyle.label(&s), style.label());
         }
-        assert!(platform_row_visible(&ROWS[index("Piano Roll Note Style:")], false, false));
+        assert!(platform_row_visible(
+            &ROWS[index("Piano Roll Note Style:")],
+            false,
+            false
+        ));
     }
 
     #[test]

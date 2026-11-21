@@ -984,6 +984,7 @@ fn the_normal_generator_has_mean_0_and_deviation_1_and_differs_by_seed() {
 // ---- the component, offscreen ----
 
 mod component {
+    use crate::ui::piano_roll::appearance::NoteStyle;
     use eframe::egui::{
         self, Context, Event as In, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rangef,
         RawInput, Rect, Vec2, pos2, vec2,
@@ -1687,6 +1688,13 @@ mod component {
             rig.drag(from, from + vec2(70.0, -32.0));
             assert_eq!(spans(rig.events()), [(256, 64.0, 72)]);
             assert_eq!(rig.last, [DONE]);
+            let mut resize = Rig::new(vec![n(128, 64.0, 70), n(256, 32.0, 66)]);
+            resize.roll.note_style = style;
+            resize.frame(vec![]);
+            resize.tap(at(140.0, 70));
+            let handle = at(192.0, 70) + vec2(9.6, 0.0);
+            resize.drag(handle, handle + vec2(30.0, 0.0));
+            assert_eq!(spans(resize.events())[0], (128, 128.0, 70));
         }
     }
 
@@ -4414,6 +4422,7 @@ mod component {
 // ---- the grid background ----
 
 mod grid {
+    use crate::ui::piano_roll::appearance::NoteStyle;
     use eframe::egui::{Color32, Context, LayerId, RawInput, Rect, Shape, pos2};
 
     use super::n;

@@ -125,12 +125,12 @@
 //! runs on from the clip's start, unfolded, as the take grows to it; with `Continuous scrolling during playback` on the
 //! view keeps it a quarter in, and with it off the view turns a page whenever it leaves the view.
 
+pub mod appearance;
 mod compose;
 mod generate;
 mod humanize;
 pub(crate) mod notes;
 mod waveform;
-pub mod appearance;
 use appearance::NoteStyle;
 
 use std::collections::HashMap;
@@ -2901,13 +2901,22 @@ impl PianoRoll {
         let bounds = ctx.content_rect();
         match self.menu {
             Some(Menu::Appearance(at)) => {
-                let items: Vec<_> = NoteStyle::ALL.into_iter().enumerate().map(|(row, style)| PopupItem {
-                    current: self.note_style == style,
-                    ..PopupItem::new(style, 0, row, style.label())
-                }).collect();
+                let items: Vec<_> = NoteStyle::ALL
+                    .into_iter()
+                    .enumerate()
+                    .map(|(row, style)| PopupItem {
+                        current: self.note_style == style,
+                        ..PopupItem::new(style, 0, row, style.label())
+                    })
+                    .collect();
                 let result = popup::show(ctx, id.with("note_appearance"), at, bounds, &items, cx);
-                if let Some(style) = result.selected { self.note_style = style; ctx.request_repaint(); }
-                if result.close { self.menu = None; }
+                if let Some(style) = result.selected {
+                    self.note_style = style;
+                    ctx.request_repaint();
+                }
+                if result.close {
+                    self.menu = None;
+                }
             }
             Some(Menu::Snap) => {
                 // Beside the time modes, the value snap of the graph lane's item (#32): its percents, then Vel's MIDI
@@ -3058,7 +3067,10 @@ impl PianoRoll {
         let bpb = song.time_sig.bar_beats();
         let (root, mask) = project_scale(song);
         match op {
-            MoreOp::Appearance => { self.menu = Some(Menu::Appearance(at)); return; }
+            MoreOp::Appearance => {
+                self.menu = Some(Menu::Appearance(at));
+                return;
+            }
             MoreOp::TransposeBy => {
                 self.menu = Some(Menu::Transpose {
                     at,
@@ -3120,7 +3132,11 @@ impl PianoRoll {
                 }
             }
             // The dialogs opened above.
-            MoreOp::Appearance | MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::SliceBy => {}
+            MoreOp::Appearance
+            | MoreOp::GuessScale
+            | MoreOp::TransposeBy
+            | MoreOp::Humanize
+            | MoreOp::SliceBy => {}
         }
         let changed = clip.events != before;
         if changed {
@@ -3698,7 +3714,12 @@ fn paint_notes(
             pos2(g.x(ghost.pos + ghost.len), top + g.row_h),
         );
         let ghost_color = channel_color(ghost.hue, theme).to_color32();
-        style.paint(painter, cell(r), ghost_color.gamma_multiply(GHOST_ALPHA), px);
+        style.paint(
+            painter,
+            cell(r),
+            ghost_color.gamma_multiply(GHOST_ALPHA),
+            px,
+        );
     }
     if let Some(past) = past {
         painter.rect_filled(past, 0.0, Color32::from_black_alpha(PAST_END_LANE_ALPHA));
@@ -3726,10 +3747,30 @@ fn paint_notes(
             };
             style.paint(painter, cell(r), fill, px);
             if detailed && let Some((_, _, key)) = note(e) {
-                paint_note_name(painter, cell(r), key, key_labels, if style == NoteStyle::Outline { theme.colors.background.to_color32() } else { fill }, m);
+                paint_note_name(
+                    painter,
+                    cell(r),
+                    key,
+                    key_labels,
+                    if style == NoteStyle::Outline {
+                        theme.colors.background.to_color32()
+                    } else {
+                        fill
+                    },
+                    m,
+                );
             }
             if matches!(e, Event::Note { slide: true, .. }) {
-                paint_slide(painter, cell(r), if style == NoteStyle::Outline { theme.colors.text.to_color32() } else { theme.colors.background.to_color32() }, m);
+                paint_slide(
+                    painter,
+                    cell(r),
+                    if style == NoteStyle::Outline {
+                        theme.colors.text.to_color32()
+                    } else {
+                        theme.colors.background.to_color32()
+                    },
+                    m,
+                );
             }
             if detailed
                 && vocal_track
