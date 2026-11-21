@@ -29,6 +29,7 @@ use honeydew_audio::device::ModuleMeter;
 use crate::icons::{draw_icon, icon_edge};
 use crate::metrics::{FontSize, Metrics};
 use crate::midi::links;
+use crate::params::CHANNEL_PARAMS;
 use crate::song::{AutomationTarget, ChannelKind, LaneKind, Song};
 use crate::theme::channel_color;
 use crate::ui::UiCtx;
@@ -440,12 +441,17 @@ fn strip(
                 }
                 clicked
             }
-            PAN => widgets::h_slider(ui, cx, &control(0.5), &mut params[1], none).changed(),
+            // Honeydew change (#171): their value texts, for the drag bubble.
+            PAN => {
+                let pan = |v| CHANNEL_PARAMS[1].display_text(v);
+                widgets::h_slider(ui, cx, &control(0.5), &mut params[1], pan).changed()
+            }
             _ => {
                 for bar in expanded_meters(r, peaks, m) {
                     ui.painter().rect_filled(bar, 0.0, ink);
                 }
-                widgets::h_slider(ui, cx, &control(widgets::UNITY), &mut params[0], none).changed()
+                let level = |v| CHANNEL_PARAMS[0].display_text(v);
+                widgets::h_slider(ui, cx, &control(widgets::UNITY), &mut params[0], level).changed()
             }
         };
         let target = AutomationTarget {
@@ -503,7 +509,7 @@ fn sub_slider(
         theme: &theme,
         m: cx.m,
     };
-    if widgets::h_slider(ui, &menu_cx, &control, value, |_| String::new()).changed() {
+    if widgets::h_slider(ui, &menu_cx, &control, value, |v| spec.display_text(v)).changed() {
         out.changes.push((row.channel, target, *value));
         if let Some(module) = ch.rack.get_mut(target.instance_id) {
             crate::panels::couple_param(module, target.param);

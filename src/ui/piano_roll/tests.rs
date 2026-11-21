@@ -393,9 +393,12 @@ fn ghost_song() -> Song {
     song.add_channel(ChannelKind::Drums);
     let edited = song.channels[1].lanes[0].add_clip(1024, 4.0);
     edited.events = vec![n(0, 32.0, 60)];
-    // The same channel's other clip: never a ghost.
+    // The same channel's other clip, and its other track's: ghosts too (#152).
     let own = song.channels[1].lanes[0].add_clip(1100, 4.0);
     own.events = vec![n(0, 32.0, 61)];
+    let mut track = Lane::new(LaneKind::Notes);
+    track.add_clip(1024, 4.0).events = vec![n(50, 32.0, 62)];
+    song.channels[1].lanes.push(track);
     // Channel 2: one note inside the window, one before and one after it.
     let other = song.channels[2].lanes[0].add_clip(1000, 8.0);
     other.events = vec![n(0, 16.0, 40), n(124, 16.0, 41), n(600, 16.0, 42)];
@@ -446,7 +449,7 @@ fn ghost_notes_walk_only_the_view_whatever_the_loop_lengths() {
     std::thread::spawn(move || {
         let _ = tx.send(ghost_notes(
             &song,
-            1,
+            (1, 0),
             Some(&clip),
             4,
             128_000.0..130_048.0,
@@ -462,19 +465,32 @@ fn ghost_notes_walk_only_the_view_whatever_the_loop_lengths() {
 }
 
 #[test]
-fn ghost_notes_are_other_channels_notes_inside_the_clip_window() {
+fn ghost_notes_are_the_other_clips_notes_inside_the_clip_window() {
     let song = ghost_song();
     let clip = &song.channels[1].lanes[0].clips[0];
-    let ghosts = ghost_notes(&song, 1, Some(clip), 4, ALL, 0.0);
-    // Channel 2's note at song tick 1124 is content tick 100 of the edited clip.
+    let ghosts = ghost_notes(&song, (1, 0), Some(clip), 4, ALL, 0.0);
+    // The edited clip's own note is none; its channel's other clip and track are (#152). Channel 2's note at song tick
+    // 1124 is content tick 100 of the edited clip.
+    // Each knows its note's channel, track, clip and own tick (#154).
+    let ghost = |pos, key, (channel, lane, clip, at): (usize, usize, u32, f64)| Ghost {
+        pos,
+        len: if channel == 2 { 16.0 } else { 32.0 },
+        key,
+        hue: song.channels[channel].hue,
+        velocity: Event::DEFAULT_VELOCITY,
+        pan: Event::DEFAULT_PAN,
+        channel,
+        lane,
+        clip,
+        at,
+    };
     assert_eq!(
         ghosts,
-        [Ghost {
-            pos: 100.0,
-            len: 16.0,
-            key: 41,
-            hue: song.channels[2].hue
-        }]
+        [
+            ghost(76.0, 61, (1, 0, 2, 0.0)),
+            ghost(50.0, 62, (1, 1, 1, 50.0)),
+            ghost(100.0, 41, (2, 0, 1, 124.0))
+        ]
     );
 }
 
@@ -483,16 +499,17 @@ fn ghost_notes_follow_the_clip_offset() {
     let mut song = ghost_song();
     song.channels[1].lanes[0].clips[0].offset_beats = 1.0;
     let clip = &song.channels[1].lanes[0].clips[0];
-    let ghosts = ghost_notes(&song, 1, Some(clip), 4, ALL, 0.0);
+    let ghosts = ghost_notes(&song, (1, 0), Some(clip), 4, ALL, 0.0);
     // The clip starts playing at content tick 128: song 1124 is content 228.
-    assert_eq!(ghosts.iter().map(|g| g.pos).collect::<Vec<_>>(), [228.0]);
+    let at: Vec<f64> = ghosts.iter().map(|g| g.pos).collect();
+    assert_eq!(at, [204.0, 178.0, 228.0]);
 }
 
 #[test]
 fn without_a_clip_ghosts_come_from_the_first_bar() {
     let mut song = ghost_song();
     song.channels[2].lanes[0].clips[0].start_tick = 0;
-    let ghosts = ghost_notes(&song, 1, None, 4, ALL, 0.0);
+    let ghosts = ghost_notes(&song, (1, 0), None, 4, ALL, 0.0);
     let keys: Vec<u8> = ghosts.iter().map(|g| g.key).collect();
     assert_eq!(keys, [40, 41]);
 }
@@ -999,7 +1016,9 @@ mod component {
     use crate::ui::UiCtx;
     use crate::ui::clips::{Selection, place_row};
     use crate::ui::piano_roll::notes::{Geom, SnapMode};
-    use crate::ui::piano_roll::{BEAT_U, PianoRoll, PianoRollAction, Remembered, RollOptions};
+    use crate::ui::piano_roll::{
+        BEAT_U, PianoRoll, PianoRollAction, ROW_U, Remembered, RollOptions,
+    };
     use crate::ui::timeline;
 
     /// An editor area 1170 × 349 points at U = 32 (ppp 1): the playlist's ruler and track bands before the 5 U panel.
@@ -2249,6 +2268,37 @@ mod component {
     }
 
     #[test]
+    fn the_roll_zooms_out_to_a_whole_long_clip_and_in_to_single_128th_steps() {
+        // #171, #175: a 128-bar clip, wheeled all the way out and in over the ruler (time) and the keys (rows).
+        let mut rig = Rig::new(vec![]);
+        rig.song.channels[1].lanes[0].clips[0].loop_len_beats = 512.0;
+        let wheel = |rig: &mut Rig, at: Pos2, dy: f32| {
+            for _ in 0..40 {
+                rig.frame(vec![
+                    In::PointerMoved(at),
+                    In::MouseWheel {
+                        unit: MouseWheelUnit::Point,
+                        delta: vec2(0.0, dy),
+                        modifiers: Modifiers::NONE,
+                    },
+                ]);
+            }
+        };
+        let (ruler, keys) = (pos2(600.0, 24.0), pos2(20.0, 200.0));
+        let grid = vec2(RECT.width() - 50.0, RECT.height() - TOP);
+        wheel(&mut rig, ruler, -400.0);
+        wheel(&mut rig, keys, -400.0);
+        // Out: the whole clip and all 128 keys in view.
+        assert!(512.0 * rig.roll.beat_u * U <= grid.x, "{}", rig.roll.beat_u);
+        assert!(128.0 * rig.roll.row_u * U <= grid.y, "{}", rig.roll.row_u);
+        wheel(&mut rig, ruler, 400.0);
+        wheel(&mut rig, keys, 400.0);
+        // In: a 1/128 note (1/32 beat) a whole U wide, a row 4 U tall.
+        assert!(rig.roll.beat_u / 32.0 > 1.0 - 1e-4, "{}", rig.roll.beat_u);
+        assert!(rig.roll.row_u > 4.0 - 1e-4, "{}", rig.roll.row_u);
+    }
+
+    #[test]
     fn the_key_column_plays_its_keys_and_never_scrolls() {
         let mut rig = Rig::new(vec![]);
         let scroll = rig.roll.scroll;
@@ -2391,6 +2441,35 @@ mod component {
             roll.ghosts(&song, &RollOptions::default(), all(), 0.0)
                 .is_empty()
         );
+    }
+
+    /// #154 (a Honeydew change): a long press held still on a ghost note asks for its clip at the roll's view, the
+    /// note's own tick where its ghost lay; a tap there still adds a note.
+    #[test]
+    fn a_long_press_on_a_ghost_note_goes_to_its_clip_and_a_tap_there_adds_a_note() {
+        let mut song = Song::default();
+        song.add_channel(ChannelKind::Instrument);
+        song.add_channel(ChannelKind::Instrument);
+        // The edited clip from bar 2 (song tick 512); channel 2's from the song start, its note at its content tick
+        // 640: song tick 640, the roll's tick 128.
+        song.channels[1].lanes[0].add_clip(512, 4.0);
+        song.channels[2].lanes[0].add_clip(0, 8.0).events = vec![n(640, 64.0, 70)];
+        let mut rig = Rig::with_song(song);
+        let ghost = at(150.0, 70);
+        rig.hold(ghost);
+        rig.release(ghost);
+        // 512 ticks later in its own clip: 4 beats, 256 points further on.
+        let view = (BEAT_U, ROW_U, vec2(256.0, SCROLL_Y));
+        let switch = PianoRollAction::GhostClip {
+            channel: 2,
+            lane: 0,
+            clip: 1,
+            view,
+        };
+        assert_eq!(rig.all, [switch]);
+        rig.tap(ghost);
+        assert_eq!(rig.events().len(), 1);
+        assert_eq!(rig.all, [switch, QUIET]);
     }
 
     #[test]
@@ -4333,7 +4412,7 @@ mod grid {
         let past = Rect::from_min_max(pos2(304.0, 48.0), pos2(1170.0, 349.0));
         let events = [n(0, 128.0, 60)];
         let (rects, ..) = painted(1.0, &|p, _, g, cx| {
-            paint_notes(p, g, &events, &[false], &[], Some(past), RED, cx);
+            paint_notes(p, g, (&events, &[false]), &[], Some(past), (RED, None), cx);
         });
         assert_eq!(
             rects.iter().map(|r| r.1).collect::<Vec<_>>(),

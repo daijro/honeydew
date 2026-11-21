@@ -182,15 +182,22 @@ impl Sort {
 }
 
 /// The rows to show: the entries whose name holds `query` (ignoring case), folders first, then songs, each group in
-/// `sort` order. Names compare without case, then byte by byte.
+/// `sort` order. Names compare without case, then byte by byte. The library folders (Honeydew change, #144) come after
+/// the user folder's own, in the order added.
 pub fn visible<'a>(entries: &'a [SongEntry], sort: Sort, query: &str) -> Vec<&'a SongEntry> {
     let query = query.to_lowercase();
     let mut rows: Vec<_> = entries
         .iter()
         .filter(|e| e.name.to_lowercase().contains(&query))
         .collect();
+    let roots = super::library::library_folders();
+    let root = |e: &SongEntry| roots.iter().position(|r| *r == e.path);
     rows.sort_by(|a, b| {
-        b.is_folder.cmp(&a.is_folder).then_with(|| match sort {
+        let folders = b
+            .is_folder
+            .cmp(&a.is_folder)
+            .then_with(|| root(a).cmp(&root(b)));
+        folders.then_with(|| match sort {
             Sort::AZ => by_name(a, b),
             Sort::ZA => by_name(b, a),
             Sort::Recent => b.recency.cmp(&a.recency).then_with(|| by_name(a, b)),
@@ -298,13 +305,14 @@ impl SongsPreview {
         self.strip = Some((path.to_owned(), SampleStrip::new(name.into_owned(), None)));
     }
 
-    /// `path`'s decode landed (`wave`; `None`: it does not decode): its strip, if it still shows, plays it from the
-    /// start.
-    pub fn decoded(&mut self, path: &Path, wave: Option<Waveform>) {
+    /// `path`'s decode got further (`wave`, with about `whole` frames still to come) or landed (`whole` `None`; `wave`
+    /// `None`: it does not decode): its strip, if it still shows, plays it, from the start or on from where it is
+    /// ([`SampleStrip::grow`]).
+    pub fn decoded(&mut self, path: &Path, wave: Option<Waveform>, whole: Option<usize>) {
         if let Some((shown, strip)) = &mut self.strip
             && shown == path
         {
-            *strip = SampleStrip::new(std::mem::take(&mut strip.name), wave);
+            strip.grow(wave, whole);
         }
     }
 
@@ -1026,7 +1034,11 @@ impl SongsTab {
             locked_folder: (self.open_dir(library)).is_some_and(|d| library.read_only(&d))
                 || self.up.is_some() && self.folders.is_empty(),
             locked_picked: picked.iter().any(|e| library.read_only(&e.path)),
-            send: cfg!(mobile).then(|| picked.iter().all(|e| !e.is_folder)),
+            // A library folder's file has no document to share (Honeydew change, #144).
+            send: cfg!(mobile).then(|| {
+                let shared = |e: &SongEntry| super::library::library_root_of(&e.path).is_none();
+                picked.iter().all(|e| !e.is_folder && shared(e))
+            }),
         }
     }
 

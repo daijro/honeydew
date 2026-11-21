@@ -24,6 +24,7 @@ use std::path::{Component, Path, PathBuf};
 use super::ProjectFiles;
 use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::song::ModuleInstance;
+use crate::ui::main_menu::library::library_root_of;
 
 /// The folder's name, in the user folder.
 pub const CONTENT_FOLDER: &str = "Original Content";
@@ -247,7 +248,7 @@ impl ProjectFiles {
             (ContentRoot::App, self.content_dir()),
             (ContentRoot::User, self.user.clone()),
         ];
-        roots.into_iter().find_map(|(root, dir)| {
+        let found = roots.into_iter().find_map(|(root, dir)| {
             let dir = dir?;
             let relative = path.strip_prefix(&dir).ok()?;
             let parts: Vec<_> = relative.iter().map(|p| p.to_string_lossy()).collect();
@@ -256,8 +257,25 @@ impl ProjectFiles {
                 relative: parts.join("/"),
             };
             (!parts.is_empty()).then_some((shorthand, dir))
+        });
+        // Honeydew change (#144): a file in a library folder by its own path, named from the folder's name down.
+        found.or_else(|| {
+            let root = library_root_of(path).filter(|root| root != path)?;
+            let text = path.to_string_lossy().replace('\\', "/");
+            Some((ContentPath::Plain(text), root.parent()?.to_owned()))
         })
     }
+}
+
+/// A file a song names by its own path (`ContentPath::Plain`): only one in a library folder (Honeydew change, #144,
+/// [`library_root_of`]), absolute and with no `..` on the way.
+fn library_file(path: &ContentPath) -> Option<PathBuf> {
+    let ContentPath::Plain(text) = path else {
+        return None;
+    };
+    let path = PathBuf::from(text);
+    let clean = path.is_absolute() && !path.components().any(|c| c == Component::ParentDir);
+    (clean && library_root_of(&path).is_some()).then_some(path)
 }
 
 /// [`ProjectFiles::resolve`] for the roots `user` and `content` (the content folder; none on the web): all it needs of
@@ -268,7 +286,7 @@ pub(crate) fn resolve_in(
     path: &ContentPath,
 ) -> Option<PathBuf> {
     let ContentPath::Shorthand { root, relative } = path else {
-        return None;
+        return library_file(path);
     };
     if built_in(path).is_some() {
         return None;
@@ -895,6 +913,45 @@ pub(crate) mod tests {
         let mine = tmp.0.join("My Samples/Gen Kick.wav");
         files.write_user_file(&mine, b"RIFF".to_vec()).unwrap();
         assert_eq!(std::fs::read(&mine).unwrap(), b"RIFF");
+    }
+
+    /// Honeydew change (#144, #155, #165): a file in a library folder is named by its own path, which a song reads
+    /// while the folder is added and keeps when saved, and a pad takes it named from the folder down; no other path
+    /// outside the roots reads, nor one with `..`.
+    #[test]
+    fn a_file_in_a_library_folder_is_named_and_read_by_its_own_path() {
+        use crate::ui::main_menu::library::set_library_folders;
+        use crate::ui::views::sample_picker::load_sample;
+        let tmp = Temp::new("library-file");
+        let user = tmp.0.join("user");
+        let files = ProjectFiles::on_disk(&user);
+        let kick = tmp.0.join("Phone/Samples/Kick.wav");
+        put(&kick, b"RIFF");
+        let plain = |p: &Path| ContentPath::Plain(p.to_string_lossy().replace('\\', "/"));
+        assert_eq!(files.shorthand(&kick), None);
+        assert_eq!(files.resolve(&plain(&kick)), None);
+        let added = [tmp.0.join("Phone/Samples").to_string_lossy().into_owned()];
+        set_library_folders(Some(&user), &added);
+        assert_eq!(files.shorthand(&kick), Some(plain(&kick)));
+        assert_eq!(files.resolve(&plain(&kick)), Some(kick.clone()));
+        let mut kit = crate::song::DrumKit::default();
+        assert_eq!(load_sample(&mut kit, None, &kick, &files), Some(0));
+        let slot = &kit.slots[0];
+        assert_eq!((&*slot.name, &*slot.folder), ("Kick", "Samples"));
+        let mut song = crate::song::Song::default();
+        song.add_channel(crate::song::ChannelKind::AudioClip);
+        let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
+        clip.file.sample = Some(Box::new(slot.clone()));
+        let saved = crate::flm::read(&crate::flm::write(&song).unwrap()).unwrap();
+        let clip = &saved.channels[1].lanes[0].clips[0];
+        let path = clip.file.sample.as_ref().and_then(|s| s.file.path.clone());
+        assert_eq!(path, Some(plain(&kick)));
+        let escape = tmp.0.join("Phone/Samples/../Secret.wav");
+        put(&tmp.0.join("Phone/Secret.wav"), b"RIFF");
+        assert_eq!(files.resolve(&plain(&escape)), None);
+        assert_eq!(files.resolve(&ContentPath::Plain("Kick.wav".into())), None);
+        set_library_folders(Some(&user), &[]);
+        assert_eq!(files.resolve(&plain(&kick)), None);
     }
 
     #[test]

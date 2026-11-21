@@ -61,8 +61,14 @@ fn parts(rect: Rect, v: f32, bipolar: bool, t: f32, u: f32, px: f32) -> Parts {
 }
 
 /// The fine tune slider in `c.rect` (no label or value strips): drags as a horizontal slider, a double tap resets to
-/// `c.default`, and `c.menu` is its parameter menu.
-pub fn fine_tune_slider(ui: &mut Ui, cx: &UiCtx, c: &Control, value: &mut f32) -> Response {
+/// `c.default`, and `c.menu` is its parameter menu. `display` is the value text of its drag bubble.
+pub fn fine_tune_slider(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    c: &Control,
+    value: &mut f32,
+    display: impl Fn(f32) -> String,
+) -> Response {
     let (m, colors) = (cx.m, &cx.theme.colors);
     let px = 1.0 / m.ppp();
     let at = |v| parts(c.rect, v, c.bipolar, m.t(), m.u(1.0), px);
@@ -70,7 +76,7 @@ pub fn fine_tune_slider(ui: &mut Ui, cx: &UiCtx, c: &Control, value: &mut f32) -
         len: at(0.0).track.width(),
         horizontal: true,
     };
-    let (response, v) = drag_control(ui, cx, c, value, law);
+    let (response, v) = drag_control(ui, cx, c, value, law, &display);
     // Every frame, for its latch.
     let pressed = primary_down_on(ui, &response);
     let p = at(v);

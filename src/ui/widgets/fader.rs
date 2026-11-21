@@ -67,7 +67,14 @@ pub fn fader_track(rect: Rect, m: &crate::metrics::Metrics) -> Rect {
 }
 
 /// A fader in `c.rect` (no label or value strips): drags as a vertical slider, a double tap resets to `c.default`.
-pub fn fader(ui: &mut Ui, cx: &UiCtx, c: &Control, value: &mut f32) -> Response {
+/// `display` is the value text of its drag bubble.
+pub fn fader(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    c: &Control,
+    value: &mut f32,
+    display: impl Fn(f32) -> String,
+) -> Response {
     let (m, colors) = (cx.m, &cx.theme.colors);
     let at = |v| parts(c.rect, v, m.t(), m.u(1.0), 1.0 / m.ppp());
     let len = at(0.0).track.height();
@@ -75,7 +82,7 @@ pub fn fader(ui: &mut Ui, cx: &UiCtx, c: &Control, value: &mut f32) -> Response 
         len,
         horizontal: false,
     };
-    let (response, v) = drag_control(ui, cx, c, value, law);
+    let (response, v) = drag_control(ui, cx, c, value, law, &display);
     let p = at(v);
     let (menu_fill, painter) = (colors.menu_fill.to_color32(), ui.painter());
     // Desktop hover, as the slider's.

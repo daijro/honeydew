@@ -166,6 +166,28 @@ fn the_header_is_the_title_at_the_root_and_the_breadcrumb_in_a_folder() {
     assert_eq!(picker.header(), "     Reverb | My Files | Vocal");
 }
 
+/// Honeydew change (#144, #155, #165): `My Files` ends in the library folders added, after its own rows; one opens to
+/// its presets.
+#[test]
+fn my_files_ends_in_the_library_folders() {
+    let lib = library(&[
+        "My Racks/",
+        "My Racks/Zed/",
+        "My Racks/Bass.flmrack",
+        "/Phone/Racks/",
+        "/Phone/Racks/Lead.flmrack",
+        "/Phone/Racks/notes.txt",
+    ]);
+    crate::ui::main_menu::library::set_library_folders(None, &["/Phone/Racks".into()]);
+    let mut picker = PresetPicker::new(RACK_TITLE, Some("My Racks".into()), RACK_EXT, false);
+    open(&mut picker, &lib, MY_FILES);
+    assert_eq!(names(&picker, ""), ["Zed", "Bass", "Racks"]);
+    assert_eq!(names(&picker, "ac"), ["Racks"]);
+    open(&mut picker, &lib, "Racks");
+    assert_eq!(names(&picker, ""), ["Lead"]);
+    assert!(picker.in_library_folder());
+}
+
 #[test]
 fn a_my_files_folder_that_does_not_exist_yet_lists_as_empty() {
     let lib = library(&[]);

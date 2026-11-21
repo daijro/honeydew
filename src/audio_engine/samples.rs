@@ -104,7 +104,9 @@ pub(crate) fn may_stand_in(song: &Song) -> bool {
 /// missing ([`silent`]) plays [`stand_in`]'s.
 pub(crate) fn sampler_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Pcm)> {
     match own_zones(cstm, samples) {
-        zones if zones.is_empty() && missing(cstm, samples) => program_zones(&stand_in(), samples),
+        zones if zones.is_empty() && missing(cstm, samples) => {
+            program_zones(&stand_in(), samples, None)
+        }
         zones => zones,
     }
 }
@@ -117,7 +119,7 @@ fn silent(cstm: &Cstm, samples: &SampleCache) -> bool {
 
 fn own_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Pcm)> {
     match program_path(cstm) {
-        Some(path) => program_zones(&path, samples),
+        Some(path) => program_zones(&path, samples, cstm.program.as_ref().and_then(|p| p.root)),
         None => (cstm.zones.iter())
             .filter_map(|(path, zone)| {
                 Some((*zone, samples.pcm(&SampleKey::File(dw_path(path)?))?))
@@ -126,12 +128,24 @@ fn own_zones(cstm: &Cstm, samples: &SampleCache) -> Vec<(Zone, Pcm)> {
     }
 }
 
-fn program_zones(path: &ContentPath, samples: &SampleCache) -> Vec<(Zone, Pcm)> {
+fn program_zones(path: &ContentPath, samples: &SampleCache, root: Option<u8>) -> Vec<(Zone, Pcm)> {
     let program = samples.program(path);
     let zones = program.iter().flat_map(|zones| zones.iter());
     zones
-        .filter_map(|(zone, key)| Some((*zone, samples.pcm(key)?)))
+        .filter_map(|(zone, key)| Some((rooted(*zone, key, path, root), samples.pcm(key)?)))
         .collect()
+}
+
+/// `zone` (its sample `key`) of the program at `path`, as a `PATh` with `root` ([`ProgramRef::root`]) plays it: a
+/// plain audio file's one zone, keyed by the program itself, at that root (Honeydew change, #102); a program's zones
+/// at their own.
+///
+/// [`ProgramRef::root`]: honeydew_audio::dwp::ProgramRef::root
+pub(crate) fn rooted(zone: Zone, key: &SampleKey, path: &ContentPath, root: Option<u8>) -> Zone {
+    match (root, key) {
+        (Some(root), SampleKey::File(file)) if file == path => Zone { root, ..zone },
+        _ => zone,
+    }
 }
 
 /// A file the sampler names (its program, the program's zones, or its own `ZONE`s) is missing.

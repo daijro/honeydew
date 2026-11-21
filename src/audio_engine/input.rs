@@ -25,7 +25,8 @@ use crate::song::{ChannelKind, PPQ, Song};
 /// drift apart, and a late first block leaves a backlog too; this bounds the monitoring latency to about this plus one
 /// block. It must exceed the input and output callback periods together, or the reads keep skipping: 2048 frames is
 /// 43 ms at 48 kHz. Android's can be longer (its callbacks come in bursts where AAudio refuses its low-latency mode,
-/// and a Bluetooth output's always do): 8192 frames, 171 ms.
+/// and a Bluetooth output's always do): 8192 frames, 171 ms. A large output buffer raises it to twice the buffer (#145:
+/// a 4096-frame callback finds a buffer of input come in since the last).
 // ponytail: a fixed bound and a hard skip (one discontinuity per skip); a resampler would follow drift smoothly.
 pub const MONITOR_MAX_LAG_FRAMES: u64 = if cfg!(target_os = "android") {
     8192
@@ -253,8 +254,9 @@ impl Monitor {
     /// the call takes, is skipped first. Never allocates.
     fn read_block(&mut self, cursor: usize, total: usize) {
         let (rest, frames) = (total - cursor, (total - cursor).min(MAX_BLOCK));
-        let keep = MONITOR_MAX_LAG_FRAMES / 2 + rest as u64;
-        if self.reader.available() > MONITOR_MAX_LAG_FRAMES + rest as u64 {
+        let most = MONITOR_MAX_LAG_FRAMES.max(2 * u64::from(self.buffer));
+        let keep = most / 2 + rest as u64;
+        if self.reader.available() > most + rest as u64 {
             while self.reader.available() > keep {
                 let skip = (self.reader.available() - keep) as usize;
                 let take = skip.min(self.scratch.len());
@@ -539,6 +541,26 @@ mod tests {
                 "L {skip}"
             );
         }
+    }
+
+    /// #145: at a 4096-frame buffer the device renders each callback as eight 512-frame calls, with a whole buffer of
+    /// input come in since the last: a backlog past the fixed bound. The block monitoring and the take read keeps every
+    /// frame.
+    #[test]
+    fn a_4096_frame_buffer_drops_no_input_frame() {
+        let mut rig = Rig::new(None);
+        rig.engine.set_buffer_frames(4096);
+        let session = rig.input.tap.arm(0);
+        rig.engine.play();
+        for _ in 0..4 {
+            let start = rig.pushed as u32;
+            rig.ring.push((start..start + 4096).map(|i| i as f32));
+            rig.pushed += 4096;
+            for _ in 0..8 {
+                rig.engine.render(&mut [0.0; 2 * 512], 2);
+            }
+        }
+        assert_eq!(rig.takes(session), [(0, span(0..4 * 4096))]);
     }
 
     #[test]

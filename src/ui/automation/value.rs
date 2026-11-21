@@ -89,16 +89,19 @@ impl ValueSnap {
     }
 }
 
-/// A pick in a snap menu: a time mode, a grid size (#53), or a value grid (`None`: value snap off).
+/// A pick in a snap menu: a time mode, a grid size (#53), or a value grid (`None`: value snap off); in the piano roll's
+/// also its ghost notes shown or hidden (#152).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Pick {
     Time(SnapMode),
     Grid(GridSize),
     Value(Option<ValueGrid>),
+    Ghosts(bool),
 }
 
 impl Pick {
-    /// `snap` after this pick: a time mode turns snap on at it, a grid size becomes the grid; a value pick leaves it.
+    /// `snap` after this pick: a time mode turns snap on at it, a grid size becomes the grid; a value or ghosts pick
+    /// leaves it.
     pub fn snap(self, snap: Snap) -> Snap {
         match self {
             Self::Time(mode) => Snap {
@@ -107,7 +110,7 @@ impl Pick {
                 ..snap
             },
             Self::Grid(size) => Snap { size, ..snap },
-            Self::Value(_) => snap,
+            Self::Value(_) | Self::Ghosts(_) => snap,
         }
     }
 }

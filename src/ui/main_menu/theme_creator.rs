@@ -365,7 +365,8 @@ impl ThemeCreator {
                     ..Control::new(id.with(("option", g, i)), body, "", text, default)
                 };
                 let before = *value;
-                h_slider(ui, cx, &c, value, |_| String::new());
+                // Honeydew change (#171): the percent, for the drag bubble.
+                h_slider(ui, cx, &c, value, |v| format!("{:.0}%", v * 100.0));
                 // The muted-clip tint divides by the note brightness.
                 if (g, i) == (1, 1) {
                     *value = value.max(MIN_NOTE_BRIGHTNESS);

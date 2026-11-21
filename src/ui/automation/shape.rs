@@ -206,7 +206,8 @@ pub(super) fn popup(
                 ..Control::new(id.with("tension"), slider, "", ink, 0.5)
             };
             let mut v = f32::from(tension) / 100.0;
-            if widgets::fine_tune_slider(ui, cx, &control, &mut v).changed() {
+            let shown = |v: f32| format!("Tension {}%", (v * 100.0).round());
+            if widgets::fine_tune_slider(ui, cx, &control, &mut v, shown).changed() {
                 shaping.tension = Some((v * 100.0).round() as u8);
             }
         });

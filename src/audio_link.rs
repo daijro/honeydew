@@ -361,7 +361,7 @@ impl AudioLink {
             // callback landing between two sends; an engine-side count-in serial in the snapshot would close it.
             AudioCommand::Play => self.held = self.count_in.map(|_| self.tick),
             // One clone a sample (the play button sends it again): two would keep each other past `poll`'s count.
-            AudioCommand::Preview(Some((ref data, _)))
+            AudioCommand::Preview(Some((ref data, _))) | AudioCommand::PreviewMore(ref data, _)
                 if !self.previews.iter().any(|p| Arc::ptr_eq(p, data)) =>
             {
                 self.previews.push(Arc::clone(data))
@@ -1056,6 +1056,9 @@ pub(crate) mod testing {
                 format!("Preview {} frames from {from}", data.frames())
             }
             AudioCommand::Preview(None) => "Preview stop".into(),
+            AudioCommand::PreviewMore(data, more) => {
+                format!("Preview on in {} frames, more {more}", data.frames())
+            }
             AudioCommand::SetTempo(bpm) => format!("SetTempo {bpm:.3}"),
             AudioCommand::LiveParam {
                 channel,
@@ -1274,7 +1277,7 @@ mod tests {
         let mut link = AudioLink::default();
         link.set_multi_core(true);
         if !link.multi_core {
-            return; // A single-core or non-desktop host has no worker pool.
+            return; // A single-core host, the web and iOS have no worker pool.
         }
         link.start(&Song::default(), false, &|_| None, |_, _| rec.sink());
         assert_eq!(rec.take(), ["SetMultiCore true"]);

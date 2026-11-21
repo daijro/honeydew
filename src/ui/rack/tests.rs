@@ -274,6 +274,18 @@ fn clear_rack_keeps_only_the_instrument() {
     assert_eq!(clear(&mut r), Outcome::Nothing);
 }
 
+/// Issue #149: a plugin instrument (a Lemon Trio) is an instrument, so `Clear Rack` keeps it; a plugin effect goes.
+#[test]
+fn clear_rack_keeps_a_plugin_instrument() {
+    use crate::song::plugin::{PLUGIN_EFFECT, PLUGIN_INSTRUMENT};
+    let mut r = Rack::default();
+    for t in [PLUGIN_INSTRUMENT, PLUGIN_EFFECT, 11] {
+        r.add(t);
+    }
+    assert_eq!(clear(&mut r), Outcome::ChainChanged);
+    assert_eq!(types(&r), [PLUGIN_INSTRUMENT]);
+}
+
 /// A rack preset's modules of `types`, with the saving rack's ids.
 fn preset(types: &[u16]) -> Vec<ModuleInstance> {
     (types.iter().zip(20..))
@@ -436,8 +448,8 @@ fn an_instrument_the_channel_cannot_take_is_skipped_and_counted() {
 }
 
 #[test]
-fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
-    // Module ids above 52 are skipped, by the same attach routine as `Paste`.
+fn a_rack_preset_skips_unknown_module_types_like_paste_and_counts_them() {
+    // Unknown module types (53, 54, 60, 99: no module has them) are skipped, by the same attach routine as `Paste`.
     let end = Some(InsertAt::End);
     let cases: [(_, &[u16]); 3] = [
         (None, &[11]),
@@ -453,14 +465,14 @@ fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
         );
         assert_eq!(types(&ch.rack), expected, "{at:?}");
     }
-    // On a channel that takes no instrument they add up: an instrument, ids 53 and 54, and the effect that loads.
+    // On a channel that takes no instrument they add up: an instrument, types 53 and 54, and the effect that loads.
     let mut ch = channel(ChannelKind::EffectTrack, &[6]);
     assert_eq!(
         load_rack(&mut ch, &preset(&[0, 53, 54, 11]), None),
         (Outcome::ChainChanged, 3)
     );
     assert_eq!(types(&ch.rack), [11]);
-    // Nothing but ids above 52: no edit, the rack's modules and instrument stay.
+    // Nothing but unknown types: no edit, the rack's modules and instrument stay.
     let mut ch = channel(ChannelKind::Synth(SynthKind::MiniSynth), &[0, 6]);
     let kept = ch.clone();
     assert_eq!(
@@ -468,13 +480,52 @@ fn a_rack_preset_skips_module_ids_above_52_like_paste_and_counts_them() {
         (Outcome::Nothing, 2)
     );
     assert_eq!(ch, kept);
-    // The last id is 52 (SoundFont Player): it loads.
+    // Ids above 52 load when a module has them (#149): the SoundFont Player (52) and the De-esser (1006).
     let mut ch = channel(ChannelKind::Rack, &[]);
     assert_eq!(
-        load_rack(&mut ch, &preset(&[52, 53]), end),
+        load_rack(&mut ch, &preset(&[52, 53, 1006]), end),
         (Outcome::ChainChanged, 1)
     );
-    assert_eq!(types(&ch.rack), [52]);
+    assert_eq!(types(&ch.rack), [52, 1006]);
+}
+
+/// Issue #149: Honeydew's own modules load from a rack preset with everything they hold. A Modulator and a Lemon Trio
+/// (a plugin instrument, its plugin's state with it) are written, read back with fresh ids and loaded: the Lemon Trio
+/// replaces the channel's MiniSynth as an instrument does, and a channel that takes no instrument skips it.
+#[test]
+fn a_rack_preset_with_a_modulator_and_a_lemon_plugin_round_trips() {
+    use crate::song::plugin::{PLUGIN_INSTRUMENT, PluginParam, PluginRef};
+    use honeydew_audio::modulator::MODULATOR;
+    let mut modulator = ModuleInstance::new(MODULATOR, 20);
+    modulator.params[1] = 0.3;
+    let mut trio = ModuleInstance::new(PLUGIN_INSTRUMENT, 21);
+    trio.params.push(0.7);
+    trio.file.plugin = Some(Box::new(PluginRef {
+        format: "CLAP".into(),
+        id: "org.openstudio.open-3x-osc".into(),
+        name: "Lemon Trio".into(),
+        state: vec![1, 2, 3].into(),
+        params: vec![PluginParam {
+            id: 9,
+            name: "Volume".into(),
+            default: 0.5,
+        }],
+        ..PluginRef::default()
+    }));
+    let bytes = crate::flm::write_rack(&[modulator.clone(), trio.clone()]).unwrap();
+    let read = crate::flm::read_rack(&bytes, &mut 5).unwrap();
+    let mut ch = channel(ChannelKind::Synth(SynthKind::MiniSynth), &[0, 6]);
+    assert_eq!(load_rack(&mut ch, &read, None), (Outcome::ChainChanged, 0));
+    let loaded = |m: &ModuleInstance, at: usize| ModuleInstance {
+        instance_id: ch.rack.modules[at].instance_id,
+        ..m.clone()
+    };
+    assert_eq!(ch.rack.modules, [loaded(&trio, 0), loaded(&modulator, 1)]);
+    let state = |m: &ModuleInstance| m.file.plugin.as_ref().unwrap().state.clone();
+    assert_eq!(state(&ch.rack.modules[0]), state(&trio));
+    let mut ch = channel(ChannelKind::EffectTrack, &[]);
+    assert_eq!(load_rack(&mut ch, &read, None), (Outcome::ChainChanged, 1));
+    assert_eq!(types(&ch.rack), [MODULATOR]);
 }
 
 #[test]
@@ -642,7 +693,7 @@ fn paste_inserts_every_compatible_module_in_clipboard_order_with_fresh_ids_and_s
 }
 
 #[test]
-fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
+fn paste_skips_instruments_off_a_notes_lane_and_unknown_types() {
     // A drums, audio, effect-track or master channel's primary lane is no notes lane: the MiniSynth is skipped.
     let mut channels = [
         ChannelKind::Drums,
@@ -660,9 +711,9 @@ fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
         );
         assert_eq!(types(&ch.rack), [51, 6], "{:?}", ch.kind);
     }
-    // Nothing compatible (an instrument, and 53, past the last module id): nothing changes, and a `Replace` keeps
-    // its module.
-    let clipboard = preset(&[0, 53]);
+    // Nothing compatible (an instrument, a plugin instrument (#149), and 53, which no module has): nothing changes,
+    // and a `Replace` keeps its module.
+    let clipboard = preset(&[0, crate::song::plugin::PLUGIN_INSTRUMENT, 53]);
     let mut ch = channel(ChannelKind::Drums, &[6]);
     let kept = ch.clone();
     assert_eq!(
@@ -671,13 +722,16 @@ fn paste_skips_instruments_off_a_notes_lane_and_ids_above_52() {
     );
     assert_eq!(paste(&mut ch, &[], InsertAt::End), Outcome::Nothing);
     assert_eq!(ch, kept);
-    // A notes lane takes the instrument, beside its own; 53 never.
+    // A notes lane takes the instruments, beside its own; 53 never.
     let mut ch = channel(ChannelKind::Instrument, &[2]);
     assert_eq!(
         paste(&mut ch, &clipboard, InsertAt::End),
         Outcome::ChainChanged
     );
-    assert_eq!(types(&ch.rack), [2, 0]);
+    assert_eq!(
+        types(&ch.rack),
+        [2, 0, crate::song::plugin::PLUGIN_INSTRUMENT]
+    );
 }
 
 #[test]

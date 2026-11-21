@@ -237,7 +237,7 @@ impl ProjectFiles {
             e.path.eq_ignore_ascii_case(&plain) || file_name(&e.path).eq_ignore_ascii_case(name)
         };
         if let Some(entry) = entries.and_then(|all| all.iter().find(same)) {
-            return Some(entry.data.clone());
+            return self.data_of(entry).ok().map(|data| data.into_owned());
         }
         if self.copies {
             let path = self.user_copies.find_name(name)?;
@@ -369,7 +369,7 @@ fn short_path(path: &str) -> String {
 
 /// Channel `index` plays the kept sample `shorthand` (its file `path`): a Drums channel (a missing sample's drum
 /// stand-in) as a kit of that one pad, its hits on it; any other as a DW Sampler of the file, at FL's root key `root`
-/// (ours plays an audio file at 48) and a one-shot's release.
+/// (a pick plays an audio file at [`dwp::USER_SAMPLE_ROOT`]) and a one-shot's release.
 pub(super) fn load_sample(
     song: &mut Song,
     index: usize,
@@ -423,8 +423,8 @@ pub(super) fn load_sample(
     let module = gm::instrument(&mut channel.rack, SynthKind::DwSampler);
     pick_dw_program(module, shorthand, None);
     files.name_module(module, path);
-    // trunc(48v − 24) semitones: 48 − root.
-    let shift = (48 - i32::from(root)).clamp(-24, 24);
+    // trunc(48v − 24) semitones: the pick's root − root.
+    let shift = (i32::from(dwp::USER_SAMPLE_ROOT) - i32::from(root)).clamp(-24, 24);
     module.params[3] = ((shift + 24) as f32 + 0.5) / 48.0;
     module.params[2] = ONE_SHOT_RELEASE;
     load_dw_program(module, &reader(files));

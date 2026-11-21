@@ -9,9 +9,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Library folders (#144): folders anywhere on the phone in the browsers, read through their paths. All files
+         access from Android 11 up (fine for the APK; Google Play would have to approve it), the storage permission
+         before, with the legacy storage of Android 10. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <!-- Back goes to the activity's back callback from Android 13 up, not only from 16 (#72). -->
     <application
         android:allowBackup="false"
+        android:requestLegacyExternalStorage="true"
         android:enableOnBackInvokedCallback="true"
         android:icon="@drawable/honeydew"
         android:label="@string/app_name"

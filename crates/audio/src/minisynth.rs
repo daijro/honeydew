@@ -820,6 +820,9 @@ impl MiniSynth {
         self.serial += 1;
         let (attack, filter_attack) = (attack_rate(self.params[22]), attack_rate(self.params[13]));
         let voice = &mut self.voices[index];
+        // Honeydew change (#143): every new note clears the slide offsets, a busy voice's too (MONO's, a LEAD legato,
+        // a stolen one), so it starts at its own pitch. They used to clear only on an idle voice.
+        voice.slide = [0.0; 3];
         if mode == Mode::Lead && others_held && voice.busy && voice.amp.stage != Stage::Release {
             (voice.key, voice.velocity) = (note, velocity);
             return;

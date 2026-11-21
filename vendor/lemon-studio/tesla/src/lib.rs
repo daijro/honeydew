@@ -373,14 +373,13 @@ impl Player {
     fn sync(&mut self, s: &Shared) {
         let ev = s.env_ver.load(Ordering::Acquire);
         if ev != self.env_ver || self.env.is_none() {
-            if let Ok(p) = s.published_env.try_lock() {
-                let old = self.env.replace(p.clone());
-                self.env_ver = ev;
-                self.env_last = None;
-                if let (Some(old), Ok(mut r)) = (old, s.retired_env.try_lock()) {
-                    if r.len() < r.capacity() {
-                        r.push(old);
-                    }
+            // Honeydew (vendored change): taken only with room to retire the old one, so the audio thread never frees
+            // it (a busy or full list waits for a later block).
+            if let (Ok(p), Ok(mut r)) = (s.published_env.try_lock(), s.retired_env.try_lock()) {
+                if r.len() < r.capacity() {
+                    r.extend(self.env.replace(p.clone()));
+                    self.env_ver = ev;
+                    self.env_last = None;
                 }
             }
         }
@@ -388,14 +387,11 @@ impl Player {
         if v == self.ver {
             return;
         }
-        if let Ok(p) = s.published.try_lock() {
-            let old = self.sample.replace(p.clone());
+        // Honeydew (vendored change): as the envelopes above.
+        let (Ok(p), Ok(mut r)) = (s.published.try_lock(), s.retired.try_lock()) else { return };
+        if r.len() < r.capacity() {
+            r.extend(self.sample.replace(p.clone()));
             self.ver = v;
-            if let (Some(old), Ok(mut r)) = (old, s.retired.try_lock()) {
-                if r.len() < r.capacity() {
-                    r.push(old);
-                }
-            }
             let n = self.frames();
             if n == 0 {
                 self.playing = false;

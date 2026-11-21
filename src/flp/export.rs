@@ -35,7 +35,7 @@ use honeydew_audio::wav_writer::float32_wav;
 
 use super::mixer::{self, Band, HIGH_SHELF, LOW_SHELF, PEAKING, Slot, Track};
 use super::{Chunk, ChunkBody, Event, FlpFile, Header, Tag, Value, id};
-use crate::audio_engine::samples::dw_path;
+use crate::audio_engine::samples::{dw_path, rooted};
 use crate::params::{Role, module_spec};
 use crate::render::{Remainder, Render, RenderRange, RenderSpec};
 use crate::sample_cache::{SampleCache, SampleKey};
@@ -682,8 +682,11 @@ fn dw_zones(module: &ModuleInstance, cache: &SampleCache) -> Vec<(Zone, Arc<Samp
         return Vec::new();
     };
     let cstm = Cstm::read(blob);
+    let root = cstm.program.as_ref().and_then(|p| p.root);
     let zones: Vec<(Zone, SampleKey)> = match cstm.program.as_ref().and_then(|p| dw_path(p.path)) {
-        Some(path) => cache.program(&path).map_or_else(Vec::new, |p| p.to_vec()),
+        Some(path) => (cache.program(&path).iter().flat_map(|p| p.iter()))
+            .map(|(zone, key)| (rooted(*zone, key, &path, root), key.clone()))
+            .collect(),
         None => (cstm.zones.iter())
             .filter_map(|(raw, zone)| Some((*zone, SampleKey::File(dw_path(raw)?))))
             .collect(),

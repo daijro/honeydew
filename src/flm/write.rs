@@ -11,10 +11,10 @@ use std::collections::HashSet;
 use honeydew_audio::dwp::Cstm;
 
 use super::chunk::{
-    ChunkWriter, ContentPath, ContentRoot, FlmError, FlmErrorKind, MAGIC_CH02, MAGIC_CL02,
-    MAGIC_RK01, MAGIC_SL02, MAGIC_SM01, MAGIC_TMPL,
+    ChunkWriter, FlmError, FlmErrorKind, MAGIC_CH02, MAGIC_CL02, MAGIC_RK01, MAGIC_SL02,
+    MAGIC_SM01, MAGIC_TMPL,
 };
-use super::read::{check_cstm, decode_events};
+use super::read::{check_cstm, decode_events, writable};
 use crate::song::{
     AutomationTarget, CHANNEL_ID_LIMIT, Channel, ChannelKind, Clip, DrumKit, Event, Lane, LaneKind,
     ModuleInstance, PPQ, RawChunk, SamplerSlot, SendState, Song, TEMPO_TARGET, output_bus,
@@ -785,14 +785,9 @@ fn write_slot(
         writer.f64(file.stretch_ratio)?;
         writer.f64(file.pitch_semitones)
     })?;
-    // PTH1 holds only a shorthand into the content or user root; any other sample is not saved.
-    if let Some(
-        path @ ContentPath::Shorthand {
-            root: ContentRoot::App | ContentRoot::User,
-            ..
-        },
-    ) = &file.path
-    {
+    // PTH1 holds only a shorthand into the content or user root, or a library folder's file by its own path
+    // (`read::writable`); any other sample is not saved.
+    if let Some(path) = file.path.as_ref().filter(|p| writable(p)) {
         writer.chunk(*b"PTH1", |writer| writer.content_path16(path))?;
     }
     writer.chunk(*b"PRST", |writer| {

@@ -17,7 +17,8 @@
 //! (tab strip included) is the panel tree's business: the card only gives it the module area ([`content_rect`]).
 //!
 //! The card's preset button shows its module's preset name and opens the preset picker, as the rack menu's `Load Rack
-//! preset` does; its ▶ is drawn only, with no next-preset step.
+//! preset` does; its ▶ is drawn only, with no next-preset step. Honeydew change (#149, 0.5.5): a plugin module's card
+//! has them too, and its `Save preset`: a preset of its plugin's state.
 //!
 //! The cards' bound controls (module params, the enable toggle, the common params of the dialog) report their press and
 //! their parameter menu's `Add automation track` as a [`Touch`], for the app's recent control. A card's `Delete` on a
@@ -598,10 +599,10 @@ pub fn apply(rack: &mut Rack, instance_id: i32, action: CardAction) -> Outcome {
     }
 }
 
-/// `Clear Rack`: removes every module but the instruments.
+/// `Clear Rack`: removes every module but the instruments, plugin instruments too (#149).
 pub fn clear(rack: &mut Rack) -> Outcome {
     let before = rack.modules.len();
-    rack.modules.retain(|m| instrument(m.type_id).is_some());
+    rack.modules.retain(|m| is_instrument(m.type_id));
     if rack.modules.len() < before {
         Outcome::ChainChanged
     } else {
@@ -643,7 +644,7 @@ pub fn insert(rack: &mut Rack, type_id: u16, at: InsertAt) -> Outcome {
 /// - With `at` they go where [`paste`] puts the same modules: from `+` appended at the bottom, else at `at`, in file
 ///   order.
 ///
-/// A module is skipped by the rule `Paste` follows ([`attaches`]): an id above 52, and an instrument where the channel
+/// A module is skipped by the rule `Paste` follows ([`attaches`]): an unknown type, and an instrument where the channel
 /// does not take one ([`takes_instruments`]: Master, Effect Track, audio, Drums), as the browser's SYNTH rows do; a
 /// channel that does takes all the instruments, beside the ones it has. Returns whether the chain changed (never when
 /// every module is skipped, or there are none) and how many modules were skipped. [`load_rack_into`] also names the
@@ -661,7 +662,7 @@ pub(crate) fn load_rack(
     if skipped == modules.len() {
         return (Outcome::Nothing, skipped);
     }
-    let is_instrument = |m: &ModuleInstance| instrument(m.type_id).is_some();
+    let is_instrument = |m: &ModuleInstance| is_instrument(m.type_id);
     let takes = room && modules.iter().any(is_instrument);
     let rack = &mut channel.rack;
     rack.modules.retain(|m| is_instrument(m) && !takes);
@@ -798,7 +799,7 @@ fn named(ch: &Channel, auto: &str) -> bool {
 /// in, in clipboard order, as a new module with a fresh id and its copied settings: from the rack's add-module `+`,
 /// appended at the bottom; from `Insert above` / `Insert below`, at that position; from `Replace`, in place of that
 /// module, which is deleted. Instrument modules go only into a channel whose primary lane is a notes lane (not drum and
-/// audio channels); module ids above 52 are skipped.
+/// audio channels); unknown module types are skipped.
 ///
 /// Each module after the first goes below the one before, and the bottom is the bottom for a note effect too (a pick
 /// goes up to the note effects instead). With nothing compatible it returns [`Outcome::Nothing`] and the rack is as it
@@ -839,10 +840,16 @@ pub fn takes(channel: &Channel) -> Takes {
     }
 }
 
-/// Whether a channel takes `module`, the one routine `Paste` and a rack preset's load share: module ids above 52 are
-/// skipped, and an instrument goes only where `notes` (the channel [takes instruments](takes_instruments)).
+/// Whether a channel takes `module`, the one routine `Paste` and a rack preset's load share: every module type the app
+/// hosts, Honeydew's own and plugin modules too (#149; FL Studio Mobile skips ids above 52), but an instrument, a plugin
+/// instrument too ([`is_instrument`]), only where `notes` (the channel [takes instruments](takes_instruments)).
 fn attaches(module: &ModuleInstance, notes: bool) -> bool {
-    module.type_id <= 52 && (notes || instrument(module.type_id).is_none())
+    module_spec(module.type_id).is_some() && (notes || !is_instrument(module.type_id))
+}
+
+/// Whether module type `type_id` is an instrument: a built-in one or a plugin instrument.
+fn is_instrument(type_id: u16) -> bool {
+    module_spec(type_id).is_some_and(|s| s.role == Role::Instrument)
 }
 
 /// The ≡ menu of a card of module type `type_id`, two columns, every item enabled. An instrument's adds `Set Range`
@@ -874,11 +881,7 @@ fn card_menu(minimized: bool, type_id: u16, full: bool, keyed: bool) -> Vec<Popu
     .into_iter()
     .chain(set_range)
     .chain(full_range)
-    .map(|(action, col, row, label)| PopupItem {
-        // A plugin keeps its presets itself: its module saves none.
-        disabled: action == SavePreset && crate::song::plugin::is_plugin(type_id),
-        ..PopupItem::new(action, col, row, label)
-    })
+    .map(|(action, col, row, label)| PopupItem::new(action, col, row, label))
     .collect()
 }
 
@@ -1919,8 +1922,9 @@ impl RackPanel {
                 fine_tune: crate::ui::fine_tune::channel_param(0x2000 + target),
                 ..Control::new(id.with("level"), level, "", ink, SEND_UNITY)
             };
-            let changed =
-                widgets::h_slider(ui, cx, &c, &mut send.level, |_| String::new()).changed();
+            // Honeydew change (#171): the drag bubble reads it as the channel Level.
+            let level = |v| crate::params::CHANNEL_PARAMS[0].display_text(v);
+            let changed = widgets::h_slider(ui, cx, &c, &mut send.level, level).changed();
             control(
                 0x2000 + target,
                 &mut send.level,
@@ -2278,9 +2282,9 @@ impl RackPanel {
         let corner = m.u(CARD_CORNER);
         ui.painter().rect_filled(card, corner, fill);
 
-        // A plugin module is named after its plugin, and its presets and window are its own (its editor). A built-in
-        // Lemon plugin's card shows its editor itself; an installed plugin with an editor window has the pop-out
-        // button, the only cards that do, `Some(open)` here.
+        // A plugin module is named after its plugin, and its window is its own (its editor). A built-in Lemon plugin's
+        // card shows its editor itself; an installed plugin with an editor window has the pop-out button, the only
+        // cards that do, `Some(open)` here.
         let plugin = crate::song::plugin::is_plugin(module.type_id);
         let lemon = lemon_plugin(module);
         let window = match crate::plugins::state(self.channel_id, id) {
@@ -2308,7 +2312,7 @@ impl RackPanel {
             popout,
             previous,
             next,
-        ] = header_row(card * ppp, u, preset_w, !plugin, has_popout).map(|r| r / ppp);
+        ] = header_row(card * ppp, u, preset_w, true, has_popout).map(|r| r / ppp);
         // The module-name label (its cell in the header row) takes the card's own gestures, not the header's buttons.
         let header_id = base.with("header");
         let mut held = ui.interact(name, header_id, Sense::click());
@@ -2398,24 +2402,22 @@ impl RackPanel {
             text,
             5,
         );
-        if !plugin {
-            preset_button(ui, cx, preset_rect, &preset, text);
-            // Issue #98 (Honeydew addition): ◀ and ▶ either side of the name step through its folder's presets.
-            for (rect, label, by) in [(previous, "Previous preset", -1), (next, "Next preset", 1)] {
-                let tip = step_triangle(rect, m.u(1.0), by > 0).to_vec();
-                ui.painter()
-                    .add(Shape::convex_polygon(tip, text, Stroke::NONE));
-                if ui
-                    .interact(rect, base.with(label), Sense::click())
-                    .clicked()
-                {
-                    edits.step = by;
-                }
-                crate::ui::tooltip::tip(ui, rect, label, None);
+        // Honeydew change (#149, 0.5.5): a plugin module's too, over its plugin's presets.
+        preset_button(ui, cx, preset_rect, &preset, text);
+        // Issue #98 (Honeydew addition): ◀ and ▶ either side of the name step through its folder's presets.
+        for (rect, label, by) in [(previous, "Previous preset", -1), (next, "Next preset", 1)] {
+            let tip = step_triangle(rect, m.u(1.0), by > 0).to_vec();
+            ui.painter()
+                .add(Shape::convex_polygon(tip, text, Stroke::NONE));
+            if ui
+                .interact(rect, base.with(label), Sense::click())
+                .clicked()
+            {
+                edits.step = by;
             }
+            crate::ui::tooltip::tip(ui, rect, label, None);
         }
-        edits.presets =
-            !plugin && (ui.interact(preset_rect, base.with("preset"), Sense::click())).clicked();
+        edits.presets = (ui.interact(preset_rect, base.with("preset"), Sense::click())).clicked();
         // The pop-out (icon 11) opens the plugin's own editor window, or brings it to the front; lit as a button is on
         // (`text`, its icon `moduleFill`) while the window is open.
         if let Some(open) = window {

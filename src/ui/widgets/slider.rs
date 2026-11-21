@@ -101,7 +101,8 @@ fn slider(
     } else {
         track.height()
     };
-    let (response, v) = drag_control(ui, cx, c, value, Law::Track { len, horizontal });
+    let law = Law::Track { len, horizontal };
+    let (response, v) = drag_control(ui, cx, c, value, law, &display);
     let painter = ui.painter();
     c.strip_texts(painter, m, v, display);
 

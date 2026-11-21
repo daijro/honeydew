@@ -94,10 +94,13 @@ pub fn knob(
     value: &mut f32,
     display: impl Fn(f32) -> String,
 ) -> Response {
-    let (response, v) = drag_control(ui, cx, c, value, Law::Knob(1.0));
+    let (response, v) = drag_control(ui, cx, c, value, Law::Knob(1.0), &display);
     let m = cx.m;
     c.strip_texts(ui.painter(), m, v, &display);
     let (center, _) = dial(ui, cx, c, &response, v);
+    if !c.ring_text {
+        return response;
+    }
     // Fit-only sizing: 12 pt down to 6 pt, and at 6 pt it is drawn whatever its width. Fitted to the resting ring,
     // so that the press swell never steps the size mid-press.
     let (_, body, _) = c.strips(m);
@@ -123,7 +126,7 @@ pub fn strip_knob(
     s: f32,
     display: impl Fn(f32) -> String,
 ) -> Response {
-    let (response, v) = drag_control(ui, cx, c, value, Law::Knob(s));
+    let (response, v) = drag_control(ui, cx, c, value, Law::Knob(s), &display);
     let m = cx.m;
     let split = (c.rect.left() + m.u(STRIP_CAPTION_W)).min(c.rect.right());
     let (caption, disc) = c.rect.split_left_right_at_x(split);
@@ -137,7 +140,7 @@ pub fn strip_knob(
     };
     let (center, _) = dial(ui, cx, &face, &response, v);
     let text = display(v);
-    if !text.is_empty() {
+    if c.ring_text && !text.is_empty() {
         ui.painter().text(center, at, text, font, c.channel);
     }
     response
@@ -146,14 +149,16 @@ pub fn strip_knob(
 /// A graph knob (the Gate's `A. Curve` and `R. Curve`): a ring knob without value text, its label auto-sized
 /// to the label strip, with the envelope curve Env(x, 2v − 1) ([`env`]) plotted on top in a 4 px channel line.
 /// `falling` plots Env(1 − x, 2v − 1). The plot is a square centred on the ring, its side the inner disc's radius.
+/// `display` is the value text of its drag bubble.
 pub fn graph_knob(
     ui: &mut Ui,
     cx: &UiCtx,
     c: &Control,
     value: &mut f32,
     falling: bool,
+    display: impl Fn(f32) -> String,
 ) -> Response {
-    let (response, v) = drag_control(ui, cx, c, value, Law::Knob(1.0));
+    let (response, v) = drag_control(ui, cx, c, value, Law::Knob(1.0), &display);
     let m = cx.m;
     if let (Some(strip), ..) = c.strips(m) {
         let galley = fit_both(ui.painter(), m, c.label, strip.size(), c.channel);

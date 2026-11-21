@@ -16,7 +16,7 @@ tests need Lemon's engine and plugins, so their dev-dependencies are not carried
 tests included), with `os-engine/src/formula.rs` (the formula language Lemon Formula Controller's effect reads), at its
 own commit:
 
-- Effects commit: `d9e97a2fa92284c0128fe766b71b1ff25efd8545`
+- Effects commit: `011a03f23d9db7f10f07cd7d165cc978a9dda263`
 
 Honeydew runs `reverb.rs` and `dynamics.rs` as the built-in effects Lemon Reverb and Lemon Limiter
 (`crates/audio/src/lemon.rs`, on every platform); the others come along so that `mod.rs` stays upstream's (they use
@@ -44,7 +44,7 @@ compiled in with their `linked` feature (no exported entry points) and hosted th
 tables (`src/plugins/builtin.rs`). Their editors draw into the rack cards (`embed`, below). From upstream, at its own
 commit:
 
-- Plugins commit: `d9e97a2fa92284c0128fe766b71b1ff25efd8545`
+- Plugins commit: `011a03f23d9db7f10f07cd7d165cc978a9dda263`
 
 - `plugins/lemon-3x-osc`, `plugins/lemon-sampler` and `plugins/lemon-parametric-eq-2`: their `src/` (no examples).
 - Since 0.4.9, effects: `plugins/lemon-small-fx` (the plugin, parameters and editor Lemon Studio's small
@@ -82,14 +82,16 @@ change)` or `(vendored addition)` in the code:
   Elsewhere `save_file` writes the file. `os_plugkit::temp_dir` is `std::env::temp_dir`, which panics in the browser:
   there an empty path, where nothing writes (Tesla's files handed out, inert in Honeydew).
 - Tesla: the file it opens is read with `os_engine::sample::read` (a file the host keeps in memory first); with no
-  thread for its recording's take (the browser has none), its audio thread builds the take; and its send asks the host
-  although its editor keeps its tab row (#117, `os-hostlink` below).
+  thread for its recording's take (the browser has none), its audio thread builds the take; and its send and its
+  Convert to score ask the host although its editor keeps its tab row (#117, #167, `os-hostlink` below).
 - `os-hostlink`: with its `embed`, the link the editors use (`Peer`) on Windows too; and an editor's `Automate` (a
   knob's "Create automation clip") kept for the thread it runs on, though the editor never joined the host's strip
   (`take_automate`): Honeydew adds that param's automation track (#113, `embed::take_automate`); and Tesla's `Audio`
   to the playlist (`Send to arranger as audio clip`) answered too, its file kept for the thread (`take_sent`): Honeydew
   keeps the file in `My Recordings` and puts it on a new audio track at the playhead (#117, `embed::take_sent`). Its
-  other places (the selected channel, a new Lemon Slicer channel) stay unanswered.
+  other places (the selected channel, a new Lemon Slicer channel) stay unanswered. And Tesla's `Notes` (`Convert to
+  score and dump to piano roll`), its notes kept for the thread (`take_scored`): Honeydew writes them into a new clip
+  on the selected channel at the playhead (#167, `embed::take_scored`).
 - Lemon Sampler: in the browser, a sample's effects are computed at once instead of on a thread (`os_plugkit::spawn`).
 - Lemon Delay: its About menu's line names no other maker's product (Honeydew shows none).
 - Lemon Parametric EQ (#95): its embedded editor's spectrum reads the signal behind the newest sample on a clock at
@@ -98,6 +100,8 @@ change)` or `(vendored addition)` in the code:
   and the drum pads' velocity layers are found without making a list, so that a note never allocates on the audio
   thread (`tests/rt_alloc.rs`). Citrus is upstream's: it still allocates its voices (its unison list and each voice's
   buffers) on a note, and its effects copy a delay's input each block while a delay is on.
+- Tesla: its player takes a new sample or envelope only when the list of old ones has room and is free, so the audio
+  thread never frees the one it lets go of (while Tesla's thread cleared that list, it did: `tests/rt_alloc.rs`).
 - `os-engine`'s `sample.rs`: a file the host keeps in memory (`provide`: the browser's, which has no file system) is
   read before the disk.
 - `os-dsp`: in the browser, which cannot compile Signalsmith Stretch (C++), `src/stretch_web.rs` (Honeydew's own file)

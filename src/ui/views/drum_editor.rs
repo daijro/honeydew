@@ -357,7 +357,8 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                     && let Some(wave) = app.audio.samples.waveform(slot, &read)
                 {
                     let painter = ui.painter_at(spacer);
-                    graph_lane::spacer_wave(&painter, spacer, &wave, slot.file.reverse, color, m);
+                    let colors = &app.cx.theme.colors;
+                    graph_lane::spacer_wave(&painter, spacer, (&wave, slot), (color, colors), m);
                 }
             }
         }

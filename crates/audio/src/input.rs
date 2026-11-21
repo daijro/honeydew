@@ -35,6 +35,8 @@ pub struct InputRing {
     peaks_done: AtomicU64,
     /// The stream filling the ring has failed: it fills no more.
     failed: AtomicBool,
+    /// Honeydew change (#129): the recording's input gain, linear, as f32 bits; every sample pushed is scaled by it.
+    gain: AtomicU32,
 }
 
 fn atomics(len: usize) -> Box<[AtomicU32]> {
@@ -59,6 +61,7 @@ impl InputRing {
             peaks: atomics(PEAK_SLOTS * channels),
             peaks_done: AtomicU64::new(0),
             failed: AtomicBool::new(false),
+            gain: AtomicU32::new(1f32.to_bits()),
         }
     }
 
@@ -80,8 +83,14 @@ impl InputRing {
         self.written.load(Ordering::Acquire)
     }
 
-    /// Appends interleaved samples; a trailing partial frame is dropped. The single producer's call (the input
-    /// callback, or a test): two pushes at once would interleave their frames. Never allocates or blocks.
+    /// Scales every sample pushed from now on by `gain` (linear; 1 at first): what readers and the peaks see.
+    pub fn set_gain(&self, gain: f32) {
+        self.gain.store(gain.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Appends interleaved samples, scaled by the gain ([`Self::set_gain`]); a trailing partial frame is dropped. The
+    /// single producer's call (the input callback, or a test): two pushes at once would interleave their frames. Never
+    /// allocates or blocks.
     pub fn push(&self, mut samples: impl ExactSizeIterator<Item = f32>) {
         let channels = self.channels;
         let frames = samples.len() / channels;
@@ -95,9 +104,10 @@ impl InputRing {
         fence(Ordering::Release);
         let mut slot = (start % self.capacity as u64) as usize;
         let mut fill = self.fill.load(Ordering::Relaxed) as usize;
+        let gain = f32::from_bits(self.gain.load(Ordering::Relaxed));
         for _ in 0..frames {
             for port in 0..channels {
-                let x = samples.next().unwrap_or(0.0);
+                let x = samples.next().unwrap_or(0.0) * gain;
                 self.samples[slot * channels + port].store(x.to_bits(), Ordering::Relaxed);
                 let open = &self.open_peaks[port];
                 let peak = f32::from_bits(open.load(Ordering::Relaxed)).max(x.abs());

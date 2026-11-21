@@ -462,6 +462,17 @@ mod local {
                 }
                 return isize::from(ok);
             }
+            // Honeydew (vendored change): and Tesla's `Notes` (Convert to score, #167): the notes it posted are kept for
+            // this thread (`take_scored`).
+            #[cfg(feature = "embed")]
+            if cmd == Cmd::Notes {
+                let notes = take_notes(arg);
+                let ok = !notes.is_empty();
+                if ok {
+                    SCORED.with_borrow_mut(|q| q.push(notes));
+                }
+                return isize::from(ok);
+            }
             if !self.hosted() {
                 return 0;
             }
@@ -478,12 +489,13 @@ mod local {
     static REGISTRY: Mutex<Vec<(u64, Weak<Peer>)>> = Mutex::new(Vec::new());
     static QUEUE: Mutex<Vec<(u64, Cmd, isize)>> = Mutex::new(Vec::new());
 
-    // Honeydew (vendored addition): the editors' `Automate` and the files of their `Audio` to the playlist
-    // (`Peer::to_host`), by thread.
+    // Honeydew (vendored addition): the editors' `Automate`, the files of their `Audio` to the playlist and the notes of
+    // their `Notes` (`Peer::to_host`), by thread.
     #[cfg(feature = "embed")]
     thread_local! {
         static AUTOMATE: std::cell::RefCell<Vec<(u64, isize)>> = const { std::cell::RefCell::new(Vec::new()) };
         static SENT: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+        static SCORED: std::cell::RefCell<Vec<Vec<NoteOut>>> = const { std::cell::RefCell::new(Vec::new()) };
     }
 
     /// Honeydew (vendored addition): the `Automate` this thread's editors sent since the last call, as (the editor's
@@ -498,6 +510,13 @@ mod local {
     #[cfg(feature = "embed")]
     pub fn take_sent() -> Vec<String> {
         SENT.with_borrow_mut(std::mem::take)
+    }
+
+    /// Honeydew (vendored addition): the notes this thread's editors sent since the last call (`Notes`: Tesla's Convert
+    /// to score), one list a send, oldest first.
+    #[cfg(feature = "embed")]
+    pub fn take_scored() -> Vec<Vec<NoteOut>> {
+        SCORED.with_borrow_mut(std::mem::take)
     }
     static HOST_WAKER: OnceLock<fn()> = OnceLock::new();
 
@@ -584,7 +603,7 @@ pub use local::{set_host_waker, take_host_messages, Link, Peer};
 #[cfg(all(windows, feature = "embed"))]
 pub use local::Peer;
 #[cfg(feature = "embed")]
-pub use local::{take_automate, take_sent};
+pub use local::{take_automate, take_scored, take_sent};
 
 #[cfg(test)]
 mod tests {

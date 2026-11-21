@@ -413,9 +413,7 @@ fn folders_categories_and_sample_paths_are_written_as_the_app_writes_them() {
     let drums = &mut song.channels[1];
     let kit = drums.drum_kit.as_mut().unwrap();
     kit.slots[0].folder = "Drum Samples\\Kick".into();
-    kit.slots[1].file.path = Some(honeydew::flm::chunk::ContentPath::Plain(
-        "/tmp/x.wav".into(),
-    ));
+    kit.slots[1].file.path = Some(honeydew::flm::chunk::ContentPath::Plain("x.wav".into()));
     kit.slots[2].file.path = Some(honeydew::flm::chunk::ContentPath::Shorthand {
         root: honeydew::flm::chunk::ContentRoot::Temp,
         relative: "x.wav".into(),
@@ -425,7 +423,8 @@ fn folders_categories_and_sample_paths_are_written_as_the_app_writes_them() {
     let bytes = write(&song).unwrap();
     assert!(bytes.windows(17).any(|w| w == b"Drum Samples/Kick"));
     assert!(bytes.windows(15).any(|w| w == b"Effects/Filters"));
-    // Only a shorthand into the content or user root is a sample path: the others write no PTH1.
+    // Only a shorthand into the content or user root, or an absolute path (a library folder's file, Honeydew change
+    // #144), is a sample path: the others write no PTH1.
     assert!(!bytes.windows(4).any(|w| w == b"PTH1"));
 }
 

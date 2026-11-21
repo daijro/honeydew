@@ -33,7 +33,7 @@ use crate::ui::preview::{self, ClipKey};
 use crate::ui::sample_row::{self, RowAction};
 use crate::ui::split;
 use crate::ui::transport_extras::Load;
-use crate::ui::views::main_menu::{QUIT_TAG, quit_question};
+use crate::ui::views::main_menu::{QUIT_TAG, exit_question, quit_question};
 use crate::ui::views::{self, AppCtx, Nav, Navigation, Overlay, Slots, SongEdit, View};
 use crate::ui::{panel_resize, wheels};
 
@@ -186,6 +186,11 @@ pub struct HoneydewApp {
     hidden: bool,
     /// A message, popup or panel was open at the end of the last frame: Android's Back closes it ([`Self::back`]).
     back_closes: bool,
+    /// A popup or other modal was open at the end of the last frame ([`Self::back`]).
+    back_modal: bool,
+    /// Back closes something this frame, over this many overlays, and whether it hands the close to the topmost
+    /// overlay itself ([`Self::back`]).
+    back_escape: Option<(usize, bool)>,
     /// Debug view of the whole icon set, toggled with F2.
     #[cfg(debug_assertions)]
     show_icon_sheet: bool,
@@ -318,6 +323,8 @@ impl Default for HoneydewApp {
             bar_jump: None,
             hidden: false,
             back_closes: false,
+            back_modal: false,
+            back_escape: None,
             #[cfg(debug_assertions)]
             show_icon_sheet: false,
             files: ProjectFiles::default(),
@@ -405,6 +412,9 @@ impl HoneydewApp {
         // Samples past the memory limit stream from the user and content folders (not in tests' rigs).
         let disk = sample_cache::disk_locator(&app.files);
         app.audio.samples.set_disk(disk);
+        // The library folders (Honeydew change, #144), before the last song reads its samples.
+        let (user, added) = (app.files.user_dir(), &app.settings.library_folders);
+        crate::ui::main_menu::library::set_library_folders(user, added);
         #[cfg(target_os = "android")]
         crate::android::request_orientation(app.settings.android_orientation());
         app.midi.link = crate::midi::device::MidiLink::platform(cc.egui_ctx.clone());
@@ -1157,6 +1167,8 @@ impl HoneydewApp {
             if yes {
                 self.quitting = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                // The close comes in the next frame: one with no input to wait for (Android, #147).
+                ctx.request_repaint();
             }
         }
         if !self.quitting && ctx.input(|i| i.viewport().close_requested()) {
@@ -1757,6 +1769,10 @@ impl HoneydewApp {
             }
         }
         let ring = self.input.ring().cloned();
+        // Honeydew change (#129): `Input gain` scales the input before monitoring, recording and `Calibrate` hear it.
+        if let Some(ring) = &ring {
+            ring.set_gain(10f32.powf(self.settings.input_gain_db / 20.0));
+        }
         let ports = self.input_ports();
         let built =
             (self.audio.input.as_ref()).map(|i| (Arc::as_ptr(&i.ring), &i.ports, i.monitor));
@@ -1983,6 +1999,19 @@ fn rack_channel_picker(at: Option<usize>) -> Nav {
     Nav::Open(Overlay::PresetPicker { channel: 0, target })
 }
 
+/// #172: a phone redraws the playing song at most 60 times a second (not at every refresh of its 120 or 144 Hz screen),
+/// which leaves its CPU to the audio; input still redraws at once. Elsewhere at every refresh. `begun`: when the frame
+/// began.
+fn repaint_playing(ctx: &egui::Context, begun: os_plugkit::time::Instant, phone: bool) {
+    if !phone {
+        return ctx.request_repaint();
+    }
+    // The next frame is due a 60th of a second after this one began. egui takes its predicted frame time (a 60th) off
+    // a delay, so a delay of a 60th alone would be none.
+    let left = (1.0 / 60.0 - begun.elapsed().as_secs_f32()).max(0.0);
+    ctx.request_repaint_after_secs(left + ctx.input(|i| i.predicted_dt));
+}
+
 /// One-time egui setup: the app font, and no built-in keyboard zoom (the UI scale replaces it).
 fn setup_context(ctx: &egui::Context) {
     fonts::install(ctx);
@@ -2076,6 +2105,9 @@ impl HoneydewApp {
         {
             storage.flush();
         }
+        // Android's activity goes (#147): its loop waits for a window event, which nothing else would bring.
+        #[cfg(target_os = "android")]
+        crate::android::quit();
     }
 
     /// One frame. `open` starts the audio output for the song; it is called on a click (its press natively,
@@ -2086,7 +2118,8 @@ impl HoneydewApp {
         open: impl FnOnce(&Song, &SampleCache) -> Option<Box<dyn AudioSink>>,
     ) {
         // #89: the performance overlay's frame time, from here.
-        let started = (self.settings.performance_overlay).then(os_plugkit::time::Instant::now);
+        let begun = os_plugkit::time::Instant::now();
+        let started = (self.settings.performance_overlay).then_some(begun);
         // Before anything reads the input: the latches see the hide as the focus loss it is.
         let hidden = std::mem::take(&mut self.hidden);
         if hidden {
@@ -2225,6 +2258,7 @@ impl HoneydewApp {
         // Once per frame; screens take it by reference.
         let metrics = Metrics::new(ctx, self.settings.ui_scale);
         crate::ui::anim::set_mode(ctx, self.settings.animations, self.settings.inertia);
+        crate::ui::widgets::set_value_bubble(ctx, self.settings.value_bubble);
         // As the frame starts; the settings tab edits `self.settings` meanwhile.
         let shown = self.settings.clone();
         // The roll's rows tint for the live notes and the engine's keys alike: each channel's, for the roll to take its
@@ -2453,7 +2487,8 @@ impl HoneydewApp {
                 }
                 // Escape belongs to the topmost popup or overlay: a popup the view shows over the overlays has taken
                 // it (`popup::show`); otherwise it is held back from the overlays below the topmost one.
-                let escape = !self.nav.overlays.is_empty() && views::take_escape(ui);
+                let handed = matches!(self.back_escape, Some((_, true)));
+                let escape = !self.nav.overlays.is_empty() && (views::take_escape(ui) | handed);
                 // After the view, which makes its editor's state: SOLO CLIP shows while the current track has a
                 // current clip, in every view.
                 let current = (self.main_screen.clips).current_clip(&app);
@@ -2714,10 +2749,15 @@ impl HoneydewApp {
             (Some(RowAction::Set { ctl, v, done }), Some(key)) => {
                 if sample_row::apply(&mut self.song, key, ctl, v) || done {
                     if matches!(ctl, sample_row::Ctl::Speed | sample_row::Ctl::Sync) {
-                        let tempo = self.song.tempo_bpm;
-                        let bar_beats = self.song.time_sig.bar_beats();
+                        // SYNC's stretch streams in first, so the fit measures it, as a pick's (`sample_picker`).
+                        if ctl == sample_row::Ctl::Sync {
+                            let read = sample_cache::reader(&self.files);
+                            (self.audio.samples).load_live(&self.song, &self.song, &read);
+                        }
+                        let (tempo, bar) = (self.song.tempo_bpm, self.song.time_sig.bar_beats());
+                        let samples = &self.audio.samples;
                         if let Some(clip) = sample_row::clip_mut(&mut self.song, key) {
-                            crate::audio_engine::fit_audio_clip(clip, &self.audio.samples, tempo, bar_beats);
+                            crate::audio_engine::fit_audio_clip(clip, samples, tempo, bar);
                         }
                     }
                     self.row_drag = !done;
@@ -2870,23 +2910,46 @@ impl HoneydewApp {
             s.sounding.iter().any(|&keys| keys != 0) || self.now - self.sent_at.1 < 1.0
         };
         match snapshot.filter(|s| !s.stream_failed) {
-            Some(s) if playing || lit(&s) => ctx.request_repaint(),
+            Some(s) if playing || lit(&s) => {
+                let phone = cfg!(any(target_os = "android", target_os = "ios"));
+                repaint_playing(ctx, begun, phone)
+            }
             Some(s) if stirs(&s) => ctx.request_repaint_after(std::time::Duration::from_millis(50)),
             _ => {}
         }
         #[cfg(debug_assertions)]
         self.icon_sheet(ctx, &metrics);
-        self.back_closes = !self.nav.overlays.is_empty() || crate::ui::modal_open(ctx);
+        // Back's close that the topmost overlay did not take (`ui::hand_close`, read here as `close_pressed`) closes it
+        // all the same (#147: a panel that takes no Escape, as the rack): Back closes what is open before it ever asks
+        // to exit. A loading screen stays.
+        if self.back_escape.take().map(|(depth, _)| depth) == Some(self.nav.overlays.len())
+            && !matches!(self.nav.overlays.last(), None | Some(Overlay::Busy { .. }))
+            && crate::ui::close_pressed(ctx)
+        {
+            self.navigate(Nav::Close);
+        }
+        self.back_modal = crate::ui::modal_open(ctx);
+        self.back_closes = !self.nav.overlays.is_empty() || self.back_modal;
     }
 
     /// Android's Back (#72): a key before Android 13, the activity's back callback since
     /// ([`crate::android::take_back`]; its key event then is no second press). With a message, popup or panel open it is Escape, which closes the topmost;
-    /// with none, the app goes to the background, as Android's own Back did. Before anything reads the keys.
+    /// an Escape nothing takes closes the topmost overlay at the frame's end. With none open it asks [`exit_question`]
+    /// (Honeydew change, #147: #72 sent the app to the background), whose
+    /// `Exit` quits as the window's close does ([`Self::quit`]). Tests stand in for Android. Before anything reads the
+    /// keys.
     fn back(&mut self, ctx: &egui::Context) {
         let back = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::BrowserBack));
         #[cfg(target_os = "android")]
         let back = crate::android::take_back(ctx) || (back && !crate::android::back_callback());
+        // With overlays open and no popup over them, the topmost overlay takes the close itself (`Slots::overlays`): no
+        // view under it takes Back's Escape on the way (a focused editor's Escape only deselects, #147).
+        let hand = !self.nav.overlays.is_empty() && !self.back_modal;
         if back && self.back_closes {
+            self.back_escape = Some((self.nav.overlays.len(), hand));
+            if hand {
+                return;
+            }
             let escape = |pressed| egui::Event::Key {
                 key: egui::Key::Escape,
                 physical_key: None,
@@ -2895,9 +2958,8 @@ impl HoneydewApp {
                 modifiers: egui::Modifiers::NONE,
             };
             ctx.input_mut(|i| i.events.extend([escape(true), escape(false)]));
-        } else if back {
-            #[cfg(target_os = "android")]
-            crate::android::move_to_back();
+        } else if back && cfg!(any(target_os = "android", test)) {
+            self.navigate(exit_question());
         }
     }
 }
@@ -5709,20 +5771,22 @@ mod tests {
             assert!(quit(&rig), "{:?}", rig.overlays());
         }
         choose(&mut rig, 2);
-        for _ in 0..10 {
-            rig.frame(vec![]);
-        }
-        assert!(
+        let failed = |rig: &Rig| {
             matches!(
                 rig.overlays()[..],
                 [Overlay::Message {
                     tag: MESSAGE_TAG,
                     ..
                 }]
-            ),
-            "{:?}",
-            rig.overlays()
-        );
+            )
+        };
+        // The import thread may still be running on a loaded machine: frames until its result shows, within a limit.
+        let start = std::time::Instant::now();
+        while !failed(&rig) && start.elapsed() < std::time::Duration::from_secs(30) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            rig.frame(vec![]);
+        }
+        assert!(failed(&rig), "{:?}", rig.overlays());
     }
 
     /// The actions the unsaved-changes question guards.

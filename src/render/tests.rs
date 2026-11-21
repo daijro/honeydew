@@ -277,6 +277,26 @@ fn the_estimated_length_is_the_range_at_the_song_tempo() {
     assert_eq!(estimated_secs(&song, RenderRange::Selection), 2.0);
     song.play_loop = Some((0, PPQ));
     assert_eq!(estimated_secs(&song, RenderRange::Selection), 0.5);
+    // With tempo automation, as long as the render's range (#126): 60 BPM from beat 2.
+    let lane = song.channels[0].add_automation_lane(crate::song::TEMPO_TARGET);
+    lane.add_clip(0, 4.0).events.push(Event::Automation {
+        pos: 2 * PPQ,
+        value: crate::song::tempo_value(60.0),
+        control: true,
+    });
+    let rendered = |song: &Song, range| {
+        let render = Render::new(song, &SampleCache::default(), spec(range, Remainder::Cut));
+        render.unwrap().kept.range as f64 / f64::from(RATE)
+    };
+    let full = estimated_secs(&song, RenderRange::Full);
+    let want = rendered(&song, RenderRange::Full);
+    assert!((full - want).abs() < 1e-3, "{full}");
+    assert!((full - 3.0).abs() < 0.01, "{full}");
+    song.play_loop = Some((PPQ, 3 * PPQ));
+    let selection = estimated_secs(&song, RenderRange::Selection);
+    let want = rendered(&song, RenderRange::Selection);
+    assert!((selection - want).abs() < 1e-3, "{selection}");
+    assert!((selection - 1.5).abs() < 0.01, "{selection}");
 }
 
 #[test]

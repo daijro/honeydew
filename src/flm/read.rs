@@ -1347,15 +1347,14 @@ fn legacy_reverb_params(params: &mut [f32], legacy: &[f32]) {
     }
 }
 
-/// A sample path a file can hold: a shorthand into the content or user root.
-fn writable(path: &ContentPath) -> bool {
-    matches!(
-        path,
-        ContentPath::Shorthand {
-            root: ContentRoot::App | ContentRoot::User,
-            ..
-        }
-    )
+/// A sample path a file can hold: a shorthand into the content or user root, or (Honeydew change, #144) an absolute
+/// path, a library folder's file, which reads only while its folder is added
+/// ([`crate::project_files::ProjectFiles::resolve`]).
+pub(super) fn writable(path: &ContentPath) -> bool {
+    match path {
+        ContentPath::Shorthand { root, .. } => matches!(root, ContentRoot::App | ContentRoot::User),
+        ContentPath::Plain(path) => std::path::Path::new(path).is_absolute(),
+    }
 }
 
 /// The channel's lane order, kind, name and kit, once its rack and CHNL are read.

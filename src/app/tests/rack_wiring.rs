@@ -1082,6 +1082,104 @@ fn the_clipboard_outlives_the_song() {
     assert_eq!(rig.app.slots.clipboard, [copied]);
 }
 
+/// Issue #149: a card's `Copy` of a Lemon plugin (Lemon Chorus, an effect) takes its plugin's state at the copy, and
+/// `Paste` on another channel adds it with its params and that state, which its new instance starts from.
+#[test]
+fn copy_and_paste_of_a_lemon_effect_keeps_its_params_and_state() {
+    let mut rig = Rig::with_synth();
+    rig.app.add_channel(ChannelKind::EffectTrack, 0);
+    let channel = &mut rig.app.song.channels[2];
+    let id = channel.id;
+    let uid = crate::plugins::builtin::named("Lemon Chorus").uid;
+    let chorus = crate::plugins::add(&mut channel.rack, id, uid, 0).unwrap();
+    let param = &mut channel.rack.get_mut(chorus).unwrap().params[1];
+    *param = if *param > 0.5 { 0.1 } else { 0.9 };
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.open_rack(2);
+    rig.slide_rack();
+    let mut running = rig.app.song.clone();
+    crate::plugins::store_states(&mut running);
+    let source = running.channels[2].rack.modules[0].clone();
+    let state = |m: &ModuleInstance| m.file.plugin.as_ref().unwrap().state.clone();
+    let added = &rig.app.song.channels[2].rack.modules[0];
+    assert_ne!(
+        state(&source),
+        state(added),
+        "the edit is in the running state"
+    );
+    card_menu(&mut rig, 2, 0, COPY);
+    assert_eq!(state(&rig.app.slots.clipboard[0]), state(&source));
+    // Below the synth channel's MiniSynth.
+    rig.open_rack(1);
+    rig.slide_rack();
+    card_menu(&mut rig, 1, 0, INSERT_BELOW);
+    let paste = browser_row(&mut rig, 0).expect("Paste");
+    rig.click(paste.center());
+    assert_eq!(rig.app.flash, None);
+    let plugin = crate::song::plugin::PLUGIN_EFFECT;
+    assert_eq!(types(&rig, 1), [0, plugin]);
+    let pasted = &rig.app.song.channels[1].rack.modules[1];
+    let id = pasted.instance_id;
+    assert_eq!(
+        *pasted,
+        ModuleInstance {
+            instance_id: id,
+            ..source.clone()
+        }
+    );
+    assert_eq!(state(pasted), state(&source));
+}
+
+/// Issue #149 (Honeydew change, 0.5.5): `Save preset` on a Lemon plugin's card writes its plugin's state into the
+/// plugin's own folder, whose picker lists it (no `Default`: `My Files` is row 0); a pick loads it back into the
+/// running plugin.
+#[test]
+fn a_lemon_plugins_preset_saves_its_state_and_loads_it_back() {
+    let (mut rig, _) = with_web_files(&[]);
+    let channel = &mut rig.app.song.channels[2];
+    let uid = crate::plugins::builtin::named("Lemon Chorus").uid;
+    let id = crate::plugins::add(&mut channel.rack, channel.id, uid, 0).unwrap();
+    let param = |rig: &Rig| rig.app.song.channels[2].rack.modules[0].params[1];
+    let set = |rig: &mut Rig, v: f32| {
+        rig.app.song.channels[2].rack.modules[0].params[1] = v;
+        rig.app.song_edited(SongEdit::Final, 0);
+        rig.frame(vec![]);
+    };
+    let running = |rig: &Rig| {
+        let mut song = rig.app.song.clone();
+        crate::plugins::store_states(&mut song);
+        song.channels[2].rack.modules[0]
+            .file
+            .plugin
+            .clone()
+            .unwrap()
+            .state
+    };
+    let saved = if param(&rig) > 0.5 { 0.1 } else { 0.9 };
+    set(&mut rig, saved);
+    card_menu(&mut rig, 2, 0, SAVE_PRESET);
+    dialog_save(&mut rig);
+    rig.frame(vec![]);
+    let path = Path::new("My Presets/Lemon Chorus/Lemon Chorus.flmpst");
+    let bytes = rig.app.files.read_user_file(path).unwrap();
+    let preset = crate::flm::read_preset(&bytes, None).unwrap();
+    let state = preset.file.plugin.as_ref().unwrap().state.clone();
+    assert_eq!(state, running(&rig), "the preset holds the running state");
+    set(&mut rig, 0.5);
+    assert_ne!(running(&rig), state);
+    let steps = rig.app.history.steps();
+    rig.click_id(preset_button(2, id));
+    picker_row(&mut rig, 0);
+    picker_row(&mut rig, 0);
+    rig.frame(vec![]);
+    assert_eq!(param(&rig), saved);
+    assert_eq!(running(&rig), state);
+    let module = &rig.app.song.channels[2].rack.modules[0];
+    assert_eq!(module.file.preset_name, "Lemon Chorus");
+    // A pick, as a module's: no undo step.
+    assert_eq!(rig.app.history.steps(), steps);
+}
+
 /// `Copy Rack` (row 2 without `Load Drumset`) in `channel`'s open rack.
 fn copy_rack(rig: &mut Rig, channel: usize) {
     rig.click_id(rack_id(channel).with("rack menu button"));
@@ -1129,7 +1227,8 @@ fn copy_rack_then_paste_adds_the_whole_rack_to_another_channel_with_no_undo_step
         assert_eq!(*pasted, copy);
     }
     assert_eq!(rig.app.flash, None);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    // A note effect came: its channel's notes are released (#140).
+    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync silencing 2"]);
     // No undo step: the rack is not covered by undo.
     assert_eq!(rig.app.history.steps(), steps);
 }
@@ -1200,7 +1299,8 @@ fn clear_rack_keeps_the_instrument_rebuilds_the_song_with_no_undo_step() {
     };
     clear_rack(&mut rig);
     assert_eq!(types(&rig, 1), [0]);
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    // The Arpeggiator went: its channel's notes are released (#140).
+    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync silencing 1"]);
     // The rack is not covered by undo: the song is marked changed, with no undo step.
     assert!(rig.app.files.modified());
     assert_eq!(rig.app.history.steps(), steps);
@@ -1460,7 +1560,8 @@ fn load_rack_preset_replaces_the_racks_modules_staying_open_with_no_undo_step() 
         (instance_id(&rig, 2, 0), instance_id(&rig, 2, 1)),
         (last - 1, last)
     );
-    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync"]);
+    // A note effect came: its channel's notes are released (#140).
+    assert_eq!(rig.take(), ["ReplaceSong adopting no-resync silencing 2"]);
     // No undo step (the `Delete` before it made none either).
     assert_eq!(rig.app.history.steps(), steps);
 }
@@ -2067,9 +2168,11 @@ fn a_picked_dwp_loads_off_the_ui_thread_and_sets_only_attack_and_release() {
         assert!(i == 1 || i == 2 || now == was, "param {i}");
     }
     let path = b"@L@\0My Presets/DW Sampler/Keys.dwp";
+    // The floats, then the root an audio file would play at (Honeydew change, #102).
+    let tail = [dw_pair(0.25, 0.6), vec![60]].concat();
     let blob = [
         &b"10WD"[..],
-        &dw_path_chunk(path, &dw_pair(0.25, 0.6)),
+        &dw_path_chunk(path, &tail),
         &dw_chunk(b"MIDI", &[2, 0]),
     ]
     .concat();
@@ -3057,6 +3160,18 @@ fn the_web_module_pickers_that_list_audio_import_into_the_modules_user_folder() 
         assert_eq!(rig.overlays(), [picker(2, PresetTarget::Module(id))]);
         rig.frame(vec![]);
         assert!(rig.color_of("Loop").is_some(), "{kind:?} lists it");
+        // The DW Sampler's takes its programs too (issue #176), kept and listed beside the audio.
+        if dw {
+            let program = std::path::PathBuf::from("Lead.dwp");
+            let mut picked = mem.0.borrow_mut();
+            picked.files.insert(program.clone(), b"DwPr".to_vec());
+            picked.pick = Some(program);
+            drop(picked);
+            rig.click_id(Id::new(PICKER).with("import"));
+            rig.frame(vec![]);
+            rig.frame(vec![]);
+            assert!(rig.color_of("Lead").is_some(), "lists the program");
+        }
     }
     // The desktop's DW Sampler picker has none.
     let mut rig = Rig::with_synth();

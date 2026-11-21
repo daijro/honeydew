@@ -2,7 +2,8 @@
 //! preset` and the drums track menu's `Save Drumset` open the preset dialog ([`ProjectFiles::ask_preset`]); its `SAVE`
 //! ([`ProjectFiles::save_preset`]) writes the file through the [`super::FileProvider`], as a song is written, without
 //! asking where:
-//! - a module preset to `My Presets/<module folder>/<name>.flmpst` ([`preset_folder`]);
+//! - a module preset to `My Presets/<module folder>/<name>.flmpst` ([`preset_folder`]; a plugin module's folder is its
+//!   plugin's, [`module_folder`]);
 //! - a rack preset to `My Racks/<name>.flmrack`;
 //! - a drum kit to `My Drumsets/<name>.tmpl`.
 //!
@@ -25,6 +26,7 @@ use super::{
 };
 use crate::content;
 use crate::song::chords::ChordSet;
+use crate::song::plugin::is_plugin;
 use crate::song::{DrumKit, ModuleInstance, Song};
 use crate::ui::main_menu::{SongEntry, SongLibrary};
 use crate::ui::rack::{instrument, name_song_channel};
@@ -171,7 +173,25 @@ pub fn preset_folder(type_id: u16) -> Option<&'static str> {
     Some(factory.map_or(spec.display_name, |&(_, folder)| folder))
 }
 
+/// The folder in `My Presets` of `module`'s presets: its type's ([`preset_folder`]), but a plugin module's is named
+/// after its plugin (Honeydew change, #149, 0.5.5: each plugin lists its own presets), the symbols a file name cannot
+/// hold made `_`; its type's for a name that still makes no folder name.
+pub fn module_folder(module: &ModuleInstance) -> Option<String> {
+    use crate::ui::main_menu::library::{FORBIDDEN, check_folder_name};
+    let plugin = (module.file.plugin.as_deref()).filter(|_| is_plugin(module.type_id));
+    let forbidden = |c: char| FORBIDDEN.contains(c) || c.is_control();
+    let name = plugin.map(|p| p.name.trim().replace(forbidden, "_"));
+    (name.filter(|n| check_folder_name(n).is_ok()))
+        .or_else(|| preset_folder(module.type_id).map(str::to_owned))
+}
+
 impl ProjectFiles {
+    /// `My Presets/<folder>` of `module` ([`module_folder`]). `None` without a user folder or for an unknown type.
+    pub fn module_presets_dir(&self, module: &ModuleInstance) -> Option<PathBuf> {
+        let folder = module_folder(module)?;
+        Some(self.user.as_ref()?.join(PRESETS_FOLDER).join(folder))
+    }
+
     /// `My Presets/<module folder>` of module type `type_id`. `None` without a user folder or for an unknown type.
     pub fn presets_dir(&self, type_id: u16) -> Option<PathBuf> {
         let folder = preset_folder(type_id)?;
@@ -195,7 +215,7 @@ impl ProjectFiles {
 
     fn dir_of(&self, source: &PresetSource) -> Option<PathBuf> {
         match source {
-            PresetSource::Module(module) => self.presets_dir(module.type_id),
+            PresetSource::Module(module) => self.module_presets_dir(module),
             PresetSource::Rack { .. } => self.racks_dir(),
             PresetSource::Drumset { .. } => self.drumsets_dir(),
             PresetSource::ChordSet(_) => self.chord_sets_dir(),
@@ -207,14 +227,16 @@ impl ProjectFiles {
     pub fn ask_preset(&mut self, source: PresetSource, channel: i32) {
         let base = match &source {
             PresetSource::Module(module) => match module.file.preset_name.trim() {
-                "" | "Default" => preset_folder(module.type_id).unwrap_or_default(),
-                name => name,
+                "" | "Default" => module_folder(module).unwrap_or_default(),
+                name => name.to_owned(),
             },
-            PresetSource::Rack { name, .. } | PresetSource::Drumset { name, .. } => name.trim(),
-            PresetSource::ChordSet(_) => CUSTOM_CHORD_SET,
+            PresetSource::Rack { name, .. } | PresetSource::Drumset { name, .. } => {
+                name.trim().to_owned()
+            }
+            PresetSource::ChordSet(_) => CUSTOM_CHORD_SET.to_owned(),
         };
         let dir = self.dir_of(&source);
-        let name = self.free_name(dir.as_deref(), base, source.kind().ext(), None);
+        let name = self.free_name(dir.as_deref(), &base, source.kind().ext(), None);
         self.preset_dialog = Some(name);
         self.preset = Some((source, channel));
     }

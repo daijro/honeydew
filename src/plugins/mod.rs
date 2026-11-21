@@ -17,6 +17,7 @@ mod host;
 pub mod scan;
 mod window;
 pub use host::*;
+pub mod files;
 
 /// The settings store's key for the scan results.
 pub const CACHE_KEY: &str = "honeydew.pluginCache";

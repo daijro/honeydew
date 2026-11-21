@@ -16,7 +16,8 @@
 //! the value. The primary button only, and no wheel: it goes to the enclosing scroller. Toggles flip on click. A NaN
 //! value is drawn as the default and an out-of-range one as the nearest end; neither is written back until the user
 //! changes it. Issue #68: a finger other than the first (egui's pointer follows that one only) drags a knob or slider
-//! too, while the first plays keys ([`other_finger`]).
+//! too, while the first plays keys ([`other_finger`]). Honeydew change (#171): while dragged, a knob or slider shows its
+//! value text in a bubble by the finger or pointer ([`bubble`], [`set_value_bubble`]).
 //!
 //! Desktop hover: the one control under the mouse that takes input ([`hovered`]) is lit: a button's fill × 1.15, a
 //! slider's track halo, a knob's wash with its dot × 1.05. The cursor never changes.
@@ -53,6 +54,8 @@ use crate::ui::focus::{self, Kind};
 use crate::ui::popup::{self, PopupItem};
 use crate::ui::{Finger, MOUSE, UiCtx, fingers, focus_lost, gesture, primary_down_live};
 
+mod bubble;
+pub use bubble::set_shown as set_value_bubble;
 mod button;
 pub(crate) use button::{brighter, pressed};
 mod fader;
@@ -130,6 +133,9 @@ pub struct Control<'a> {
     /// Knobs and sliders bound to a parameter: the fine tune dialog supports it ([`crate::ui::fine_tune::supported`]),
     /// so the parameter menu ends with `Fine tune control`.
     pub fine_tune: bool,
+    /// Knobs: the value text on the ring (the default). Off, it shows only in the drag bubble (Honeydew change, #171:
+    /// the mixer's pan knob, the drum strip's envelope knobs).
+    pub ring_text: bool,
 }
 
 /// The parameter menu of a knob, slider, toggle or button: knobs and sliders start it with `Reset`, and a control
@@ -172,6 +178,7 @@ impl<'a> Control<'a> {
             disabled_items: &[],
             menu: ParamMenu::Bound,
             fine_tune: false,
+            ring_text: true,
         }
     }
 
@@ -340,13 +347,15 @@ fn through_index(
 
 /// Interaction of a knob or slider: primary-button drag by `law`, double-tap reset and the parameter menu. Returns the response, marked changed
 /// when the user moved `value`, and the value to draw ([`clean`]: an untouched NaN or out-of-range value is drawn
-/// as the default or the nearest end and left as it is).
+/// as the default or the nearest end and left as it is). While dragged it shows the value bubble with `text` of the
+/// value ([`bubble`]).
 fn drag_control(
     ui: &mut Ui,
     cx: &UiCtx,
     c: &Control,
     value: &mut f32,
     law: Law,
+    text: &dyn Fn(f32) -> String,
 ) -> (Response, f32) {
     let sense = if c.disabled {
         Sense::hover()
@@ -365,7 +374,8 @@ fn drag_control(
     }
     // A press whose long press opened the menu drags nothing under it.
     let menu_open = ui.data(|d| d.get_temp::<Anchor>(menu_id(c.id)).is_some());
-    if response.dragged_by(PointerButton::Primary) && !menu_open {
+    let dragged = response.dragged_by(PointerButton::Primary) && !menu_open;
+    if dragged {
         // The unsnapped, clamped drag value lives in memory for the length of the drag, so that small moves add
         // up between steps and a pointer that went past an end turns the value back as soon as it returns.
         let acc_id = c.id.with("drag");
@@ -400,6 +410,17 @@ fn drag_control(
     if edited && v != *value {
         *value = v;
         response.mark_changed();
+    }
+    // Honeydew change (#171): the value bubble over the dragging pointer, or over another finger that drags it.
+    let pass = ui.ctx().cumulative_pass_nr();
+    let finger = (ui.data(|d| d.get_temp::<OtherFinger>(c.id.with("other finger"))))
+        .filter(|h| h.dragging && h.pass == pass);
+    let at = match response.interact_pointer_pos() {
+        Some(p) if dragged => Some((p, ui.input(|i| i.any_touches()))),
+        _ => finger.map(|h| (h.last, true)),
+    };
+    if let Some((at, touch)) = at {
+        bubble::show(ui.ctx(), cx, at, touch, text(v));
     }
     response.widget_info(|| WidgetInfo::slider(!c.disabled, f64::from(v), c.label));
     (response, v)

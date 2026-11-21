@@ -40,15 +40,19 @@
 //! click (closing never reverts a pick), and so does a 3x Osc's custom-sample picker, which closes on its pick. On the
 //! web, which has no threads, the decode runs at the pick and lands in its own frame, as before.
 //!
+//! A big file previews as it decodes (issues #131, #153): a user file's decode sends the strip its first seconds, then
+//! longer parts, then the whole, which play on seamlessly ([`Decoding`], [`crate::ui::picker_preview`]), while the
+//! pick still applies only once all of it landed. A new pick stops the decode it replaces.
+//!
 //! [`ProjectFiles::sample_library`]: crate::project_files::ProjectFiles::sample_library
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::{Arc, Weak};
 
 use eframe::egui;
 use honeydew_audio::device::AudioCommand;
-use honeydew_audio::sample::{SampleData, decode};
+use honeydew_audio::sample::{DecodeError, SampleData, decode, decode_parts};
 
 use super::preset_picker::{WORKER_LOST, block, outcome, spawn};
 use super::{AppCtx, Nav, drum_editor};
@@ -87,7 +91,7 @@ pub struct State {
     /// The playlist audio-track picker's clip, by id in its lane, once its first pick made it.
     made: Option<u32>,
     /// A pick decoding on the worker ([`decode_pick`]), by its path.
-    loading: Option<(PathBuf, Receiver<Decoded>)>,
+    loading: Option<(PathBuf, Decoding)>,
     /// The picker was closed while its pick decodes: it stays, drawing nothing and taking every click, until the pick
     /// lands.
     closing: bool,
@@ -165,6 +169,68 @@ pub(crate) fn decodes_here() -> usize {
     DECODES.get()
 }
 
+/// A pick decoding on the worker ([`decoding`]): the parts of its sample as they come, then all the worker made of it.
+pub(crate) struct Decoding {
+    /// Ever longer parts of the sample, each with about how many frames the whole has; the last is the whole (`None`).
+    parts: Receiver<(Waveform, Option<usize>)>,
+    done: Receiver<Decoded>,
+    /// Goes with the pick (a new pick, the picker closing), which stops its decode ([`Stream::alive`]).
+    _alive: Arc<()>,
+}
+
+impl Decoding {
+    /// The newest part since the last call.
+    pub(crate) fn part(&self) -> Option<(Waveform, Option<usize>)> {
+        self.parts.try_iter().last()
+    }
+
+    pub(crate) fn done(&self) -> Result<Decoded, TryRecvError> {
+        self.done.try_recv()
+    }
+}
+
+/// Where a pick's decode sends its parts ([`Decoding::parts`]).
+pub(super) struct Stream {
+    parts: Sender<(Waveform, Option<usize>)>,
+    /// The pick's [`Decoding`] while it waits: once that is gone, the decode stops.
+    alive: Weak<()>,
+}
+
+impl Stream {
+    /// Decodes `file`, sending its parts as they come ([`decode_parts`]).
+    fn decode(&self, file: &[u8]) -> Result<SampleData, DecodeError> {
+        let stop = || self.alive.strong_count() == 0;
+        let mut part = |part, whole| {
+            let wave = Waveform::new(Arc::new(part));
+            drop(self.parts.send((wave, Some(whole))));
+        };
+        decode_parts(file, &stop, &mut part)
+    }
+}
+
+/// Decodes `key` from what `read` reads on the worker ([`decode_pick`]); with `strip` its parts stream to the strip as
+/// they decode, but on the web, whose decode runs at once.
+fn decoding(
+    key: SampleKey,
+    read: impl FnOnce() -> Result<Vec<u8>, String> + Send + 'static,
+    shape: bool,
+    into: Option<PickFor>,
+    strip: bool,
+) -> Decoding {
+    let (tx, parts) = mpsc::channel();
+    let alive = Arc::new(());
+    let stream = (strip && cfg!(not(target_arch = "wasm32"))).then(|| Stream {
+        parts: tx,
+        alive: Arc::downgrade(&alive),
+    });
+    let done = spawn(move || decode_pick(key, read(), shape, into, stream.as_ref()));
+    Decoding {
+        parts,
+        done,
+        _alive: alive,
+    }
+}
+
 /// What a pick goes into, as the pick will leave it: what the worker makes ready with the decode ([`decode_pick`]).
 pub(super) enum PickFor {
     /// A pad's slot, the file given ([`load_sample`]): its `STR1` stretch and pitch's first frames render, and the rest
@@ -180,7 +246,8 @@ pub(super) enum PickFor {
 
 /// Decodes a picked file's `bytes` (empty for ours, which render from code) as the sample `key` ([`sample_key`]), or
 /// with `shape` as a 3x Osc Custom table, into a cache of its own, and makes ready what the pick goes `into`. Runs on
-/// the worker.
+/// the worker. A user file's sample goes to the `stream` as it decodes, the whole before what it goes into; a stopped
+/// one makes nothing.
 // ponytail: the cache's reader copies the file's bytes (2× a big file, briefly, on the worker); hand them over once if
 // that ever matters.
 pub(super) fn decode_pick(
@@ -188,13 +255,32 @@ pub(super) fn decode_pick(
     bytes: Result<Vec<u8>, String>,
     shape: bool,
     into: Option<PickFor>,
+    stream: Option<&Stream>,
 ) -> Decoded {
     #[cfg(test)]
     DECODES.set(DECODES.get() + 1);
     let mut samples = SampleCache::default();
     let read = |_: &ContentPath| bytes.as_ref().ok().cloned();
+    let stream = stream.filter(|_| !shape && matches!(key, SampleKey::File(_)));
+    // The streamed decode's error, if it failed.
+    let mut streamed = None;
+    if let (Some(stream), Ok(file)) = (stream, &bytes) {
+        let whole = stream.decode(file);
+        if whole == Err(DecodeError::Cancelled) {
+            return Decoded {
+                samples,
+                wave: None,
+                error: None,
+            };
+        }
+        streamed = Some(whole.as_ref().err().map(|err| format!("{err:?}")));
+        samples.put(key.clone(), whole.ok().map(Arc::new));
+    }
     samples.load_sample(key.clone(), shape, &read);
     let wave = samples.get(&key).map(Waveform::new);
+    if let (Some(stream), Some(wave)) = (stream, &wave) {
+        drop(stream.parts.send((wave.clone(), None)));
+    }
     match (into, &wave) {
         // The pad plays its first frames at once, and the rest streams in once the pick applies (its
         // job goes with `samples`), as a `Stretch` re-import's.
@@ -212,7 +298,7 @@ pub(super) fn decode_pick(
     let error = match bytes {
         _ if wave.is_some() || samples.shape(&key).is_some() => None,
         Err(err) => Some(err),
-        Ok(bytes) => decode(&bytes).err().map(|err| format!("{err:?}")),
+        Ok(bytes) => streamed.unwrap_or_else(|| decode(&bytes).err().map(|err| format!("{err:?}"))),
     };
     Decoded {
         samples,
@@ -311,8 +397,8 @@ fn pick(
         Some(PickerAction::Pick(path)) => {
             let (key, read) = (sample_key(files, &path), pick_bytes(files, &path));
             let into = into(app.song, &path, files);
-            // It replaces a pick still decoding, whose result is dropped.
-            let done = spawn(move || decode_pick(key, read(), shape, into));
+            // It replaces a pick still decoding, which stops.
+            let done = decoding(key, read, shape, into, strip);
             if let (true, Some(picker)) = (strip, &mut state.picker) {
                 show_strip(picker, &path, None);
             }
@@ -324,7 +410,13 @@ fn pick(
         }
         Some(PickerAction::Default | PickerAction::Back) | None => {}
     }
-    let arrived = match state.loading.as_ref().map(|(_, done)| done.try_recv()) {
+    // What is decoded plays on the strip while the rest decodes (#131, #153).
+    if let (Some((_, decoding)), Some(picker)) = (&state.loading, &mut state.picker)
+        && let Some((wave, whole)) = decoding.part()
+    {
+        picker.grow_sample(Some(wave), whole);
+    }
+    let arrived = match state.loading.as_ref().map(|(_, done)| done.done()) {
         None => None,
         Some(Err(TryRecvError::Empty)) => {
             match state.closing {
@@ -344,8 +436,8 @@ fn pick(
         }
     };
     if let Some(picker) = &mut state.picker {
-        if let (true, Some((path, decoded))) = (strip, &arrived) {
-            show_strip(picker, path, decoded.wave.clone());
+        if let (true, Some((_, decoded))) = (strip, &arrived) {
+            picker.grow_sample(decoded.wave.clone(), None);
         }
         preview(picker, app.audio);
     }
@@ -388,19 +480,20 @@ pub(super) fn preview(picker: &mut PresetPicker, audio: &mut AudioLink) {
 /// Sends a sample strip's `plays` of its sample `data` to the preview player.
 pub(super) fn send_plays(plays: Vec<Play>, data: Option<Arc<SampleData>>, audio: &mut AudioLink) {
     for play in plays {
-        let sample = match (play, &data) {
-            (Play::From(from), Some(data)) => Some((data.clone(), from)),
-            (Play::From(_), None) => continue,
-            (Play::Stop, _) => None,
+        let command = match (play, &data) {
+            (Play::From(from), Some(data)) => AudioCommand::Preview(Some((data.clone(), from))),
+            (Play::More(more), Some(data)) => AudioCommand::PreviewMore(data.clone(), more),
+            (Play::From(_) | Play::More(_), None) => continue,
+            (Play::Stop, _) => AudioCommand::Preview(None),
         };
-        audio.send(AudioCommand::Preview(sample));
+        audio.send(command);
     }
 }
 
 /// Decodes the audio file `path` on the worker for a sample strip alone (SONGS' preview, #106), as a pick decodes.
-pub(super) fn decode_file(files: &ProjectFiles, path: &Path) -> Receiver<Decoded> {
+pub(super) fn decode_file(files: &ProjectFiles, path: &Path) -> Decoding {
     let (key, read) = (sample_key(files, path), pick_bytes(files, path));
-    spawn(move || decode_pick(key, read(), false, None))
+    decoding(key, read, false, None, true)
 }
 
 /// The picker closes: its sample stops, and it is dropped, with a pick still decoding.
@@ -636,7 +729,6 @@ pub(crate) fn replace_sample(
     for &r in &clips {
         if let Some(clip) = sample_row::clip_mut(song, r.into()) {
             fit_audio_clip(clip, samples, bpm, bar);
-            // ponytail: the offset is source time, the length Speed-scaled; exact at the centred Speed.
             if clip.offset_beats >= clip.file.source_len_beats {
                 clip.offset_beats = 0.0;
             }
@@ -842,7 +934,9 @@ pub(crate) fn drop_decode(
         .collect();
     spawn(move || {
         (jobs.into_iter())
-            .map(|(path, key, read, into)| (path, decode_pick(key, read(), false, Some(into))))
+            .map(|(path, key, read, into)| {
+                (path, decode_pick(key, read(), false, Some(into), None))
+            })
             .collect()
     })
 }
@@ -923,13 +1017,19 @@ pub(crate) fn give(slot: &mut SamplerSlot, path: &Path, user: &Path) -> Option<(
 
 /// Gives `slot` the sample file at `path`, whose shorthand is `shorthand` (`@L@`, or `@R@` for imported content,
 /// [`ProjectFiles::shorthand`]): its sample path, its folder and sample name (the file's, below that root) and its
-/// `PRST` (the file's path and `<folder>/<name>`, as a module preset's is). The custom pad name (`MAIN`@1051) is
+/// `PRST` (the file's path and `<folder>/<name>`, as a module preset's is). A file in a library folder (Honeydew
+/// change, #144) is named by its own path, and below the library folder's parent. The custom pad name (`MAIN`@1051) is
 /// untouched. `None`, leaving `slot` as it was, for a path with no name.
 fn give_file(slot: &mut SamplerSlot, path: &Path, shorthand: ContentPath) -> Option<()> {
-    let ContentPath::Shorthand { relative, .. } = &shorthand else {
-        return None;
+    let relative = match &shorthand {
+        ContentPath::Shorthand { relative, .. } => relative.clone(),
+        ContentPath::Plain(_) => {
+            let root = crate::ui::main_menu::library::library_root_of(path)?;
+            let below = path.strip_prefix(root.parent()?).ok()?;
+            below.to_str()?.replace('\\', "/")
+        }
     };
-    let named = Path::new(relative).with_extension("");
+    let named = Path::new(&relative).with_extension("");
     let name = named.file_name()?.to_str()?.to_owned();
     let folder = named.parent()?.to_str()?.to_owned();
     slot.file.provenance = named.to_str()?.to_owned();
@@ -1022,26 +1122,48 @@ mod tests {
         let key = SampleKey::File(user_path("My Samples/Wave.wav"));
         let bytes = || Ok(wav(&[0, 9000, 0, -9000]));
         // A sample: the cache holds it, and the strip its waveform.
-        let sample = decode_pick(key.clone(), bytes(), false, None);
+        let sample = decode_pick(key.clone(), bytes(), false, None, None);
         assert_eq!(sample.samples.get(&key).map(|s| s.frames()), Some(4));
         assert_eq!(sample.wave.map(|w| w.data.frames()), Some(4));
         assert_eq!(sample.error, None);
         // A 3x Osc shape: its table only.
-        let shape = decode_pick(key.clone(), bytes(), true, None);
+        let shape = decode_pick(key.clone(), bytes(), true, None, None);
         assert!(shape.samples.shape(&key).is_some() && shape.samples.get(&key).is_none());
         assert!(shape.wave.is_none() && shape.error.is_none());
         // A file that does not decode, or does not read: why.
-        let broken = decode_pick(key.clone(), Ok(b"RIFF".to_vec()), false, None);
+        let broken = decode_pick(key.clone(), Ok(b"RIFF".to_vec()), false, None, None);
         assert!(broken.wave.is_none() && broken.error.is_some());
-        let gone = decode_pick(key, Err("gone".into()), true, None);
+        let gone = decode_pick(key.clone(), Err("gone".into()), true, None, None);
         assert_eq!(gone.error.as_deref(), Some("gone"));
         // Ours render from code, with no bytes.
         let dust = SampleKey::of_path(&ContentPath::Shorthand {
             root: ContentRoot::App,
             relative: "Built-in/Loops/Dust Break 84.wav".into(),
         });
-        let ours = decode_pick(dust, Ok(Vec::new()), false, None);
+        let ours = decode_pick(dust, Ok(Vec::new()), false, None, None);
         assert!(ours.wave.is_some() && ours.error.is_none());
+        // Issues #131, #153: a big file's first seconds go to the strip first, then the whole, the cache's; a stopped
+        // decode makes nothing.
+        let long = wav(&vec![1000; 5 * 44_100]);
+        let (tx, parts) = std::sync::mpsc::channel();
+        let alive = Arc::new(());
+        let (parts_of, alive_of) = (tx, Arc::downgrade(&alive));
+        let stream = Stream {
+            parts: parts_of,
+            alive: alive_of,
+        };
+        let picked = decode_pick(key.clone(), Ok(long.clone()), false, None, Some(&stream));
+        let parts: Vec<_> = parts.try_iter().collect();
+        let frames: Vec<_> = (parts.iter())
+            .map(|(wave, whole)| (wave.data.frames(), *whole))
+            .collect();
+        let s = 44_100;
+        assert_eq!(frames, [(2 * s, Some(5 * s)), (5 * s, None)]);
+        let cached = picked.samples.get(&key).expect("cached");
+        assert!(Arc::ptr_eq(&parts[1].0.data, &cached) && picked.error.is_none());
+        drop(alive);
+        let stopped = decode_pick(key.clone(), Ok(long), false, None, Some(&stream));
+        assert!(stopped.wave.is_none() && stopped.samples.get(&key).is_none());
     }
 
     #[test]
@@ -1208,6 +1330,7 @@ mod tests {
             sample_key(&files, &path),
             pick_bytes(&files, &path)(),
             false,
+            None,
             None,
         );
         assert!(picked.wave.is_some(), "{:?}", picked.error);

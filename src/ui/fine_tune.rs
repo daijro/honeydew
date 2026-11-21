@@ -261,7 +261,7 @@ pub fn show(
                 menu: ParamMenu::Off,
                 ..Control::new(id.with("slider"), slider, "", d.ink, d.reset)
             };
-            shown.changed = widgets::fine_tune_slider(ui, cx, &control, value).changed();
+            shown.changed = widgets::fine_tune_slider(ui, cx, &control, value, &text).changed();
             ui.painter()
                 .text(value_row.center(), center, text(*value), font, ink);
             let surface = (cx.theme.colors.menu_fill.to_color32(), CLOSE_DISC);

@@ -134,10 +134,9 @@ fn a_slide_right_after_a_note_on_reaches_its_voice() {
     }
 }
 
-/// MiniSynth zeroes the offsets only when the voice it takes was idle: MONO retriggers voice 1, which
-/// keeps them.
+/// MiniSynth zeroes the offsets on every new note (#143, a Honeydew change): MONO retriggers voice 1 at its own pitch.
 #[test]
-fn minisynth_keeps_the_offsets_on_a_voice_that_was_sounding() {
+fn minisynth_starts_a_retriggered_voice_at_its_own_pitch() {
     let mono = || {
         let mut synth = MiniSynth::new(RATE).unwrap();
         synth.set_parameter(1, 0.5).unwrap();
@@ -148,7 +147,7 @@ fn minisynth_keeps_the_offsets_on_a_voice_that_was_sounding() {
         synth.note_on(57, 1.0, 0.5)
     });
     assert!(
-        (retriggered / rate - 2.0).abs() < 0.1,
+        (retriggered / rate - 1.0).abs() < 0.05,
         "{retriggered} / {rate}"
     );
 }

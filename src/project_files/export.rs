@@ -51,11 +51,11 @@ use honeydew_audio::ogg_writer::OggEncoder;
 use honeydew_audio::wav_writer::{HEADER_LEN, WavWriter, float32_wav, header, info_chunk};
 
 use super::{
-    FileEvent, MAX_FILE_BYTES, OVERWRITE, ProjectFiles, SAVE_FAILED, SAVE_FILE_FAILED, SAVED,
-    in_user_folder, stamped, stem, too_large,
+    FileEvent, MAX_FILE_BYTES, OVERWRITE, ProjectFiles, SAMPLES_FOLDER, SAVE_FAILED,
+    SAVE_FILE_FAILED, SAVED, in_user_folder, stamped, stem, too_large,
 };
 use crate::APP_NAME;
-use crate::flm::chunk::ContentPath;
+use crate::flm::chunk::{ContentPath, ContentRoot};
 use crate::render::{Render, RenderError, RenderSpec, Stream};
 use crate::sample_cache::{self, SampleCache};
 use crate::smf::smf_with;
@@ -446,10 +446,10 @@ impl ProjectFiles {
     /// The project archive of `song` as `<name>.flm`: the song as a save writes it, then every user file it plays;
     /// and the count of original content files left out. An error carries its message's title.
     fn archive(&self, song: &Song, name: &str) -> Result<(Vec<u8>, usize), (&'static str, String)> {
-        let flm =
-            (self.codec.write)(&stamped(song, name.to_owned())).map_err(|e| (SAVE_FAILED, e))?;
+        let mut song = stamped(song, name.to_owned());
+        let (user_files, left_out) = self.user_files_of(&mut song);
+        let flm = (self.codec.write)(&song).map_err(|e| (SAVE_FAILED, e))?;
         let mut entries = vec![(format!("{name}.flm"), flm)];
-        let (user_files, left_out) = self.user_files_of(song);
         entries.extend(user_files);
         let bytes = crate::zip::write(&entries).map_err(|e| (COMPRESS_FAILED, e.to_string()))?;
         if bytes.len() as u64 > MAX_FILE_BYTES {
@@ -462,17 +462,27 @@ impl ProjectFiles {
     /// Only a DW program (`.dwp`) and an SFZ (`.sfz`, and the `.sfzh` it includes) are handed on, for the files they
     /// name; nothing else is decoded, parsed or stretched.
     /// A file it plays that really is in the Original Content folder, every link followed, is only counted.
-    fn user_files_of(&self, song: &Song) -> (BTreeMap<String, Vec<u8>>, usize) {
+    /// Issue #168: also each file a built-in Lemon plugin opens by its path, which its state then names by its path in
+    /// the archive, for opening it to lead to the extracted file ([`Self::relink_plugin_files`]): a user file's path in
+    /// the user folder, any other's [`Self::outside_name`].
+    /// Honeydew change (#144): a sample from a library folder, which a song names by its own path, goes in by its
+    /// [`Self::outside_name`] too, the song relinked to that file in the user folder.
+    fn user_files_of(&self, song: &mut Song) -> (BTreeMap<String, Vec<u8>>, usize) {
         let (read, found) = (sample_cache::reader(self), RefCell::new(BTreeMap::new()));
         let left_out = RefCell::new(std::collections::BTreeSet::new());
+        let library = RefCell::new(Vec::new());
         let record = |path: &ContentPath| {
             let bytes = read(path)?;
             let file = self.resolve(path);
-            if let Some(file) = file.filter(|file| self.in_content(file)) {
+            if let Some(file) = file.clone().filter(|file| self.in_content(file)) {
                 left_out.borrow_mut().insert(file);
             } else if let Some(relative) = in_user_folder(path) {
                 let parts: Vec<_> = relative.iter().map(|p| p.to_string_lossy()).collect();
                 found.borrow_mut().insert(parts.join("/"), bytes.clone());
+            } else if let (ContentPath::Plain(_), Some(file)) = (path, file) {
+                library
+                    .borrow_mut()
+                    .push((path.clone(), file, bytes.clone()));
             }
             let (ContentPath::Shorthand { relative, .. } | ContentPath::Plain(relative)) = path;
             let ext = Path::new(relative).extension();
@@ -480,7 +490,56 @@ impl ProjectFiles {
             (ext.is_some_and(|e| named.iter().any(|x| e.eq_ignore_ascii_case(x)))).then_some(bytes)
         };
         SampleCache::default().load(song, &record);
-        (found.into_inner(), left_out.into_inner().len())
+        let (mut found, mut left_out) = (found.into_inner(), left_out.into_inner());
+        let mut packed = std::collections::HashMap::new();
+        for (path, file, bytes) in library.into_inner() {
+            let name = self.outside_name(&found, &file, &bytes);
+            found.insert(name.clone(), bytes);
+            let (root, relative) = (ContentRoot::User, name);
+            packed.insert(path, ContentPath::Shorthand { root, relative });
+        }
+        super::archive::relink(song, &|path| packed.get(path).cloned());
+        crate::plugins::files::relink(song, &mut |path| {
+            let file = Path::new(path);
+            // A path on this disk is absolute; the web's copies have no root.
+            if !(self.copies || file.is_absolute()) {
+                return None;
+            }
+            let relative = match self.user_shorthand(file) {
+                Some(ContentPath::Shorthand { relative, .. }) => Some(relative),
+                _ => None,
+            };
+            let relative = relative.filter(|r| Self::stays_inside(Path::new(r)));
+            let Ok(bytes) = self.read_user_file(file) else {
+                return relative;
+            };
+            if self.in_content(file) {
+                left_out.insert(file.to_owned());
+                return relative;
+            }
+            let name = relative.unwrap_or_else(|| self.outside_name(&found, file, &bytes));
+            found.insert(name.clone(), bytes);
+            Some(name)
+        });
+        (found, left_out.len())
+    }
+
+    /// The archive name of the file `file` from outside the user folder, of `bytes` (issue #168): `My Samples/<its
+    /// name>`, numbered ` (2)` and up while the archive has other bytes of that name or the user folder a file of it.
+    fn outside_name(&self, found: &BTreeMap<String, Vec<u8>>, file: &Path, bytes: &[u8]) -> String {
+        let stem = file
+            .file_stem()
+            .unwrap_or("Sample".as_ref())
+            .to_string_lossy();
+        let ext = (file.extension()).map_or(String::new(), |e| format!(".{}", e.to_string_lossy()));
+        let user = self.user.clone().unwrap_or_default();
+        let taken = |name: &str| {
+            let name = format!("{name}{ext}");
+            (found.get(&name))
+                .map_or_else(|| self.user_file_exists(&user.join(&name)), |b| b != bytes)
+        };
+        let name = crate::token_map::free(&format!("{SAMPLES_FOLDER}/{stem}"), taken);
+        format!("{name}{ext}")
     }
 }
 

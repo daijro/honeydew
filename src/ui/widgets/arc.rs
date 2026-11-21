@@ -167,7 +167,7 @@ pub fn arc_slider(
     value: &mut f32,
     display: impl Fn(f32) -> String,
 ) -> Response {
-    let (response, v) = drag_control(ui, cx, c, value, Law::Knob(1.0));
+    let (response, v) = drag_control(ui, cx, c, value, Law::Knob(1.0), &display);
     let (m, colors) = (cx.m, &cx.theme.colors);
     let painter = ui.painter();
     let (_, body, value_strip) = c.strips(m);

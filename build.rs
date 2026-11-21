@@ -9,15 +9,20 @@ fn main() {
     if arch != "wasm32" && os != "android" && os != "ios" {
         println!("cargo::rustc-cfg=plugin_host");
     }
-    // `desktop`: the desktop sound modes, the MCP token and multi-core mixing (rayon, getrandom). `x11`: plugin editor
+    // `desktop`: the desktop sound modes and the MCP token (getrandom). `x11`: plugin editor
     // windows are X11 ones (x11rb). `native_midi`: midir has a MIDI input backend (its ALSA one is Linux only). Each
     // set matches its dependencies' target in Cargo.toml. `mobile`: the phones (Android, iOS), which have no file
-    // dialogs, file manager or desktop sound library.
+    // dialogs, file manager or desktop sound library. `multi_core`: the rack worker pool (rayon), the desktop and,
+    // as a Honeydew change (#145, #156), Android.
     for (name, systems) in [
         ("desktop", &["linux", "freebsd", "macos", "windows"][..]),
         ("x11", &["linux", "freebsd"]),
         ("native_midi", &["linux", "macos", "windows"]),
         ("mobile", &["android", "ios"]),
+        (
+            "multi_core",
+            &["linux", "freebsd", "macos", "windows", "android"],
+        ),
     ] {
         println!("cargo::rustc-check-cfg=cfg({name})");
         if systems.contains(&os.as_str()) {

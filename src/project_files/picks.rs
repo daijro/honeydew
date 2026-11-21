@@ -24,6 +24,7 @@ use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath, FlmError};
 use crate::flm::sf2d::Sf2d;
 use crate::params::Role;
 use crate::song::ModuleInstance;
+use crate::song::plugin::{PluginRef, is_plugin};
 use honeydew_audio::gm_waveshapes::{PARTIALS, SLOTS, Spectrum};
 
 /// A DW program.
@@ -135,7 +136,8 @@ pub fn fits(name: &Path, type_id: Option<u16>, read: impl FnOnce() -> Option<Vec
 /// Loads the picked file `path` (its bytes `bytes`, its shorthand `shorthand`) into `module`: a preset, or the path
 /// chunk of its `CSTM`. An error leaves `module` as it was. `.fst` always loads: a failed import
 /// leaves the module at its defaults, then reads the bytes as native chunks ([`super::fst::native_state`]); its
-/// custom waveform stays unless the file names one that resolves.
+/// custom waveform stays unless the file names one that resolves. Honeydew change (#149, 0.5.5): a plugin module
+/// takes only a preset of its own plugin (the same format and id, or the same name).
 pub fn load_pick(
     module: &mut ModuleInstance,
     path: &Path,
@@ -170,6 +172,16 @@ pub fn load_pick(
         return Ok(());
     }
     let preset = crate::flm::read_preset(bytes, Some(t)).map_err(|e| e.to_string())?;
+    let same = |a: &PluginRef, b: &PluginRef| {
+        (a.format == b.format && a.id.eq_ignore_ascii_case(&b.id)) || a.name == b.name
+    };
+    let theirs = preset.file.plugin.as_deref();
+    if let Some(mine) = module.file.plugin.as_deref().filter(|_| is_plugin(t))
+        && !theirs.is_some_and(|theirs| same(mine, theirs))
+    {
+        let name = theirs.map_or("another module", |p| p.name.as_str());
+        return Err(format!("The preset is for {name}, not {}.", mine.name));
+    }
     module.load_preset(preset);
     Ok(())
 }

@@ -412,3 +412,42 @@ fn replace_sample_swaps_it_in_every_clip_playing_it_keeping_their_params_in_one_
     rig.undo();
     assert_eq!(played(&rig), before);
 }
+
+#[test]
+fn speed_and_sync_refit_the_clip_to_the_sample_it_plays() {
+    // PR #173: the row's Speed and SYNC refit @28 and the loop (`fit_audio_clip`). Two seconds of sample at 120 BPM
+    // are 4 beats; the stored SYNC ratio 2 doubles them once the toggle's load has its stretch in the cache.
+    let mut rig = audio_rig();
+    let wav = crate::sample_cache::tests::wav(&[0; 88_200]);
+    (rig.app.files).keep_user_file(Path::new("My Samples/Two.wav"), wav);
+    let mut slot = SamplerSlot::default();
+    slot.file.path = Some(ContentPath::Shorthand {
+        root: ContentRoot::User,
+        relative: "My Samples/Two.wav".into(),
+    });
+    slot.file.stretch_ratio = 2.0;
+    rig.app.song.channels[1].lanes[0].clips[0].file.sample = Some(Box::new(slot));
+    let app = &mut rig.app;
+    let read = crate::sample_cache::reader(&app.files);
+    (app.audio.samples).load_live(&app.song, &app.song, &read);
+    let clip = &mut app.song.channels[1].lanes[0].clips[0];
+    crate::audio_engine::fit_audio_clip(clip, &app.audio.samples, 120.0, 4);
+    drop(read);
+    let fitted = |rig: &Rig| {
+        let clip = KEY.clip(&rig.app.song).expect("the clip");
+        (clip.file.source_len_beats, clip.loop_len_beats)
+    };
+    assert_eq!(fitted(&rig), (4.0, 4.0));
+    rig.click_id(id(Ctl::Sync));
+    assert_eq!(fitted(&rig), (8.0, 8.0), "SYNC on");
+    // Speed +12 (a quarter of the slider right) plays it twice as fast.
+    let rect = rig.ctx.read_response(id(Ctl::Speed)).unwrap().rect;
+    let (at, d) = (rect.center(), vec2((rect.width() - U) / 4.0, 0.0));
+    rig.press(at);
+    rig.drag_to(at + d / 2.0);
+    rig.drag_to(at + d);
+    rig.release(at + d);
+    rig.frame(vec![]);
+    assert_eq!(rig.clip_slot().map(|s| s.params[2]), Some(0.75));
+    assert_eq!(fitted(&rig), (4.0, 4.0), "Speed +12");
+}

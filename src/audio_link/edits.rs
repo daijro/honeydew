@@ -9,7 +9,7 @@ use crate::song::{Channel, Clip, Event, Lane, LaneKind, Song};
 pub(super) struct Edit {
     /// A position re-sync follows.
     pub resync: bool,
-    /// The channels (of the edited song) that first get all notes off: a deleted lane's.
+    /// The channels (of the edited song) that first get all notes off: a deleted lane's, a changed note effect's.
     pub silence: Vec<usize>,
 }
 
@@ -25,7 +25,8 @@ pub(super) struct Edit {
 /// step, Clear and Fill) as [`super::Handover::Quiet`], and the edits that re-sync whatever they changed (Quantize,
 /// Humanize, Snap to scale, a graph-lane touch that changed nothing) as [`super::Handover::Undo`]. A MIDI send added,
 /// removed or switched (or gone with its channel) re-syncs too, and silences every channel a MIDI send played into, so
-/// that no live note it forwarded is left without its note-off. `last` is scratch.
+/// that no live note it forwarded is left without its note-off. A note effect changed (#140) silences its channel and
+/// the channels its MIDI sends play into, with no re-sync. `last` is scratch.
 pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
     let tempo = tempo_moved || last.tempo_bpm != new.tempo_bpm;
     let deleted: Vec<i32> = (last.channels.iter().map(|c| c.id))
@@ -80,7 +81,55 @@ pub(super) fn edit(last: &mut Song, new: &Song, tempo_moved: bool) -> Edit {
             }
         }
     }
+    // #140: a channel whose note effects changed holds notes at their old pitches, whose note-offs the new engine sends
+    // at the new ones. It gets all notes off, and so do the channels its MIDI sends forward them to, down the chain;
+    // nothing re-syncs, so the audio clips play on, and the next notes play through the new note effects.
+    let changed = |b: &Channel| {
+        let a = last.channels.iter().find(|a| a.id == b.id);
+        a.is_some_and(|a| note_effects_changed(a, b))
+    };
+    let mut moved: Vec<usize> = (0..new.channels.len())
+        .filter(|&index| changed(&new.channels[index]))
+        .collect();
+    let mut at = 0;
+    while let Some(&channel) = moved.get(at) {
+        at += 1;
+        let sends = new.channels[channel].file.midi_sends.iter();
+        for send in sends.filter(|s| s.enabled) {
+            let target = (new.channels.iter()).position(|c| c.id == send.target_channel_id);
+            if let Some(target) = target.filter(|t| !moved.contains(t)) {
+                moved.push(target);
+            }
+        }
+    }
+    for channel in moved {
+        if !edit.silence.contains(&channel) {
+            edit.silence.push(channel);
+        }
+    }
     edit
+}
+
+/// `b`, channel `a` after the edit, plays its notes through other note effects (Note Echo to Arpeggiator, 47..=51):
+/// another list of them, in rack order with their params, or a module of both racks with another count of them above
+/// it. ponytail: an audio effect moved across a note effect counts too, a needless cut; check for instruments if it
+/// matters.
+fn note_effects_changed(a: &Channel, b: &Channel) -> bool {
+    let note = |m: &&crate::song::ModuleInstance| (47..=51).contains(&m.type_id);
+    let effects = |a: &Channel, b: &Channel| {
+        let effect = |m: &crate::song::ModuleInstance| (m.type_id, m.instance_id, m.params.clone());
+        let ours = a.rack.modules.iter().filter(note).map(effect);
+        ours.ne(b.rack.modules.iter().filter(note).map(effect))
+    };
+    let above = |c: &Channel, id| {
+        let at = c.rack.index_of(id)?;
+        Some(c.rack.modules[..at].iter().filter(note).count())
+    };
+    effects(a, b)
+        || (b.rack.modules.iter()).any(|m| {
+            let before = above(a, m.instance_id);
+            before.is_some_and(|n| Some(n) != above(b, m.instance_id))
+        })
 }
 
 /// `a`'s lanes as `b` (the same channel after the edit) holds them when nothing but its structure changed: without the
@@ -445,6 +494,55 @@ mod tests {
             &rendered(&rec, 1.0),
             &reference(&both(1.0, false), 1.0, 1.0),
         );
+    }
+
+    /// #140: a Transpose change while a note it moved sounds gives its channel all notes off, with no re-sync: the note
+    /// ends there at its old pitch instead of hanging (its note-off would go out at the new one).
+    #[test]
+    fn a_note_effect_change_releases_the_notes_it_moved() {
+        let transposed = |end: f64, octave: f32| {
+            let mut song = synth(&[note(0.0, end, 57)]);
+            let rack = &mut song.channels[1].rack;
+            let transpose = rack.insert(0, 48);
+            rack.get_mut(transpose).unwrap().params[1] = octave;
+            song
+        };
+        let song = transposed(4.0, 5.0 / 8.0);
+        let rec = Recorder::default();
+        let mut link = playing(&rec, &song);
+        rendered(&rec, 1.0);
+        let moved = transposed(4.0, 6.0 / 8.0);
+        assert!(link.replace_song(&moved, true, tick(&rec), &read));
+        assert_eq!(
+            rec.take(),
+            ["ReplaceSong adopting no-resync silencing 1", "Play"]
+        );
+        let ended = transposed(1.0, 5.0 / 8.0);
+        assert_close(&rendered(&rec, 1.0), &reference(&ended, 1.0, 1.0));
+    }
+
+    /// #140: a note tapped in before a sounding one under a Randomizer's Pitch runs no re-sync, and the Randomizer
+    /// draws the sounding note another pitch (it draws by start order): the new engine never ends the old pitch, so the
+    /// merge ends it at once.
+    #[test]
+    fn a_note_tapped_in_before_a_randomized_one_ends_it() {
+        let randomized = |notes: &[Event]| {
+            let mut song = synth(notes);
+            let rack = &mut song.channels[1].rack;
+            let randomizer = rack.insert(0, 49);
+            rack.get_mut(randomizer).unwrap().params[1] = 1.0;
+            song
+        };
+        let song = randomized(&[note(0.5, 4.0, 57)]);
+        let rec = Recorder::default();
+        let mut link = playing(&rec, &song);
+        rendered(&rec, 1.0);
+        let tapped = randomized(&[note(0.0, 0.25, 64), note(0.5, 4.0, 57)]);
+        let quiet = Handover::Quiet;
+        assert!(link.replace_song_keeping(&tapped, &tapped, true, tick(&rec), &read, quiet));
+        assert_eq!(rec.take(), ["ReplaceSong adopting no-resync", "Play"]);
+        let ended = randomized(&[note(0.5, 0.5, 57)]);
+        assert_close(&rendered(&rec, 1.0), &reference(&ended, 1.0, 1.0));
     }
 
     /// Adding an effect hands over an engine that takes the playing one over without a re-sync; the delay tail of a

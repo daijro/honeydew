@@ -850,18 +850,67 @@ pub fn store_states(song: &mut Song) {
                 let Some(plugin) = module.file.plugin.as_deref_mut() else {
                     continue;
                 };
-                // Edits waiting for a block (none plays while stopped) are applied first.
-                let saved = hosted.plugin.lock().ok().and_then(|mut p| {
-                    p.idle();
-                    p.save_state()
-                });
-                let Some(state) = saved else { continue };
+                let Some(state) = state_now(hosted) else {
+                    continue;
+                };
                 if *plugin.state != state[..] {
                     plugin.state = state.into();
                 }
             }
         }
     });
+}
+
+/// Issue #149: copies of channel `channel_id`'s plugin modules (a `Copy`, `Copy Rack`, `Save Rack preset`) take their
+/// instances' state now, as a state of their own: a paste or a preset's load starts from the plugin as it was at the
+/// copy, even once the module is gone or the song closed.
+pub fn store_copy_states(channel_id: i32, modules: &mut [ModuleInstance]) {
+    with(|host| {
+        for module in modules.iter_mut().filter(|m| is_plugin(m.type_id)) {
+            let hosted = host.live.get(&(channel_id, module.instance_id));
+            let state = hosted.and_then(state_now);
+            if let (Some(plugin), Some(state)) = (module.file.plugin.as_deref_mut(), state) {
+                plugin.state = state.into();
+            }
+        }
+    });
+}
+
+/// Honeydew change (#149, 0.5.5): plugin module `module` on the channel with id `channel_id` took a preset: its running
+/// instance loads the preset's state (its plugin's own, which its params alone may not hold), and the params it then
+/// has are what the next [`sync`] compares the module's with. Nothing for a module that is not a running plugin's.
+pub fn load_preset_state(channel_id: i32, module: &ModuleInstance) {
+    let Some(plugin_ref) = (module.file.plugin.as_deref()).filter(|_| is_plugin(module.type_id))
+    else {
+        return;
+    };
+    with(|host| {
+        let Some(hosted) = host.live.get_mut(&(channel_id, module.instance_id)) else {
+            return;
+        };
+        if let Ok(mut p) = hosted.plugin.lock() {
+            if !plugin_ref.state.is_empty() && !p.load_state(&plugin_ref.state) {
+                eprintln!("plugins: {} did not take the preset's state", hosted.name);
+            }
+            for (i, &id) in hosted.ids.iter().enumerate() {
+                let (Some(v), Some(old)) = (p.param_value(id), hosted.song_values.get_mut(i))
+                else {
+                    continue;
+                };
+                *old = v as f32;
+                hosted.params.known(i, v as f32);
+            }
+        }
+        hosted.origin = plugin_ref.state.clone();
+    });
+}
+
+/// The instance's state now, edits waiting for a block (none plays while stopped) applied first.
+fn state_now(hosted: &Hosted) -> Option<Vec<u8>> {
+    hosted.plugin.lock().ok().and_then(|mut p| {
+        p.idle();
+        p.save_state()
+    })
 }
 
 /// The module's plugin as the card shows it; a busy audio callback keeps the last successful read.

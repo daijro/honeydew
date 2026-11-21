@@ -766,7 +766,7 @@ pub fn show(
                 widgets::arc_slider(ui, cx, &c, &arc, value!(), text).changed()
             }
             Widget::GraphKnob { falling } => {
-                widgets::graph_knob(ui, cx, &c, value!(), falling).changed()
+                widgets::graph_knob(ui, cx, &c, value!(), falling, text).changed()
             }
             Widget::VSlider => widgets::v_slider(ui, cx, &c, value!(), text).changed(),
             Widget::Tag { faces_right } => {

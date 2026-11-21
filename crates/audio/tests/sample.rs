@@ -2163,3 +2163,54 @@ fn flsm_fuzz_reads_alike_on_every_flac_path_and_never_panics() {
         "the mutations must reach each field and leave some blocks unread"
     );
 }
+
+/// Issues #131, #153: a preview plays a big file's start while the rest decodes. Every format reports its first
+/// [`FIRST_PART_SECONDS`] first, then longer parts, each the whole's start frame for frame, with about the whole's
+/// length; the whole is what `decode` makes; a stop ends it.
+#[test]
+fn decode_parts_reports_the_whole_s_start_first_in_every_format() {
+    use honeydew_audio::sample::{FIRST_PART_SECONDS, decode_parts};
+    let rate = 22_050;
+    let n = 9 * rate as usize;
+    let tone = |f: f64| -> Vec<f32> {
+        (0..n)
+            .map(|i| (0.4 * (TAU * f * i as f64 / f64::from(rate)).sin()) as f32)
+            .collect()
+    };
+    let audio = [tone(441.0), tone(661.5)];
+    let mut mp3 = honeydew_audio::mp3_writer::Mp3Encoder::new(rate, false);
+    mp3.push(&audio);
+    let mut ogg = honeydew_audio::ogg_writer::OggEncoder::new(rate, false);
+    ogg.push(&audio);
+    let files = [
+        ("wav", honeydew_audio::wav_writer::float32_wav(rate, &audio)),
+        ("flac", honeydew_audio::flac_writer::flac(rate, 16, &audio)),
+        ("mp3", mp3.finish()),
+        ("ogg", ogg.finish()),
+    ];
+    let head = (FIRST_PART_SECONDS * f64::from(rate)) as usize;
+    for (name, bytes) in files {
+        let mut parts = Vec::new();
+        let whole = decode_parts(&bytes, &|| false, &mut |part, frames| {
+            parts.push((part, frames))
+        });
+        let whole = whole.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        assert_eq!(Ok(&whole), decode(&bytes).as_ref(), "{name}");
+        let first = parts.first().map(|(part, _)| part.frames());
+        assert!(
+            first.is_some_and(|f| f >= head && f < 2 * head),
+            "{name}: {first:?}"
+        );
+        for (part, frames) in &parts {
+            let k = part.frames();
+            assert!(k < whole.frames(), "{name}");
+            assert_eq!(*part.left, whole.left[..k], "{name}: the whole's start");
+            let right = whole.right.as_ref().map(|r| &r[..k]);
+            assert_eq!(part.right.as_deref(), right, "{name}");
+            let error = *frames as f64 / whole.frames() as f64 - 1.0;
+            assert!(error.abs() < 0.1, "{name}: about the whole, {frames}");
+        }
+        let stopped = decode_parts(&bytes, &|| true, &mut |_, _| {});
+        assert_eq!(stopped, Err(DecodeError::Cancelled), "{name}");
+    }
+}

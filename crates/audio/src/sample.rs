@@ -59,6 +59,8 @@ pub enum DecodeError {
     Malformed(&'static str),
     /// More frames than the limit.
     TooLarge,
+    /// [`decode_parts`]' caller stopped it.
+    Cancelled,
 }
 
 impl SampleData {
@@ -108,30 +110,115 @@ pub fn decode(bytes: &[u8]) -> Result<SampleData, DecodeError> {
 
 /// `decode` with a caller's frame limit instead of `MAX_FRAMES`.
 pub fn decode_with_limit(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError> {
-    let bytes = without_id3v2(bytes);
-    let mp3 = || guarded("MP3 decoder panicked", || decode_mp3(bytes, max_frames));
-    match (bytes.get(..4), bytes.get(8..12)) {
-        // A RIFF the WAV reader rejects (MP3 in WAV is format tag 0x55) goes on to the MP3 reader. If that finds
-        // nothing either, the WAV reader's error stands.
-        (Some(b"RIFF"), Some(b"WAVE")) => match decode_wav(&bytes[12..], max_frames) {
-            Err(error @ (DecodeError::Unsupported | DecodeError::Malformed(_))) => {
-                mp3().map_err(|_| error)
-            }
-            result => result,
-        },
-        (Some(b"fLaC"), _) => guarded("FLAC decoder panicked", || decode_flac(bytes, max_frames)),
-        (Some(b"OggS"), _) => guarded("Ogg decoder panicked", || decode_ogg(bytes, max_frames)),
-        // MP3 has no magic, so it is the catch-all: its reader skips junk up to the first frame that a similar frame
-        // follows.
-        _ => mp3(),
+    decode_run(bytes, &mut Run::plain(max_frames))
+}
+
+/// The seconds of audio [`decode_parts`] reports first.
+pub const FIRST_PART_SECONDS: f64 = 2.0;
+
+/// [`decode`], reporting its parts as it goes (issues #131, #153: a preview plays a big file's start while the rest
+/// decodes). `part` gets the frames decoded so far as a sample of their own, and about how many frames the whole has
+/// (its header's count, else estimated from the bytes read), once [`FIRST_PART_SECONDS`] of them are in, then each
+/// time they have doubled: a shorter file has none. Every part is the whole's start, frame for frame. `stop` is asked
+/// between packets: true ends the decode with [`DecodeError::Cancelled`].
+// ponytail: each part is a copy, all of them together at most twice the whole; a shared growing buffer would need none.
+pub fn decode_parts(
+    bytes: &[u8],
+    stop: &dyn Fn() -> bool,
+    part: &mut dyn FnMut(SampleData, usize),
+) -> Result<SampleData, DecodeError> {
+    let mut run = Run {
+        parts: Some((stop, part)),
+        ..Run::plain(MAX_FRAMES)
+    };
+    decode_run(bytes, &mut run)
+}
+
+/// [`decode_parts`]' stop and part.
+type Parts<'a> = (&'a dyn Fn() -> bool, &'a mut dyn FnMut(SampleData, usize));
+
+/// How a decode runs: its frame limit and, for [`decode_parts`], its parts.
+struct Run<'a> {
+    max_frames: usize,
+    parts: Option<Parts<'a>>,
+    /// The frames the next part waits for; 0 before the first.
+    next: usize,
+    /// The stream's frames when its header says, and its bytes, which the whole's frames are estimated from.
+    whole: (Option<usize>, usize),
+}
+
+impl Run<'_> {
+    fn plain(max_frames: usize) -> Self {
+        Self {
+            max_frames,
+            parts: None,
+            next: 0,
+            whole: (None, 0),
+        }
+    }
+
+    /// After a packet: the frames decoded so far (`right` for stereo) at `rate`, from `read` bytes of the stream. A
+    /// part goes out once they reach the next; a stop is an error.
+    fn decoded(
+        &mut self,
+        rate: u32,
+        (left, right): (&[f32], Option<&[f32]>),
+        read: usize,
+    ) -> Result<(), DecodeError> {
+        let Some((stop, part)) = &mut self.parts else {
+            return Ok(());
+        };
+        if stop() {
+            return Err(DecodeError::Cancelled);
+        }
+        if self.next == 0 {
+            self.next = (FIRST_PART_SECONDS * f64::from(rate)).max(1.0) as usize;
+        }
+        if left.len() < self.next {
+            return Ok(());
+        }
+        self.next = left.len() * 2;
+        let (known, bytes) = self.whole;
+        let estimate = || (left.len() as f64 * bytes as f64 / read.max(1) as f64) as usize;
+        let whole = known.unwrap_or_else(estimate).max(left.len());
+        let sample = SampleData {
+            sample_rate: rate,
+            left: left.into(),
+            right: right.map(Into::into),
+            meta: SampleMeta::default(),
+        };
+        part(sample, whole);
+        Ok(())
     }
 }
 
-/// Third-party code on hostile bytes: a panic becomes an error where unwinding exists (not on wasm).
+fn decode_run(bytes: &[u8], run: &mut Run<'_>) -> Result<SampleData, DecodeError> {
+    let bytes = without_id3v2(bytes);
+    let mp3 = |run: &mut Run<'_>| guarded("MP3 decoder panicked", || decode_mp3(bytes, run));
+    match (bytes.get(..4), bytes.get(8..12)) {
+        // A RIFF the WAV reader rejects (MP3 in WAV is format tag 0x55) goes on to the MP3 reader. If that finds
+        // nothing either, the WAV reader's error stands.
+        (Some(b"RIFF"), Some(b"WAVE")) => match decode_wav(&bytes[12..], run) {
+            Err(error @ (DecodeError::Unsupported | DecodeError::Malformed(_))) => {
+                mp3(run).map_err(|_| error)
+            }
+            result => result,
+        },
+        (Some(b"fLaC"), _) => guarded("FLAC decoder panicked", || decode_flac(bytes, run)),
+        (Some(b"OggS"), _) => guarded("Ogg decoder panicked", || decode_ogg(bytes, run)),
+        // MP3 has no magic, so it is the catch-all: its reader skips junk up to the first frame that a similar frame
+        // follows.
+        _ => mp3(run),
+    }
+}
+
+/// Third-party code on hostile bytes: a panic becomes an error where unwinding exists (not on wasm). The decode's
+/// state goes with the error.
 fn guarded(
     panicked: &'static str,
-    decode: impl FnOnce() -> Result<SampleData, DecodeError> + std::panic::UnwindSafe,
+    decode: impl FnOnce() -> Result<SampleData, DecodeError>,
 ) -> Result<SampleData, DecodeError> {
+    let decode = std::panic::AssertUnwindSafe(decode);
     std::panic::catch_unwind(decode).unwrap_or(Err(DecodeError::Malformed(panicked)))
 }
 
@@ -202,7 +289,7 @@ const KSDATAFORMAT_GUID_TAIL: [u8; 14] = [
 
 /// Walks the chunks to the end of the bytes (the RIFF size is ignored). A chunk cut short by the end of the file,
 /// `data` included, keeps what is there.
-fn decode_wav(chunks: &[u8], max_frames: usize) -> Result<SampleData, DecodeError> {
+fn decode_wav(chunks: &[u8], run: &mut Run<'_>) -> Result<SampleData, DecodeError> {
     let (mut fmt, mut data, mut meta) = (None, None, SampleMeta::default());
     for (id, body) in riff_chunks(chunks) {
         match id {
@@ -232,19 +319,26 @@ fn decode_wav(chunks: &[u8], max_frames: usize) -> Result<SampleData, DecodeErro
     if frames == 0 {
         return Err(DecodeError::Malformed("no audio"));
     }
-    if frames > max_frames {
+    if frames > run.max_frames {
         return Err(DecodeError::TooLarge);
     }
     // The loop is read raw and fitted to the frames that are there, so a player can rely on it.
     meta.loop_frames = meta.loop_frames.map(|l| clamp_loop(l, frames));
-    let channel = |c: usize| -> Arc<[f32]> {
+    let channel = |c: usize, n: usize| -> Arc<[f32]> {
         let read = |frame: &[u8]| to_f32(float, &frame[c * width..(c + 1) * width]);
-        data.chunks_exact(stride).map(read).collect()
+        data.chunks_exact(stride).take(n).map(read).collect()
     };
+    // `decode_parts`' one part: the first seconds.
+    let head = (FIRST_PART_SECONDS * f64::from(sample_rate)) as usize;
+    if run.parts.is_some() && frames > head {
+        run.whole = (Some(frames), 0);
+        let right = (channels >= 2).then(|| channel(1, head));
+        run.decoded(sample_rate, (&channel(0, head), right.as_deref()), 0)?;
+    }
     Ok(SampleData {
         sample_rate,
-        left: channel(0),
-        right: (channels >= 2).then(|| channel(1)),
+        left: channel(0, frames),
+        right: (channels >= 2).then(|| channel(1, frames)),
         meta,
     })
 }
@@ -406,7 +500,7 @@ pub(crate) fn clamp_loop((start, end): (u32, u32), frames: usize) -> (u32, u32) 
 /// and panic on a shorter block.
 pub(crate) const MIN_DECODED_BLOCK: u64 = 32;
 
-fn decode_flac(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError> {
+fn decode_flac(bytes: &[u8], run: &mut Run<'_>) -> Result<SampleData, DecodeError> {
     use symphonia::default::{codecs::FlacDecoder, formats::FlacReader};
     const BAD: DecodeError = DecodeError::Malformed("bad FLAC stream");
     let (stream, meta) = flac_without_metadata(bytes).ok_or(BAD)?;
@@ -415,7 +509,7 @@ fn decode_flac(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeErro
         &FormatOptions::default(),
         MIN_DECODED_BLOCK,
         BAD,
-        max_frames,
+        run,
     )
     .map(|sample| with_flsm(sample, meta))
 }
@@ -424,7 +518,7 @@ fn decode_flac(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeErro
 // Gapless, so the encoder delay and padding a LAME/Xing tag records are trimmed and an
 // MP3 sample starts on its beat; a file without the tag keeps them. MP3 has no timestamps: a frame whose header is
 // destroyed is lost without a gap, while one that fails to decode becomes silence of its length.
-fn decode_mp3(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError> {
+fn decode_mp3(bytes: &[u8], run: &mut Run<'_>) -> Result<SampleData, DecodeError> {
     use symphonia::default::{codecs::MpaDecoder, formats::MpaReader};
     let gapless = FormatOptions {
         enable_gapless: true,
@@ -436,7 +530,7 @@ fn decode_mp3(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError
         &gapless,
         0,
         DecodeError::Unsupported,
-        max_frames,
+        run,
     )
 }
 
@@ -498,8 +592,9 @@ fn decode_stream<R: FormatReader, D: Decoder>(
     options: &FormatOptions,
     min_dur: u64,
     bad: DecodeError,
-    max_frames: usize,
+    run: &mut Run<'_>,
 ) -> Result<SampleData, DecodeError> {
+    let bytes = stream.len();
     let source = MediaSourceStream::new(Box::new(std::io::Cursor::new(stream)), Default::default());
     let mut reader = R::try_new(source, options).map_err(|_| bad)?;
     let params = reader.default_track().ok_or(bad)?.codec_params.clone();
@@ -508,6 +603,8 @@ fn decode_stream<R: FormatReader, D: Decoder>(
         .channels
         .is_some_and(|channels| channels.count() >= 2);
     let mut decoder = D::try_new(&params, &DecoderOptions::default()).map_err(|_| bad)?;
+    let frames = params.n_frames.and_then(|n| usize::try_from(n).ok());
+    run.whole = (frames.filter(|&n| n > 0), bytes);
     let packets = std::iter::from_fn(|| reader.next_packet().ok());
     decode_packets(
         packets,
@@ -516,7 +613,7 @@ fn decode_stream<R: FormatReader, D: Decoder>(
         stereo,
         min_dur,
         usize::MAX,
-        max_frames,
+        run,
     )
 }
 
@@ -535,11 +632,14 @@ fn decode_packets(
     stereo: bool,
     min_dur: u64,
     end: usize,
-    max_frames: usize,
+    run: &mut Run<'_>,
 ) -> Result<SampleData, DecodeError> {
     use symphonia::core::audio::Signal;
+    let max_frames = run.max_frames;
     let (mut left, mut right, mut decoded_any) = (Vec::new(), Vec::new(), false);
+    let mut read = 0;
     for packet in packets {
+        read += packet.buf().len();
         let start = usize::try_from(packet.ts)
             .unwrap_or(usize::MAX)
             .max(left.len())
@@ -602,6 +702,7 @@ fn decode_packets(
                     .map(finite),
             );
         }
+        run.decoded(sample_rate, (&left, stereo.then_some(&right[..])), read)?;
     }
     if !decoded_any {
         return Err(DecodeError::Malformed("no audio"));
@@ -617,7 +718,7 @@ fn decode_packets(
 /// Ogg (RFC 3533) holding Vorbis or FLAC, demuxed here because symphonia's Ogg reader sizes Vorbis comments and FLAC
 /// pictures with `vec![0; n]` from unchecked lengths and asserts on Vorbis setup headers. The first Vorbis or FLAC
 /// logical stream is read as its pages arrive; comment, picture and other metadata packets are never handed over.
-fn decode_ogg(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError> {
+fn decode_ogg(bytes: &[u8], run: &mut Run<'_>) -> Result<SampleData, DecodeError> {
     use symphonia::core::codecs::{CODEC_TYPE_VORBIS, CodecParameters};
     use symphonia::default::codecs::VorbisDecoder;
     const BAD: DecodeError = DecodeError::Malformed("bad Ogg stream");
@@ -640,7 +741,7 @@ fn decode_ogg(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError
                 read_flsm(&packet, &mut meta); // a metadata block of its own
             }
         }
-        return decode_flac(&flac, max_frames).map(|sample| with_flsm(sample, meta));
+        return decode_flac(&flac, run).map(|sample| with_flsm(sample, meta));
     }
     // The identification header comes first, the setup header third (Vorbis I §4.2.1); the comment is skipped.
     let mut next_header = |kind: &[u8]| {
@@ -671,6 +772,7 @@ fn decode_ogg(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError
         .filter(|&granule| granule != u64::MAX)
         .last()
         .map_or(usize::MAX, |end| usize::try_from(end).unwrap_or(usize::MAX));
+    run.whole = ((end != usize::MAX).then_some(end), bytes.len());
     decode_packets(
         audio,
         &mut decoder,
@@ -678,7 +780,7 @@ fn decode_ogg(bytes: &[u8], max_frames: usize) -> Result<SampleData, DecodeError
         ident[11] >= 2,
         0,
         end,
-        max_frames,
+        run,
     )
 }
 

@@ -71,6 +71,13 @@ impl ProjectFiles {
         self.open_pick(Pick::Sample);
     }
 
+    /// The DW Sampler picker's `Import` (issue #176): [`Self::import_audio`] of an audio file or a DW program (`.dwp`,
+    /// `.sfz`), which the picker lists beside the audio and loads through the program readers.
+    pub fn import_program(&mut self, dir: PathBuf) {
+        self.import_dir = Some(dir);
+        self.open_pick(Pick::Program);
+    }
+
     /// The MIDI picker's `Import` (issue #113): [`Self::import_audio`] of a MIDI file, into [`MIDI_FOLDER`].
     pub fn import_midi(&mut self) {
         if let Some(dir) = self.user_dir().map(|u| u.join(MIDI_FOLDER)) {

@@ -254,14 +254,15 @@ pub fn back_callback() -> bool {
     AndroidApp::sdk_version() >= 33
 }
 
-/// Back's default with nothing open: the app goes to the background, as Android's own Back does for it.
-pub fn move_to_back() {
-    let moved = with_activity(|env, activity| {
-        env.call_method(activity, "moveTaskToBack", "(Z)Z", &[true.into()])
-            .map(drop)
-    });
-    if let Err(err) = moved {
-        eprintln!("could not move to the background: {err}");
+/// The app is quitting: Back's `Exit` (Honeydew change, #147), once the app's own exit wrote what it keeps, or a start
+/// that failed. The activity finishes with its task, and the process ends with it (`HoneydewActivity.quit`): an app
+/// thread starts once per process, as winit makes one event loop per process. The window event the finish brings (its
+/// focus lost) is what ends eframe's loop once the app has closed.
+pub fn quit() {
+    let quit =
+        with_activity(|env, activity| env.call_method(activity, "quit", "()V", &[]).map(drop));
+    if let Err(err) = quit {
+        eprintln!("could not quit: {err}");
     }
 }
 
@@ -444,6 +445,66 @@ pub fn share(files: &[PathBuf], mime: &str) -> Result<(), String> {
     failed.map_or(Ok(()), Err)
 }
 
+/// The app may read the phone's whole storage, for the library folders (Honeydew change, #144, #155, #165): All files
+/// access from Android 11 up, the storage permission before (`HoneydewActivity.allFiles`).
+pub fn all_files_access() -> bool {
+    let mut granted = false;
+    let asked = with_activity(|env, activity| {
+        granted = env.call_method(activity, "allFiles", "()Z", &[])?.z()?;
+        Ok(())
+    });
+    asked.is_ok() && granted
+}
+
+/// Opens the system's All files access screen for the app, or before Android 11 asks for the storage permission
+/// (`HoneydewActivity.askAllFiles`). SETTINGS reads the answer again as it shows ([`all_files_access`]).
+pub fn ask_all_files_access() {
+    let asked = with_activity(|env, activity| {
+        env.call_method(activity, "askAllFiles", "()V", &[])
+            .map(drop)
+    });
+    if let Err(err) = asked {
+        eprintln!("all files access not asked: {err}");
+    }
+}
+
+/// A library folder picked ([`pick_library_folder`]): its path, or why there is none, until [`take_library_folder`].
+static LIBRARY_FOLDER: Mutex<Option<Result<String, String>>> = Mutex::new(None);
+
+/// Opens the system folder picker for a library folder (`HoneydewActivity.openLibraryFolder`): its path on the phone
+/// comes to [`take_library_folder`]; a cancel brings nothing.
+pub fn pick_library_folder() {
+    let opened = with_activity(|env, activity| {
+        env.call_method(activity, "openLibraryFolder", "()V", &[])
+            .map(drop)
+    });
+    if let Err(err) = opened {
+        *LIBRARY_FOLDER.lock().expect("library folder lock") = Some(Err(err));
+    }
+}
+
+/// The library folder picked since the last call: its path, or why it has none (another app's folder).
+pub fn take_library_folder() -> Option<Result<String, String>> {
+    LIBRARY_FOLDER.lock().ok()?.take()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_daijro_honeydew_HoneydewActivity_onLibraryFolderPicked(
+    mut env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+    path: jni::objects::JString<'_>,
+    error: jni::objects::JString<'_>,
+) {
+    let picked = match (text(&mut env, &path), text(&mut env, &error)) {
+        (Some(path), _) => Ok(path),
+        (None, Some(error)) => Err(error),
+        (None, None) => return,
+    };
+    if let Ok(mut held) = LIBRARY_FOLDER.lock() {
+        *held = Some(picked);
+    }
+}
+
 /// The network the phone is on: the sound library's download waits for an unmetered one (`update`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Network {
@@ -587,6 +648,7 @@ fn android_main(app: AndroidApp) {
     ) {
         eprintln!("Honeydew could not start: {err}");
     }
+    quit();
     crate::android_text::reset();
     *ACTIVITY.lock().expect("activity lock") = None;
 }

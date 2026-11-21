@@ -607,19 +607,22 @@ fn bombs_are_refused_without_their_allocation() {
         part,
         size,
     };
-    // Each case with the most it may allocate: nothing like what its headers ask for.
+    // Each case with the most it may allocate: nothing like what its headers ask for. FIXED is what any read takes,
+    // whatever the headers say: the archive's last 64 KiB, searched for the directory, or the inflater's state and its
+    // 64 KiB read buffer.
+    const FIXED: usize = 1 << 17;
     let cases: Vec<(&str, Vec<u8>, usize)> = vec![
         // 40 MiB from ~40 KB: past the ratio cap even with an unlimited budget.
         (
             "ratio",
             archive(std::slice::from_ref(&bomb), &[record("b", 0, mib(40))]),
-            1 << 16,
+            FIXED,
         ),
         // The headers claim 100 bytes, the stream holds 40 MiB: inflating stops at the claim.
         (
             "lying small",
             archive(std::slice::from_ref(&bomb), &[record("b", 0, 100)]),
-            1 << 16,
+            FIXED,
         ),
         // The headers claim 4 GiB - 2 for a 1 KB stream.
         (
@@ -628,7 +631,7 @@ fn bombs_are_refused_without_their_allocation() {
                 std::slice::from_ref(&one_mib),
                 &[record("b", 0, u32::MAX - 1)],
             ),
-            1 << 16,
+            FIXED,
         ),
         // A stored entry claiming 4 bytes over 8 MB of data is refused before its bytes are copied.
         (
@@ -641,7 +644,7 @@ fn bombs_are_refused_without_their_allocation() {
                 }],
                 &[record("b", 0, 4)],
             ),
-            1 << 16,
+            FIXED,
         ),
         // 10 000 records over one entry: the overlapping-file bomb (~10 GiB claimed, 141 MiB past the ratio cap).
         (

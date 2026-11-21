@@ -499,7 +499,7 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
  mod local {
      use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
      use std::sync::{Arc, Mutex, OnceLock, Weak};
-@@ -441,6 +444,24 @@
+@@ -441,6 +444,35 @@
          /// Plugin -> host (`Changed`, `Note`, `Automate`): queued for the host's next tick, which is woken. 1 when a host
          /// is there, 0 otherwise (as unanswered messages on Windows).
          pub fn to_host(&self, cmd: Cmd, arg: isize) -> isize {
@@ -521,20 +521,32 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
 +                }
 +                return isize::from(ok);
 +            }
++            // Honeydew (vendored change): and Tesla's `Notes` (Convert to score, #167): the notes it posted are kept for
++            // this thread (`take_scored`).
++            #[cfg(feature = "embed")]
++            if cmd == Cmd::Notes {
++                let notes = take_notes(arg);
++                let ok = !notes.is_empty();
++                if ok {
++                    SCORED.with_borrow_mut(|q| q.push(notes));
++                }
++                return isize::from(ok);
++            }
              if !self.hosted() {
                  return 0;
              }
-@@ -456,6 +477,28 @@
+@@ -456,6 +488,36 @@
  
      static REGISTRY: Mutex<Vec<(u64, Weak<Peer>)>> = Mutex::new(Vec::new());
      static QUEUE: Mutex<Vec<(u64, Cmd, isize)>> = Mutex::new(Vec::new());
 +
-+    // Honeydew (vendored addition): the editors' `Automate` and the files of their `Audio` to the playlist
-+    // (`Peer::to_host`), by thread.
++    // Honeydew (vendored addition): the editors' `Automate`, the files of their `Audio` to the playlist and the notes of
++    // their `Notes` (`Peer::to_host`), by thread.
 +    #[cfg(feature = "embed")]
 +    thread_local! {
 +        static AUTOMATE: std::cell::RefCell<Vec<(u64, isize)>> = const { std::cell::RefCell::new(Vec::new()) };
 +        static SENT: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
++        static SCORED: std::cell::RefCell<Vec<Vec<NoteOut>>> = const { std::cell::RefCell::new(Vec::new()) };
 +    }
 +
 +    /// Honeydew (vendored addition): the `Automate` this thread's editors sent since the last call, as (the editor's
@@ -550,24 +562,31 @@ diff -ruN a/vendor/lemon-studio/os-hostlink/src/lib.rs b/vendor/lemon-studio/os-
 +    pub fn take_sent() -> Vec<String> {
 +        SENT.with_borrow_mut(std::mem::take)
 +    }
++
++    /// Honeydew (vendored addition): the notes this thread's editors sent since the last call (`Notes`: Tesla's Convert
++    /// to score), one list a send, oldest first.
++    #[cfg(feature = "embed")]
++    pub fn take_scored() -> Vec<Vec<NoteOut>> {
++        SCORED.with_borrow_mut(std::mem::take)
++    }
      static HOST_WAKER: OnceLock<fn()> = OnceLock::new();
  
      /// Host: how plugins wake its UI loop when they send something.
-@@ -538,6 +581,10 @@
+@@ -538,6 +600,10 @@
  
  #[cfg(not(windows))]
  pub use local::{set_host_waker, take_host_messages, Link, Peer};
 +#[cfg(all(windows, feature = "embed"))]
 +pub use local::Peer;
 +#[cfg(feature = "embed")]
-+pub use local::{take_automate, take_sent};
++pub use local::{take_automate, take_scored, take_sent};
  
  #[cfg(test)]
  mod tests {
 diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os-plugkit/src/embed.rs
 --- a/vendor/lemon-studio/os-plugkit/src/embed.rs
 +++ b/vendor/lemon-studio/os-plugkit/src/embed.rs
-@@ -0,0 +1,603 @@
+@@ -0,0 +1,613 @@
 +// Copyright (C) 2026 The Honeydew contributors
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -1090,6 +1109,16 @@ diff -ruN a/vendor/lemon-studio/os-plugkit/src/embed.rs b/vendor/lemon-studio/os
 +    os_hostlink::take_sent().into_iter().map(Into::into).collect()
 +}
 +
++/// Issue #167: the notes this thread's editors sent since the last call (Tesla's `Convert to score and dump to piano
++/// roll`), which Honeydew answers although no editor joins its strip (`os_hostlink`'s `Notes`): one list a send, oldest
++/// first, each note's start and end in beats from where the notes go.
++pub fn take_scored() -> Vec<Vec<NoteOut>> {
++    os_hostlink::take_scored()
++}
++
++/// A note of [`take_scored`].
++pub use os_hostlink::NoteOut;
++
 +/// Whether editor `id` is open.
 +pub fn is_open(id: Parent) -> bool {
 +    get(id).is_some()
@@ -1308,10 +1337,63 @@ diff -ruN a/vendor/lemon-studio/tesla/src/editor.rs b/vendor/lemon-studio/tesla/
                          if !ok {
                              os_hostlink::take_audio();
                          }
+@@ -3464,7 +3469,10 @@
+                     Act::Score(notes) => {
+                         let n = notes.len();
+                         let token = os_hostlink::post_notes(notes);
+-                        let ok = self.link.hosted() && self.link.to_host(Cmd::Notes, token) == 1;
++                        // Honeydew (vendored change): Honeydew answers Convert to score although the editor keeps its
++                        // tab row (#167).
++                        let hosted = self.link.hosted() || cfg!(feature = "embed");
++                        let ok = hosted && self.link.to_host(Cmd::Notes, token) == 1;
+                         if !ok {
+                             os_hostlink::take_notes(token);
+                         }
 diff -ruN a/vendor/lemon-studio/tesla/src/lib.rs b/vendor/lemon-studio/tesla/src/lib.rs
 --- a/vendor/lemon-studio/tesla/src/lib.rs
 +++ b/vendor/lemon-studio/tesla/src/lib.rs
-@@ -610,6 +610,11 @@
+@@ -373,14 +373,13 @@
+     fn sync(&mut self, s: &Shared) {
+         let ev = s.env_ver.load(Ordering::Acquire);
+         if ev != self.env_ver || self.env.is_none() {
+-            if let Ok(p) = s.published_env.try_lock() {
+-                let old = self.env.replace(p.clone());
+-                self.env_ver = ev;
+-                self.env_last = None;
+-                if let (Some(old), Ok(mut r)) = (old, s.retired_env.try_lock()) {
+-                    if r.len() < r.capacity() {
+-                        r.push(old);
+-                    }
++            // Honeydew (vendored change): taken only with room to retire the old one, so the audio thread never frees
++            // it (a busy or full list waits for a later block).
++            if let (Ok(p), Ok(mut r)) = (s.published_env.try_lock(), s.retired_env.try_lock()) {
++                if r.len() < r.capacity() {
++                    r.extend(self.env.replace(p.clone()));
++                    self.env_ver = ev;
++                    self.env_last = None;
+                 }
+             }
+         }
+@@ -388,14 +387,11 @@
+         if v == self.ver {
+             return;
+         }
+-        if let Ok(p) = s.published.try_lock() {
+-            let old = self.sample.replace(p.clone());
++        // Honeydew (vendored change): as the envelopes above.
++        let (Ok(p), Ok(mut r)) = (s.published.try_lock(), s.retired.try_lock()) else { return };
++        if r.len() < r.capacity() {
++            r.extend(self.sample.replace(p.clone()));
+             self.ver = v;
+-            if let (Some(old), Ok(mut r)) = (old, s.retired.try_lock()) {
+-                if r.len() < r.capacity() {
+-                    r.push(old);
+-                }
+-            }
+             let n = self.frames();
+             if n == 0 {
+                 self.playing = false;
+@@ -610,6 +606,11 @@
              s.capturing.store(false, Ordering::Relaxed);
          }
  

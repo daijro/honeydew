@@ -440,6 +440,13 @@ impl SampleCache {
         }
     }
 
+    /// `sample`, decoded already (a pick's, whose parts streamed to its preview), as `key`'s, under the budget as a
+    /// decode's: `None`, or one over it, is missing. A load then decodes it no more.
+    pub fn put(&mut self, key: SampleKey, sample: Option<Arc<SampleData>>) {
+        let sample = sample.filter(|s| pcm_bytes(s) <= self.room());
+        self.samples.insert(key, sample);
+    }
+
     /// Decodes `slot`'s sample and renders its `STR1` stretch and pitch ([`Refs::add_slot`]): a picked clip sample, on a
     /// worker's cache.
     pub fn render_slot(&mut self, slot: &SamplerSlot, read: &Reader<'_>) {
@@ -2233,6 +2240,31 @@ pub(crate) mod tests {
             cache.missing().cloned().collect::<Vec<_>>(),
             [SampleKey::File(user("Junk.dwp"))]
         );
+    }
+
+    #[test]
+    fn a_picked_user_sample_plays_at_root_60_and_one_in_an_older_song_at_48() {
+        // Honeydew change (#102): a new pick plays middle C as recorded; a song saved before keeps the earlier 48.
+        use crate::audio_engine::samples::sampler_zones;
+        let pad = user("My Samples/Pad.wav");
+        let read = |path: &ContentPath| (*path == pad).then(|| wav(&[1, 2, 3]));
+        let roots = |song: &Song| {
+            let mut cache = SampleCache::default();
+            cache.load(song, &read);
+            let blob = song.channels[1].rack.modules[0].file.custom_data.clone();
+            let cstm = honeydew_audio::dwp::Cstm::read(blob.as_deref().unwrap());
+            let zones = sampler_zones(&cstm, &cache);
+            zones.iter().map(|(zone, _)| zone.root).collect::<Vec<_>>()
+        };
+        let old = dw_song(dw_cstm(b"@L@\0My Samples/Pad.wav"));
+        assert_eq!(roots(&old), [48]);
+        let mut new = old.clone();
+        let module = &mut new.channels[1].rack.modules[0];
+        assert!(crate::panels::cstm::pick_dw_program(module, &pad, None));
+        assert_eq!(roots(&new), [60]);
+        // A save keeps it.
+        let saved = crate::flm::read(&crate::flm::write(&new).unwrap()).unwrap();
+        assert_eq!(roots(&saved), [60]);
     }
 
     #[test]
