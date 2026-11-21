@@ -37,6 +37,7 @@ struct Span {
     envelopes: [Vec<(u32, f32)>; 3],
     /// Its slot's `STR1` mode is on (SYNC): the sample is stretched for the build's tempo.
     sync: bool,
+    speed: f64,
 }
 
 impl Clips {
@@ -74,7 +75,7 @@ impl Clips {
                 }
             }
             self.sampler
-                .hit_at(pad, 1.0, 0.5, 1.0, c * 60.0 / f64::from(tempo_bpm));
+                .hit_at(pad, 1.0, 0.5, 1.0, c * span.speed * 60.0 / f64::from(tempo_bpm));
         }
     }
 
@@ -194,6 +195,7 @@ pub(super) fn build(
             offset: clip.offset_beats,
             envelopes,
             sync: slot.file.stretch_mode != 0,
+            speed: speed_ratio(slot.params[SPEED]),
         });
     }
     if pads.is_empty() {
@@ -262,7 +264,7 @@ pub(super) fn actions(
     actions: &mut Vec<ScheduledAction>,
 ) -> Result<(), EngineError> {
     let ppq = f64::from(PPQ);
-    for (pad, (clip, _)) in clips(&song.channels[channel]).enumerate() {
+    for (pad, (clip, slot)) in clips(&song.channels[channel]).enumerate() {
         let mut push = |beat: f64, action| -> Result<(), EngineError> {
             let frame = beat_frame(beat, sample_rate, tempo_bpm)?;
             actions.push(ScheduledAction {
@@ -282,7 +284,7 @@ pub(super) fn actions(
             start,
             Action::ClipHit {
                 pad,
-                offset: offset * 60.0 / f64::from(tempo_bpm),
+                offset: offset * speed_ratio(slot.params[SPEED]) * 60.0 / f64::from(tempo_bpm),
             },
         )?;
         // At most one repetition a loop pass; `plays` bounded the passes.
