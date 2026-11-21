@@ -337,7 +337,10 @@ const ROWS: [Row; 77 + cfg!(desktop) as usize] = {
             "Track activity indicators",
             Toggle(|s| &mut s.track_activity_indicators),
         ),
-        row("Match activity indicators to track color", Toggle(|s| &mut s.track_activity_colors)),
+        row(
+            "Match activity indicators to track color",
+            Toggle(|s| &mut s.track_activity_colors),
+        ),
         row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
             "Show CPU and RAM meters",

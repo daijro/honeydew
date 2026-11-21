@@ -71,7 +71,9 @@ pub fn truncated(
 ) {
     let shown = truncated_text(painter, text, font.clone(), rect.width(), k);
     if rect.is_positive() {
-        painter.with_clip_rect(painter.clip_rect().intersect(rect)).text(align.pos_in_rect(&rect), align, shown, font, color);
+        painter
+            .with_clip_rect(painter.clip_rect().intersect(rect))
+            .text(align.pos_in_rect(&rect), align, shown, font, color);
     }
 }
 

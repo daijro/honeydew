@@ -1320,6 +1320,7 @@ mod tests {
                 "soundsNoticeSeen",
                 "soundsOverMobileData",
                 "theme",
+                "trackActivityColors",
                 "trackActivityIndicators",
                 "uiscalefactor",
                 "vocalSynth.browserVisible",

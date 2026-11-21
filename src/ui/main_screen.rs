@@ -705,7 +705,11 @@ impl MainScreen {
             // collapsed track's mini mute and `Solo` (#100) are drawn over it later, so they take their own touches.
             let header = if expanded && !tracks[i].collapsed {
                 let cells = row.intersect(column).with_max_y(top + h - 1.0 / m.ppp());
-                let cells = if self.activity_space { cells.with_max_x(cells.right() - m.u(mini_mixer::ACTIVITY_W)) } else { cells };
+                let cells = if self.activity_space {
+                    cells.with_max_x(cells.right() - m.u(mini_mixer::ACTIVITY_W))
+                } else {
+                    cells
+                };
                 mini_mixer::header_rect(RowKind::of(app.song, &tracks[i]), cells, true, m)
             } else {
                 row.intersect(column)
@@ -1118,7 +1122,13 @@ impl MainScreen {
 
     /// The header column width: original controls plus an optional dedicated activity gutter.
     fn header_w(&self, m: &Metrics) -> f32 {
-        m.u(HEADER_W + HEADER_GROW * self.column.0 + if self.activity_space { mini_mixer::ACTIVITY_W } else { 0.0 })
+        m.u(HEADER_W
+            + HEADER_GROW * self.column.0
+            + if self.activity_space {
+                mini_mixer::ACTIVITY_W
+            } else {
+                0.0
+            })
     }
 
     /// The ruler's gestures over `strip` ([`RangeSelect`]) in song ticks on the Snap `grid` (whole ticks with Snap

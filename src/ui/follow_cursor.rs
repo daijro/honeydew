@@ -264,16 +264,22 @@ mod tests {
 #[cfg(test)]
 mod layout_regressions {
     use super::*;
-    use crate::metrics::{Metrics, DEFAULT_UI_SCALE};
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
     #[test]
     fn layout_regression_follow_square_and_touch_target_fit_small_rulers() {
         let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
         let theme = crate::theme::theme_by_id(0);
-        let cx = UiCtx { m: &m, theme: &theme };
+        let cx = UiCtx {
+            m: &m,
+            theme: &theme,
+        };
         for width in [180.0, 320.0, 720.0] {
             let marks = Rect::from_min_size(pos2(10.0, 0.0), vec2(width, m.u(2.0)));
             for position in [50, 250, 950] {
-                let cursor = FollowCursor { position: Some(position), ..Default::default() };
+                let cursor = FollowCursor {
+                    position: Some(position),
+                    ..Default::default()
+                };
                 let cap = cursor.rect(marks, &cx);
                 let hit = cursor.hit_rect(marks, &cx);
                 assert!(marks.contains_rect(cap) && marks.contains_rect(hit));

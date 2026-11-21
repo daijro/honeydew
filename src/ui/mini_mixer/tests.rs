@@ -471,7 +471,11 @@ fn a_long_name_keeps_its_prefix_with_an_end_ellipsis() {
         .iter()
         .find(|t| t.0.contains("..."))
         .expect("a truncated name");
-    assert!(cut.0.starts_with("A very long") && cut.0.ends_with("..."), "{}", cut.0);
+    assert!(
+        cut.0.starts_with("A very long") && cut.0.ends_with("..."),
+        "{}",
+        cut.0
+    );
     assert!(cut.3.width() <= 12.5 * U, "{:?}", cut.3);
 }
 
