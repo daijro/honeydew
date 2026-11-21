@@ -56,7 +56,7 @@ impl Topic {
                 "Choose volume and pan display colors independently. Swatches include white, with no black preset. HEX accepts a six-digit #RRGGBB value, including colors not in the swatches. The preview updates as you choose. Reset restores yellow/cyan. These preferences survive restart; they never edit points, shapes, or sound."
             }
             Self::Follow => {
-                "ON lets the Playlist follow playback continuously. Drag the yellow ruler handle to set the playhead's preferred position (5–95% across the timeline). OFF restores ordinary scrolling and hides the handle. The position is saved separately. This changes the viewport, not playback timing, clips, or automation; project edges still limit scrolling."
+                "ON lets the Playlist follow playback continuously. Drag the white ruler handle to set the playhead's preferred position (5–95% across the timeline). OFF restores ordinary scrolling and hides the handle. The position is saved separately. This changes the viewport, not playback timing, clips, or automation; project edges still limit scrolling."
             }
             Self::KeyNames => {
                 "ON shows note-name labels on keyboard and Piano Roll keys/notes. OFF removes those text labels, including octave/root names. Colored root markers remain. This is a display preference only: MIDI pitches and the sound do not change."

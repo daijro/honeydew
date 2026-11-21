@@ -193,6 +193,7 @@ impl Rig {
             .collect();
         let col = Column {
             activity: false,
+            activity_colors: false,
             left: 0.0,
             width: self.width(),
             expanded: self.expanded,

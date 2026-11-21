@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "banaforge"
-version = "0.5.26"
+version = "0.5.27"
 dependencies = [
  "android-activity",
  "banaforge-audio",

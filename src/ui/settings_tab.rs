@@ -337,6 +337,7 @@ const ROWS: [Row; 76 + cfg!(desktop) as usize] = {
             "Track activity indicators",
             Toggle(|s| &mut s.track_activity_indicators),
         ),
+        row("Match activity indicators to track color", Toggle(|s| &mut s.track_activity_colors)),
         row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
             "Show CPU and RAM meters",
@@ -1547,6 +1548,7 @@ mod tests {
                 "Keyboard in pickers",
                 "Continuous scrolling during playback",
                 "Track activity indicators",
+                "Match activity indicators to track color",
                 "Show hidden tracks",
                 "Show CPU and RAM meters",
                 "Show performance overlay",

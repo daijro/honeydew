@@ -521,6 +521,7 @@ pub struct MainScreen {
     /// The header column's expansion c (0: 1.5 U, 1: 13.5 U) and its target, which a tap on the current track's header
     /// toggles.
     pub(crate) column: (f32, f32),
+    activity_space: bool,
     /// A header press is held past its long press: the touch is the header's, and the scroller's no more. (Undecided,
     /// it is the scroller's too: their calm zones are the same 0.5 U up or down.)
     header_busy: bool,
@@ -584,6 +585,7 @@ impl MainScreen {
             settings,
             ..
         } = input;
+        self.activity_space = settings.track_activity_indicators;
         let c = &theme.colors;
         let text = c.text.to_color32();
         let editor = app.regions.editor;
@@ -799,7 +801,8 @@ impl MainScreen {
             current: self.clips.current_track(app),
             press: self.cell_press(ui, row_h * m.ppp() - 1.0),
             multitrack: settings.multitrack_recording,
-            activity: settings.track_activity_indicators && self.playing,
+            activity: settings.track_activity_indicators,
+            activity_colors: settings.track_activity_colors,
             meters: audio
                 .filter(|s| !s.stream_failed)
                 .map(|s| &s.module_meters[..]),
@@ -1114,7 +1117,7 @@ impl MainScreen {
 
     /// The header column's width: 1.5 U + c·12 U.
     fn header_w(&self, m: &Metrics) -> f32 {
-        m.u(HEADER_W + HEADER_GROW * self.column.0)
+        m.u(HEADER_W + HEADER_GROW * self.column.0 + if self.activity_space { mini_mixer::ACTIVITY_W } else { 0.0 })
     }
 
     /// The ruler's gestures over `strip` ([`RangeSelect`]) in song ticks on the Snap `grid` (whole ticks with Snap
@@ -1286,7 +1289,7 @@ impl MainScreen {
             }
         }
 
-        if regions.rack.left() > area.left() + 0.5 / m.ppp() {
+        if !rack_open && regions.rack.left() > area.left() + 0.5 / m.ppp() {
             let d = m.u(PANEL_BUTTON_W);
             let circle = Rect::from_min_size(
                 pos2(screen.right() - m.u(2.1), screen.top() + m.u(0.2)),

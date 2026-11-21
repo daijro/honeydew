@@ -1,3 +1,11 @@
+BanaForge 0.5.27 — Playlist visual and touch polish
+
+- Activity lights now occupy a dedicated gutter, with square faces and spacing clear of the original controls. White is the default flash; optional persistent track-color matching sits beside the existing visibility switch. Uses real channel output meters, including monitoring, without a new timer or audio processing.
+- Larger square white follow-position handle and padded ruler-clipped finger target. Saved anchor, drag clamping, and playback behavior are unchanged.
+- Playlist track names and module titles use a bounded prefix with end ellipsis; truncated labels are additionally clipped to their cells, including extremely narrow layouts. Full project/file names are not changed.
+- Hide the top-right BanaForge menu button while the channel rack/module interface is visible; restore it when closed.
+- Adds multi-scale geometry, settings persistence and existing interaction regressions. Physical Android touch/performance verification remains necessary.
+
 BanaForge 0.5.26 — compact channel controls, Gross Beat layout and help alignment
 
 - Channel Settings: bound Monitor and Record arm controls to compact themed buttons with captions, rather than sizing their discs from the color-wheel row. Recording/monitoring functionality remains connected to the same settings. Keep brightness Value caption and numeric slider within the color column; clamp audio-channel dialog width to the viewport.

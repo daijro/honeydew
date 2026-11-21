@@ -2411,7 +2411,7 @@ impl RackPanel {
             &label,
             font,
             text,
-            5,
+            0,
         );
         if !plugin {
             preset_button(ui, cx, preset_rect, &preset, text);

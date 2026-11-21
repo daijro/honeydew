@@ -243,6 +243,9 @@ pub struct Settings {
     /// Optional visual-only Playlist channel activity lights.
     #[serde(rename = "trackActivityIndicators")]
     pub track_activity_indicators: bool,
+    /// Visual only: use each channel color rather than white for activity.
+    #[serde(rename = "trackActivityColors")]
+    pub track_activity_colors: bool,
     /// `Show hidden tracks` (our own key): the playlist shows the tracks `Hide track` hid, dimmed. Off by default.
     #[serde(rename = "showHiddenTracks")]
     pub show_hidden_tracks: bool,
@@ -445,6 +448,7 @@ impl Default for Settings {
             continuous_scroll: false,
             playlist_follow_position: 250,
             track_activity_indicators: false,
+            track_activity_colors: false,
             show_hidden_tracks: false,
             hardware_meters: true,
             lock_pads: true,
@@ -905,6 +909,7 @@ mod tests {
             continuous_scroll: !d.continuous_scroll,
             playlist_follow_position: 675,
             track_activity_indicators: !d.track_activity_indicators,
+            track_activity_colors: true,
             show_hidden_tracks: !d.show_hidden_tracks,
             hardware_meters: !d.hardware_meters,
             lock_pads: !d.lock_pads,
@@ -1647,5 +1652,19 @@ mod tests {
         assert!(!unflushed(&file));
         let stored = FileStorage::open(folder.join("storage.json"));
         assert_eq!(stored.get_string("k").as_deref(), Some("v"));
+    }
+}
+
+#[cfg(test)]
+mod playlist_activity_settings_regressions {
+    use super::*;
+    #[test]
+    fn layout_regression_activity_colors_default_white_and_persist_independently() {
+        let mut s: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!s.track_activity_colors);
+        s.track_activity_colors = true;
+        let loaded: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(loaded.track_activity_colors);
+        assert!(!loaded.track_activity_indicators);
     }
 }
