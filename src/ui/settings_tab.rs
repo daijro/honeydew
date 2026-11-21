@@ -217,6 +217,7 @@ const PLUGIN_ROWS: [Row; 4] = [
 enum Choice {
     SoundMode,
     WaveformQuality,
+    NoteStyle,
     Theme,
     /// `Animation`: `Full`, `Reduced` (no animations) or `Minimal` (no scroll inertia either).
     Animation,
@@ -259,7 +260,7 @@ fn platform_row_visible(r: &Row, desktop: bool, web: bool) -> bool {
 
 /// Every row of the SETTINGS tab, in order.
 // The raw buffer slider is desktop-only; mobile has one fewer settings row.
-const ROWS: [Row; 77 + cfg!(desktop) as usize] = {
+const ROWS: [Row; 78 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -318,6 +319,7 @@ const ROWS: [Row; 77 + cfg!(desktop) as usize] = {
             Toggle(|s| &mut s.envelope_display.visible),
         ),
         row("VOL / PAN colors", EnvelopeColors),
+        row("Piano Roll Note Style:", Dropdown(Choice::NoteStyle)),
         row("Enable ghost notes", Toggle(|s| &mut s.ghost_notes)),
         row(
             "Show key names on keyboard and piano roll",
@@ -1291,6 +1293,7 @@ impl Choice {
     /// The items in menu order, as (stored value, label).
     fn items(self) -> Vec<(usize, String)> {
         match self {
+            Choice::NoteStyle => crate::ui::piano_roll::appearance::NoteStyle::ALL.into_iter().enumerate().map(|(i, s)| (i, s.label().to_owned())).collect(),
             Choice::WaveformQuality => crate::ui::waveform_quality::WaveformQuality::ALL
                 .into_iter()
                 .enumerate()
@@ -1328,6 +1331,7 @@ impl Choice {
         match self {
             Choice::SoundMode => usize::from(s.sound_mode),
             Choice::WaveformQuality => s.waveform_quality as usize,
+            Choice::NoteStyle => s.piano_roll_note_style as usize,
             // A theme of the user's is no built-in one.
             Choice::Theme if !s.custom_theme.is_empty() => usize::MAX,
             Choice::Theme => s.theme as usize,
@@ -1343,6 +1347,7 @@ impl Choice {
     fn set(self, s: &mut Settings, value: usize) {
         match self {
             Choice::SoundMode => s.sound_mode = value as u8,
+            Choice::NoteStyle => s.piano_roll_note_style = crate::ui::piano_roll::appearance::NoteStyle::ALL.get(value).copied().unwrap_or_default(),
             Choice::WaveformQuality => {
                 s.waveform_quality = crate::ui::waveform_quality::WaveformQuality::ALL
                     .get(value)
@@ -1470,6 +1475,20 @@ mod tests {
     }
 
     #[test]
+    fn note_appearance_selector_has_five_live_choices_and_classic_default() {
+        use crate::ui::piano_roll::appearance::NoteStyle;
+        let mut s = Settings::default();
+        assert_eq!(Choice::NoteStyle.get(&s), 0);
+        assert_eq!(Choice::NoteStyle.items().len(), 5);
+        for (i, style) in NoteStyle::ALL.into_iter().enumerate() {
+            Choice::NoteStyle.set(&mut s, i);
+            assert_eq!(s.piano_roll_note_style, style);
+            assert_eq!(Choice::NoteStyle.label(&s), style.label());
+        }
+        assert!(platform_row_visible(&ROWS[index("Piano Roll Note Style:")], false, false));
+    }
+
+    #[test]
     fn waveform_quality_selector_is_live_and_next_to_sound_mode_on_mobile() {
         use crate::ui::waveform_quality::WaveformQuality;
         assert_eq!(index("Waveform Quality:"), index("Sound mode:") + 1);
@@ -1544,6 +1563,7 @@ mod tests {
                 "Edit:",
                 "Show Playlist envelopes",
                 "VOL / PAN colors",
+                "Piano Roll Note Style:",
                 "Enable ghost notes",
                 "Show key names on keyboard and piano roll",
                 "Set middle C to C4",

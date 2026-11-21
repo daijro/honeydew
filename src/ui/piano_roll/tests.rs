@@ -1675,6 +1675,40 @@ mod component {
     }
 
     #[test]
+    fn note_appearance_switching_is_visual_only_and_moves_still_snap() {
+        for style in NoteStyle::ALL {
+            let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
+            let before = rig.song.clone();
+            rig.roll.note_style = style;
+            rig.frame(vec![]);
+            assert_eq!(rig.song, before);
+            assert!(rig.all.is_empty());
+            let from = at(140.0, 70);
+            rig.drag(from, from + vec2(70.0, -32.0));
+            assert_eq!(spans(rig.events()), [(256, 64.0, 72)]);
+            assert_eq!(rig.last, [DONE]);
+        }
+    }
+
+    #[test]
+    fn note_appearance_menu_changes_no_midi_or_selection() {
+        let mut rig = Rig::new(vec![n(0, 256.0, 60), n(64, 128.0, 60)]);
+        rig.select(vec![true, false]);
+        let before = rig.song.clone();
+        let selected = rig.roll.selected.clone();
+        rig.tap(rig.text("More...").unwrap());
+        rig.frame(vec![]);
+        rig.tap(rig.text("Note Appearance...").unwrap());
+        rig.frame(vec![]);
+        rig.tap(rig.text("Outline").unwrap());
+        rig.frame(vec![]);
+        assert_eq!(rig.roll.note_style, NoteStyle::Outline);
+        assert_eq!(rig.song, before);
+        assert_eq!(rig.roll.selected, selected);
+        assert!(rig.all.is_empty());
+    }
+
+    #[test]
     fn dragging_a_note_moves_it_by_whole_snaps_and_reports_the_end() {
         let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
         // 70 points right = 140 ticks: 268 rounds to 256. Two rows up.
@@ -2991,7 +3025,7 @@ mod component {
     #[test]
     fn every_note_menu_item_is_enabled() {
         let items = crate::ui::piano_roll::more_items();
-        assert_eq!(items.len(), 19);
+        assert_eq!(items.len(), 20);
         assert!(items.iter().all(|i| !i.disabled));
     }
 
@@ -4556,6 +4590,7 @@ mod grid {
                 false,
                 Some(past),
                 RED,
+                NoteStyle::Classic,
                 cx,
             );
         });

@@ -130,6 +130,8 @@ mod generate;
 mod humanize;
 pub(crate) mod notes;
 mod waveform;
+pub mod appearance;
+use appearance::NoteStyle;
 
 use std::collections::HashMap;
 use std::hash::{BuildHasher, RandomState};
@@ -296,6 +298,7 @@ pub struct PianoRoll {
     /// `None`, or an id that is gone: the roll edits nothing (no note makes a clip).
     pub clip_id: Option<u32>,
     pub snap: Snap,
+    pub note_style: NoteStyle,
     /// Zoom: a beat's width and a key row's height, in U.
     beat_u: f32,
     row_u: f32,
@@ -413,6 +416,7 @@ enum Menu {
     Snap,
     /// The note menu, centred on the `More...` button.
     More(Pos2),
+    Appearance(Pos2),
     /// The note menu in slice mode, at the same place (`Slice...`, #62).
     Slice(Pos2),
     /// The note menu in transpose mode, at the same place: the offset so far, and where this drag started.
@@ -448,6 +452,7 @@ enum GuessItem {
 /// The note menu's items.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MoreOp {
+    Appearance,
     Legato,
     SnapToScale,
     GuessScale,
@@ -724,6 +729,7 @@ impl PianoRoll {
             simple_mode: false,
             waveform_enabled: true,
             waveform_offset_y: 5,
+            note_style: NoteStyle::Classic,
             vocal_curve_drag: None,
             vocal_curve_free_draw: false,
         }
@@ -1376,6 +1382,7 @@ impl PianoRoll {
             simple,
             past,
             color,
+            self.note_style,
             cx,
         );
         if let Some(bar) = lyric_bar {
@@ -2893,6 +2900,15 @@ impl PianoRoll {
         let ctx = ui.ctx();
         let bounds = ctx.content_rect();
         match self.menu {
+            Some(Menu::Appearance(at)) => {
+                let items: Vec<_> = NoteStyle::ALL.into_iter().enumerate().map(|(row, style)| PopupItem {
+                    current: self.note_style == style,
+                    ..PopupItem::new(style, 0, row, style.label())
+                }).collect();
+                let result = popup::show(ctx, id.with("note_appearance"), at, bounds, &items, cx);
+                if let Some(style) = result.selected { self.note_style = style; ctx.request_repaint(); }
+                if result.close { self.menu = None; }
+            }
             Some(Menu::Snap) => {
                 // Beside the time modes, the value snap of the graph lane's item (#32): its percents, then Vel's MIDI
                 // velocities or Pan's left, centre and right.
@@ -3042,6 +3058,7 @@ impl PianoRoll {
         let bpb = song.time_sig.bar_beats();
         let (root, mask) = project_scale(song);
         match op {
+            MoreOp::Appearance => { self.menu = Some(Menu::Appearance(at)); return; }
             MoreOp::TransposeBy => {
                 self.menu = Some(Menu::Transpose {
                     at,
@@ -3103,7 +3120,7 @@ impl PianoRoll {
                 }
             }
             // The dialogs opened above.
-            MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::SliceBy => {}
+            MoreOp::Appearance | MoreOp::GuessScale | MoreOp::TransposeBy | MoreOp::Humanize | MoreOp::SliceBy => {}
         }
         let changed = clip.events != before;
         if changed {
@@ -3438,6 +3455,7 @@ fn more_items() -> Vec<PopupItem<MoreOp>> {
         (ToggleSlide, "Toggle Slide", true),
         (Transpose(1), "Transpose +1", true),
         (Transpose(-1), "Transpose -1", true),
+        (Appearance, "Note Appearance...", true),
     ];
     let col1 = [
         (Length(32), "Set length 1/16", true),
@@ -3661,6 +3679,7 @@ fn paint_notes(
     simple: bool,
     past: Option<Rect>,
     color: Rgba,
+    style: NoteStyle,
     cx: &UiCtx,
 ) {
     let (theme, m) = (cx.theme, cx.m);
@@ -3679,7 +3698,7 @@ fn paint_notes(
             pos2(g.x(ghost.pos + ghost.len), top + g.row_h),
         );
         let ghost_color = channel_color(ghost.hue, theme).to_color32();
-        painter.rect_filled(cell(r), 0.0, ghost_color.gamma_multiply(GHOST_ALPHA));
+        style.paint(painter, cell(r), ghost_color.gamma_multiply(GHOST_ALPHA), px);
     }
     if let Some(past) = past {
         painter.rect_filled(past, 0.0, Color32::from_black_alpha(PAST_END_LANE_ALPHA));
@@ -3705,12 +3724,12 @@ fn paint_notes(
             } else {
                 normal
             };
-            painter.rect_filled(cell(r), 0.0, fill);
+            style.paint(painter, cell(r), fill, px);
             if detailed && let Some((_, _, key)) = note(e) {
-                paint_note_name(painter, cell(r), key, key_labels, fill, m);
+                paint_note_name(painter, cell(r), key, key_labels, if style == NoteStyle::Outline { theme.colors.background.to_color32() } else { fill }, m);
             }
             if matches!(e, Event::Note { slide: true, .. }) {
-                paint_slide(painter, cell(r), theme.colors.background.to_color32(), m);
+                paint_slide(painter, cell(r), if style == NoteStyle::Outline { theme.colors.text.to_color32() } else { theme.colors.background.to_color32() }, m);
             }
             if detailed
                 && vocal_track

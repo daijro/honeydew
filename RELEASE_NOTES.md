@@ -1,3 +1,11 @@
+BanaForge 0.5.28 — Piano Roll note appearance
+
+- Five persistent visual-only styles: Classic (unchanged/default), Smooth, Outline, Gradient and Accent. Channel colors and selected-note tint are retained; outline labels contrast with the grid.
+- Choose in Settings → User interface → Piano Roll Note Style, or select notes → More… → Note Appearance… to preview directly in the roll. No new editing toolbar buttons.
+- Style changes affect drawing only: no MIDI edits, undo entries, timing changes or audio commands. Keyboard, grid, ruler, editing geometry, selection/resize handles and vocal controls remain unchanged.
+- Decoration is visible-note-only with constant geometry: one rectangle/stroke, two rectangles for Accent, or one four-vertex mesh for Gradient. No textures, animation or audio-thread work.
+- Adds style/persistence/geometry/menu/data-invariance checks and runs existing Piano Roll editing regressions. Physical Android readability, overlap and touch performance remain playtest acceptance items.
+
 BanaForge 0.5.27 — Playlist visual and touch polish
 
 - Activity lights now occupy a dedicated gutter, with square faces and spacing clear of the original controls. White is the default flash; optional persistent track-color matching sits beside the existing visibility switch. Uses real channel output meters, including monitoring, without a new timer or audio processing.

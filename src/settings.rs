@@ -184,6 +184,8 @@ pub struct Settings {
     /// Display-only policy, independent of the audio output profile.
     #[serde(rename = "waveformQuality")]
     pub waveform_quality: crate::ui::waveform_quality::WaveformQuality,
+    #[serde(rename = "pianoRollNoteStyle")]
+    pub piano_roll_note_style: crate::ui::piano_roll::appearance::NoteStyle,
     pub envelope_display: crate::ui::envelope_display::EnvelopeDisplay,
     /// Visibility of contextual information icons only; help content remains available.
     #[serde(rename = "showInformationButtons")]
@@ -429,6 +431,7 @@ impl Default for Settings {
             background_audio: false,
             sound_mode: DEFAULT_SOUND_MODE,
             waveform_quality: Default::default(),
+            piano_roll_note_style: Default::default(),
             envelope_display: Default::default(),
             show_information_buttons: true,
             latency_compensation: true,
@@ -890,6 +893,7 @@ mod tests {
                 .map(|&(id, _)| id)
                 .unwrap_or(d.sound_mode),
             waveform_quality: crate::ui::waveform_quality::WaveformQuality::Balanced,
+            piano_roll_note_style: crate::ui::piano_roll::appearance::NoteStyle::Accent,
             envelope_display: crate::ui::envelope_display::EnvelopeDisplay { visible: false, colors: [[20, 80, 255], [255, 255, 255]] },
             show_information_buttons: false,
             latency_compensation: !d.latency_compensation,
@@ -1294,6 +1298,7 @@ mod tests {
                 "multithreaded",
                 "multitrackrec",
                 "performanceOverlay",
+                "pianoRollNoteStyle",
                 "pianoRollPanSnap",
                 "pianoRollVelocitySnap",
                 "pickerKeys",
@@ -1667,5 +1672,24 @@ mod playlist_activity_settings_regressions {
         let loaded: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert!(loaded.track_activity_colors);
         assert!(!loaded.track_activity_indicators);
+    }
+}
+
+#[cfg(test)]
+mod note_appearance_tests {
+    use super::*;
+    use crate::ui::piano_roll::appearance::NoteStyle;
+    #[test]
+    fn note_appearance_defaults_to_classic_and_all_styles_persist() {
+        let default: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(default.piano_roll_note_style, NoteStyle::Classic);
+        for style in NoteStyle::ALL {
+            let mut s = Settings::default();
+            s.piano_roll_note_style = style;
+            let loaded: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+            assert_eq!(loaded.piano_roll_note_style, style);
+            assert_eq!(loaded.key_names, s.key_names);
+            assert_eq!(loaded.sound_mode, s.sound_mode);
+        }
     }
 }
