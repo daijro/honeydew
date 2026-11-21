@@ -705,6 +705,7 @@ impl MainScreen {
             // collapsed track's mini mute and `Solo` (#100) are drawn over it later, so they take their own touches.
             let header = if expanded && !tracks[i].collapsed {
                 let cells = row.intersect(column).with_max_y(top + h - 1.0 / m.ppp());
+                let cells = if self.activity_space { cells.with_max_x(cells.right() - m.u(mini_mixer::ACTIVITY_W)) } else { cells };
                 mini_mixer::header_rect(RowKind::of(app.song, &tracks[i]), cells, true, m)
             } else {
                 row.intersect(column)
