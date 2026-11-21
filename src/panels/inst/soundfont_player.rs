@@ -460,14 +460,44 @@ fn mod_filter_text(v: f32) -> String { format!("{:+} c", (24000.0 * v - 12000.0)
 fn mod_vol_text(v: f32) -> String { format!("{:+.1} dB", 48.0 * v - 24.0) }
 fn mod_key_text(v: f32) -> String { format!("{:+} c", (2400.0 * v - 1200.0).round() as i32) }
 
-const ZONE_TABS: [&str; 6] = [
+const ZONE_TABS: [&str; 7] = [
     "Vol Env",
     "Mod Env",
     "Env Map",
     "Pitch LFO",
     "Mod LFO",
     "Tone",
+    "Sample",
 ];
+
+const EXCL_ITEMS: [&str; 33] = [
+    "Off", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+    "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+    "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
+    "31", "32",
+];
+
+const LOOP_ITEMS: [&str; 3] = ["Off", "Loop", "Hold"];
+
+fn zone_pct1_text(v: f32) -> String {
+    format!("{:.1}%", 100.0 * v.clamp(0.0, 1.0))
+}
+fn zone_fixed_key_text(v: f32) -> String {
+    let idx = (128.0 * v.clamp(0.0, 1.0)).round() as i32;
+    if idx <= 0 {
+        "Off".into()
+    } else {
+        note_name((idx - 1).min(127) as u8, 0)
+    }
+}
+fn zone_fixed_vel_text(v: f32) -> String {
+    let idx = (128.0 * v.clamp(0.0, 1.0)).round() as i32;
+    if idx <= 0 {
+        "Off".into()
+    } else {
+        format!("{}", (idx - 1).min(127))
+    }
+}
 
 fn zone_tabs(
     ui: &mut Ui,
@@ -813,6 +843,19 @@ pub fn panel() -> Option<Panel> {
             .ml(0.2)
             .mr(0.2)
             .show(Show::Setting(ZONE_PAGE, 5)),
+            hstack([
+                knob(7134, "Start").value_fn(zone_pct1_text),
+                knob(7135, "End").default(1.0).value_fn(zone_pct1_text),
+                spinner(7132, "Loop").items(&LOOP_ITEMS),
+                spinner(7133, "Excl")
+                    .items(&EXCL_ITEMS)
+                    .items_per_column(11),
+                knob(7136, "Fix Key").value_fn(zone_fixed_key_text),
+                knob(7137, "Fix Vel").value_fn(zone_fixed_vel_text),
+            ])
+            .ml(0.2)
+            .mr(0.2)
+            .show(Show::Setting(ZONE_PAGE, 6)),
             display(ZONE_PIANO)
                 .h(Size::U(1.45))
                 .margins(0.0, 0.0, 0.0, 0.0)

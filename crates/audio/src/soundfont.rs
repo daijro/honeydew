@@ -60,8 +60,11 @@ pub const VOICES: usize = 512;
 const _: () = assert!(STREAM_VOICES <= VOICES);
 
 // Generator operators (SoundFont 2.01 §8.1.2).
+const START_ADDRS: usize = 0;
+const END_ADDRS: usize = 1;
 const START_LOOP: usize = 2;
 const END_LOOP: usize = 3;
+const START_ADDRS_COARSE: usize = 4;
 const MOD_LFO_TO_PITCH: usize = 5;
 const VIB_LFO_TO_PITCH: usize = 6;
 const MOD_ENV_TO_PITCH: usize = 7;
@@ -69,6 +72,7 @@ const FILTER_FC: usize = 8;
 const FILTER_Q: usize = 9;
 const MOD_LFO_TO_FILTER_FC: usize = 10;
 const MOD_ENV_TO_FILTER_FC: usize = 11;
+const END_ADDRS_COARSE: usize = 12;
 const MOD_LFO_TO_VOLUME: usize = 13;
 const PAN: usize = 17;
 const DELAY_MOD_LFO: usize = 21;
@@ -95,6 +99,8 @@ const INSTRUMENT: u16 = 41;
 const KEYS: usize = 43;
 const VELS: usize = 44;
 const START_LOOP_COARSE: usize = 45;
+const KEYNUM: usize = 46;
+const VELOCITY: usize = 47;
 const ATTENUATION: usize = 48;
 const END_LOOP_COARSE: usize = 50;
 const COARSE: usize = 51;
@@ -102,11 +108,12 @@ const FINE: usize = 52;
 const SAMPLE: u16 = 53;
 const MODES: usize = 54;
 const SCALE: usize = 56;
+const EXCLUSIVE_CLASS: usize = 57;
 const ROOT: usize = 58;
 /// Operators 0..=60 are defined; others are ignored.
 const GENERATORS: usize = 61;
 
-pub const ZONE_FIELDS: usize = 32;
+pub const ZONE_FIELDS: usize = 38;
 pub const ZONE_SELECT_KEY: u32 = 7000;
 pub const ZONE_RESET_KEY: u32 = 7005;
 pub const ZONE_CTL_BASE: u32 = 7100;
@@ -135,6 +142,8 @@ const fn defaults(instrument: bool) -> Gens {
         gens[RELEASE_MOD_ENV] = -12000;
         gens[DELAY_VOL_ENV] = -12000;
         gens[HOLD_VOL_ENV] = -12000;
+        gens[KEYNUM] = -1;
+        gens[VELOCITY] = -1;
         gens[FILTER_FC] = 13500;
         gens[SCALE] = 100;
         gens[ROOT] = -1;
@@ -579,18 +588,45 @@ impl SoundFont {
         let header = self.samples.get(sample)?;
         let end_n = header.name.iter().position(|&b| b == 0).unwrap_or(20);
         let name = String::from_utf8_lossy(&header.name[..end_n]).into_owned();
-        let (start, end) = (header.start as usize, header.end as usize);
-        let playable = start < end && end <= self.smpl.len() / 2 && header.rate > 0;
+        let (raw_start, raw_end) = (header.start as usize, header.end as usize);
+        let playable = raw_start < raw_end && raw_end <= self.smpl.len() / 2 && header.rate > 0;
         if !playable || header.kind & ROM != 0 {
             return None;
         }
         let add = |op: usize| i32::from(preset[op]) + i32::from(gens[op]);
+        let start = (i64::from(header.start)
+            + i64::from(gens[START_ADDRS])
+            + 32_768 * i64::from(gens[START_ADDRS_COARSE]))
+        .clamp(raw_start as i64, raw_end as i64) as usize;
+        let end = (i64::from(header.end)
+            + i64::from(gens[END_ADDRS])
+            + 32_768 * i64::from(gens[END_ADDRS_COARSE]))
+        .clamp(raw_start as i64, raw_end as i64) as usize;
+        if start >= end {
+            return None;
+        }
         let point = |at: u32, fine: usize, coarse: usize| {
             let offset = i64::from(gens[fine]) + 32_768 * i64::from(gens[coarse]);
-            (i64::from(at) + offset).clamp(start as i64, end as i64) as usize
+            (i64::from(at) + offset).clamp(raw_start as i64, raw_end as i64) as usize
         };
-        let loop_start = point(header.loop_start, START_LOOP, START_LOOP_COARSE);
-        let loop_end = point(header.loop_end, END_LOOP, END_LOOP_COARSE);
+        let raw_loop_start = point(header.loop_start, START_LOOP, START_LOOP_COARSE);
+        let raw_loop_end = point(header.loop_end, END_LOOP, END_LOOP_COARSE);
+        let loop_start = raw_loop_start.clamp(start, end);
+        let loop_end = raw_loop_end.clamp(loop_start, end);
+        let loop_mode = match gens[MODES] & 3 {
+            1 => 1,
+            3 => 2,
+            _ => 0,
+        };
+        let can_loop = loop_end > loop_start;
+        let fixed_key = match gens[KEYNUM] {
+            k @ 0..=127 => Some(k as u8),
+            _ => None,
+        };
+        let fixed_vel = match gens[VELOCITY] {
+            v @ 0..=127 => Some(v as u8),
+            _ => None,
+        };
         // overridingRootKey, else the sample's pitch; 128–255 is unpitched, which the standard plays at 60.
         let root = match (gens[ROOT], header.pitch) {
             (key @ 0..=127, _) => key as u8,
@@ -630,11 +666,20 @@ impl SoundFont {
             name,
             keys: overlap(preset[KEYS], gens[KEYS])?,
             vels: overlap(preset[VELS], gens[VELS])?,
+            start,
             end,
             loop_start,
             loop_end,
-            looping: gens[MODES] & 1 == 1 && loop_end > loop_start,
-            start,
+            raw_start,
+            raw_end,
+            raw_loop_start,
+            raw_loop_end,
+            loop_mode,
+            fixed_key,
+            fixed_vel,
+            looping: loop_mode != 0 && can_loop,
+            loop_sustain: loop_mode == 2 && can_loop,
+            exclusive: gens[EXCLUSIVE_CLASS].max(0) as u16,
             rate: f64::from(header.rate),
             root,
             tune: f64::from(add(COARSE))
@@ -642,12 +687,12 @@ impl SoundFont {
             scale: f64::from(gens[SCALE]),
             pan: add(PAN).clamp(-500, 500) as f32 / 1000.0,
             gain: 10f32.powf(-centibels(ATTENUATION) / 500.0 - q_attenuation / 200.0),
+            vol_delay: add(DELAY_VOL_ENV) as f32,
             attack: add(ATTACK) as f32,
+            vol_hold: add(HOLD_VOL_ENV) as f32,
             decay: add(DECAY) as f32,
             sustain: 10f32.powf(-centibels(SUSTAIN) / 200.0),
             release: add(RELEASE) as f32,
-            vol_delay: add(DELAY_VOL_ENV) as f32,
-            vol_hold: add(HOLD_VOL_ENV) as f32,
             key_vol_hold: add(KEY_TO_VOL_ENV_HOLD).clamp(-1200, 1200) as f32,
             key_vol_decay: add(KEY_TO_VOL_ENV_DECAY).clamp(-1200, 1200) as f32,
             vibrato: [
@@ -789,6 +834,12 @@ fn region_defaults(r: &Region) -> [f32; ZONE_FIELDS] {
     let coarse = r.tune.round();
     let fine_cents = (r.tune - coarse) * 100.0;
     let gain_db = 20.0 * r.gain.max(1e-4).log10();
+    let sample_mode = f32::from(r.loop_mode);
+    let span = (r.raw_end.saturating_sub(r.raw_start)).max(1) as f32;
+    let start_norm = ((r.start.saturating_sub(r.raw_start)) as f32 / span).clamp(0.0, 1.0);
+    let end_norm = ((r.end.saturating_sub(r.raw_start)) as f32 / span).clamp(0.0, 1.0);
+    let fixed_key = r.fixed_key.map_or(0.0, |k| f32::from(k + 1) / 128.0);
+    let fixed_vel = r.fixed_vel.map_or(0.0, |v| f32::from(v + 1) / 128.0);
     [
         tc_to_slider(r.attack),
         tc_to_slider(r.decay),
@@ -822,11 +873,17 @@ fn region_defaults(r: &Region) -> [f32; ZONE_FIELDS] {
         mod_tc_to_slider(r.vol_hold),
         ((r.key_vol_hold + 1200.0) / 2400.0).clamp(0.0, 1.0),
         ((r.key_vol_decay + 1200.0) / 2400.0).clamp(0.0, 1.0),
+        sample_mode,
+        f32::from(r.exclusive.min(32)),
+        start_norm,
+        end_norm,
+        fixed_key,
+        fixed_vel
     ]
 }
 
-fn apply_zone_field(r: &mut Region, field: usize, v: f32) {
-    let v = v.clamp(0.0, 1.0);
+fn apply_zone_field(r: &mut Region, field: usize, raw: f32) {
+    let v = raw.clamp(0.0, 1.0);
     let default_hz = LFO_HZ * 2f32.powf(13500.0 / 1200.0);
     match field {
         0 => r.attack = slider_to_tc(v),
@@ -886,6 +943,58 @@ fn apply_zone_field(r: &mut Region, field: usize, v: f32) {
         29 => r.vol_hold = mod_slider_to_tc(v),
         30 => r.key_vol_hold = 2400.0 * v - 1200.0,
         31 => r.key_vol_decay = 2400.0 * v - 1200.0,
+        32 => {
+            let can_loop = r.loop_end > r.loop_start;
+            match raw.round() as i32 {
+                1 => {
+                    r.loop_mode = 1;
+                    (r.looping, r.loop_sustain) = (can_loop, false);
+                }
+                2 => {
+                    r.loop_mode = 2;
+                    (r.looping, r.loop_sustain) = (can_loop, true);
+                }
+                _ => {
+                    r.loop_mode = 0;
+                    (r.looping, r.loop_sustain) = (false, false);
+                }
+            }
+        }
+        33 => r.exclusive = raw.round().clamp(0.0, 127.0) as u16,
+        34 => {
+            let len = r.raw_end.saturating_sub(r.raw_start) as f32;
+            let pos = r.raw_start + (len * v).round() as usize;
+            r.start = pos.clamp(r.raw_start, r.raw_end.saturating_sub(1));
+            if r.end <= r.start {
+                r.end = (r.start + 1).min(r.raw_end);
+            }
+            r.loop_start = r.raw_loop_start.clamp(r.start, r.end);
+            r.loop_end = r.raw_loop_end.clamp(r.loop_start, r.end);
+            let can_loop = r.loop_end > r.loop_start;
+            r.looping = r.loop_mode != 0 && can_loop;
+            r.loop_sustain = r.loop_mode == 2 && can_loop;
+        }
+        35 => {
+            let len = r.raw_end.saturating_sub(r.raw_start) as f32;
+            let pos = r.raw_start + (len * v).round() as usize;
+            r.end = pos.clamp(r.raw_start + 1, r.raw_end);
+            if r.start >= r.end {
+                r.start = r.end.saturating_sub(1).max(r.raw_start);
+            }
+            r.loop_start = r.raw_loop_start.clamp(r.start, r.end);
+            r.loop_end = r.raw_loop_end.clamp(r.loop_start, r.end);
+            let can_loop = r.loop_end > r.loop_start;
+            r.looping = r.loop_mode != 0 && can_loop;
+            r.loop_sustain = r.loop_mode == 2 && can_loop;
+        }
+        36 => {
+            let idx = (128.0 * v).round() as i32;
+            r.fixed_key = (idx > 0).then_some((idx - 1).clamp(0, 127) as u8);
+        }
+        37 => {
+            let idx = (128.0 * v).round() as i32;
+            r.fixed_vel = (idx > 0).then_some((idx - 1).clamp(0, 127) as u8);
+        }
         _ => {}
     }
 }
@@ -915,7 +1024,16 @@ pub struct Region {
     end: usize,
     loop_start: usize,
     loop_end: usize,
+    raw_start: usize,
+    raw_end: usize,
+    raw_loop_start: usize,
+    raw_loop_end: usize,
+    loop_mode: u8,
+    fixed_key: Option<u8>,
+    fixed_vel: Option<u8>,
     looping: bool,
+    loop_sustain: bool,
+    exclusive: u16,
     rate: f64,
     root: u8,
     /// Coarse and fine tune and the sample's correction, in semitones.
@@ -1119,7 +1237,20 @@ fn sfz_region(
         end,
         loop_start,
         loop_end,
+        raw_start: start,
+        raw_end: end,
+        raw_loop_start: loop_start,
+        raw_loop_end: loop_end,
+        loop_mode: match mode {
+            LoopMode::Continuous => 1,
+            LoopMode::Sustain => 2,
+            LoopMode::NoLoop | LoopMode::OneShot => 0,
+        },
+        fixed_key: None,
+        fixed_vel: None,
         looping: matches!(mode, LoopMode::Continuous | LoopMode::Sustain) && loop_end > loop_start,
+        loop_sustain: mode == LoopMode::Sustain && loop_end > loop_start,
+        exclusive: 0,
         rate,
         root,
         tune: 0.0,
@@ -1892,10 +2023,10 @@ impl Voice {
         )
     }
 
-    /// Moves `step` frames on through `region`'s sample: round its loop, or up to its last frame, where it fades.
-    fn advance(&mut self, region: &Region, step: f64) {
+    /// Moves `step` frames on through `region`'s sample: round its loop while `looping`, or up to its last frame, where it fades.
+    fn advance(&mut self, region: &Region, looping: bool, step: f64) {
         self.position += step;
-        if region.looping {
+        if looping {
             if self.position >= region.loop_end as f64 {
                 let start = region.loop_start as f64;
                 let length = (region.loop_end - region.loop_start) as f64;
@@ -1904,7 +2035,7 @@ impl Voice {
         } else if self.position >= (region.end - 1) as f64 {
             self.position = (region.end - 1) as f64;
             self.stage = Stage::Release;
-            self.release = END_FADE;
+            self.release = self.release.max(END_FADE);
         }
     }
 }
@@ -2369,11 +2500,16 @@ impl SoundFontPlayer {
         let (rate_f32, params) = (self.sample_rate, self.params);
         let rate = f64::from(rate_f32);
         for voice in self.voices.iter_mut().filter(|v| v.on && v.region == zone) {
+            let eff_key = r.fixed_key.unwrap_or(voice.key);
             let ([attack, decay, sustain, release], _, hold) =
-                Self::vol_env(rate_f32, &params, &r, voice.key);
+                Self::vol_env(rate_f32, &params, &r, eff_key);
             let octaves =
-                (f64::from(voice.key) - f64::from(r.root) + r.tune) * r.scale / 1200.0;
+                (f64::from(eff_key) - f64::from(r.root) + r.tune) * r.scale / 1200.0;
             voice.step = 2f64.powf(octaves) * r.rate / rate;
+            if let Some(fv) = r.fixed_vel {
+                voice.velocity = f32::from(fv) / 127.0;
+            }
+            voice.position = voice.position.clamp(r.start as f64, (r.end - 1) as f64);
             (voice.attack, voice.decay, voice.sustain, voice.release, voice.hold) =
                 (attack, decay, sustain, release, hold);
         }
@@ -2405,19 +2541,33 @@ impl Instrument for SoundFontPlayer {
         if self.is_sfz() {
             return self.sfz_note(key, velocity, pan, None);
         }
+        let before = self.started;
         let steps = (127.0 * velocity) as u8;
         let matches = self.regions.iter().filter(|r| r.plays(key, steps));
         let skip = matches.count().saturating_sub(VOICES);
+        for (_, region) in self.regions.iter().enumerate().filter(|(_, r)| r.plays(key, steps)).skip(skip) {
+            if region.exclusive != 0 {
+                let target = region.exclusive;
+                let regions = &self.regions;
+                for voice in self.voices.iter_mut().filter(|v| {
+                    v.on && v.started <= before && regions[v.region].exclusive == target
+                }) {
+                    voice.choke(false, self.sample_rate);
+                }
+            }
+        }
         let regions = self.regions.iter().enumerate();
         for (index, region) in regions.filter(|(_, r)| r.plays(key, steps)).skip(skip) {
-            //let [attack, decay, sustain, release] = self.envelope(region);
-            let ([attack, decay, sustain, release], delay, hold) = self.vol_envelope(region, key);
+            let eff_key = region.fixed_key.unwrap_or(key);
+            let eff_vel = region.fixed_vel.map_or(velocity, |v| f32::from(v) / 127.0);
+            let ([attack, decay, sustain, release], delay, hold) =
+                self.vol_envelope(region, eff_key);
             let octaves =
-                (f64::from(key) - f64::from(region.root) + region.tune) * region.scale / 1200.0;
+                (f64::from(eff_key) - f64::from(region.root) + region.tune) * region.scale / 1200.0;
             let step = 2f64.powf(octaves) * region.rate / f64::from(self.sample_rate);
             let slot = slot(&self.voices, None, None);
             self.started += 1;
-            let mod_env = ModEnvState::start(&region.mod_env, key);
+            let mod_env = ModEnvState::start(&region.mod_env, eff_key);
             let mut filter = Filter::default();
             if let Some([hz, resonance]) = region.filter {
                 let hz = hz * 2f32.powf((mod_env.level * region.mod_env.to_filter) / 1200.0);
@@ -2437,7 +2587,7 @@ impl Instrument for SoundFontPlayer {
                 region: index,
                 position: region.start as f64,
                 step,
-                velocity,
+                velocity: eff_vel,
                 pan,
                 attack,
                 decay,
@@ -2546,7 +2696,8 @@ impl Instrument for SoundFontPlayer {
                 continue;
             }
             let p = (voice.pan + voice.slide[1] + region.pan).clamp(0.0, 1.0);
-            let gain = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0) * region.gain;
+            let vel = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0);
+            let gain = vel * vel * region.gain;
             let (gain_l, gain_r) = (gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0));
             // A control block at a time, which the vibratos move.
             let blocks = left.chunks_mut(CONTROL).zip(right.chunks_mut(CONTROL));
@@ -2574,6 +2725,8 @@ impl Instrument for SoundFontPlayer {
             } else {
                 voice.m.filter.stages = 0;
             }
+
+            let looping = region.looping && (!region.loop_sustain || !voice.released);
 
             'voice: for (left, right) in blocks {
                 let dt = left.len() as f32 / self.sample_rate;
@@ -2620,11 +2773,11 @@ impl Instrument for SoundFontPlayer {
                         continue;
                     }
                     let at = |k| font.frame(k);
-                    let sample = interpolate(region, region.looping, voice.position, cubic, at);
+                    let sample = interpolate(region, looping, voice.position, cubic, at);
                     let sample = voice.m.filter.run_mono(sample);
                     *l += sample * voice.level * mod_gain * gain_l;
                     *r += sample * voice.level * mod_gain * gain_r;
-                    voice.advance(region, step);
+                    voice.advance(region, looping, step);
                 }
             }
         }
