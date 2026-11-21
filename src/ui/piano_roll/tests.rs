@@ -984,6 +984,7 @@ fn the_normal_generator_has_mean_0_and_deviation_1_and_differs_by_seed() {
 // ---- the component, offscreen ----
 
 mod component {
+    use crate::ui::piano_roll::appearance::NoteStyle;
     use eframe::egui::{
         self, Context, Event as In, Modifiers, MouseWheelUnit, PointerButton, Pos2, Rangef,
         RawInput, Rect, Vec2, pos2, vec2,
@@ -1672,6 +1673,49 @@ mod component {
         let from = at(140.0, 72);
         rig.drag(from, from + vec2(0.0, -32.0));
         assert!(rig.sounds.is_empty(), "{:?}", rig.sounds);
+    }
+
+    #[test]
+    fn note_appearance_switching_is_visual_only_and_moves_still_snap() {
+        for style in NoteStyle::ALL {
+            let mut rig = Rig::new(vec![n(128, 64.0, 70)]);
+            let before = rig.song.clone();
+            rig.roll.note_style = style;
+            rig.frame(vec![]);
+            assert_eq!(rig.song, before);
+            assert!(rig.all.is_empty());
+            let from = at(140.0, 70);
+            rig.drag(from, from + vec2(70.0, -32.0));
+            assert_eq!(spans(rig.events()), [(256, 64.0, 72)]);
+            assert_eq!(rig.last, [DONE]);
+            let mut resize = Rig::new(vec![n(128, 64.0, 70), n(256, 32.0, 66)]);
+            resize.roll.note_style = style;
+            resize.frame(vec![]);
+            resize.tap(at(140.0, 70));
+            let handle = at(192.0, 70) + vec2(9.6, 0.0);
+            resize.drag(handle, handle + vec2(30.0, 0.0));
+            assert_eq!(spans(resize.events())[0], (128, 128.0, 70));
+        }
+    }
+
+    #[test]
+    fn note_appearance_menu_changes_no_midi_or_selection() {
+        let mut rig = Rig::new(vec![n(0, 256.0, 60), n(64, 128.0, 60)]);
+        rig.select(vec![true, false]);
+        let before = rig.song.clone();
+        let selected = rig.roll.selected.clone();
+        rig.tap(rig.text("More...").unwrap());
+        rig.frame(vec![]);
+        rig.tap(rig.text("Note Appearance...").unwrap());
+        // A new popup Area sizes itself on its first frame, as the other note dialogs do.
+        rig.frame(vec![]);
+        rig.frame(vec![]);
+        rig.tap(rig.text("Outline").unwrap());
+        rig.frame(vec![]);
+        assert_eq!(rig.roll.note_style, NoteStyle::Outline);
+        assert_eq!(rig.song, before);
+        assert_eq!(rig.roll.selected, selected);
+        assert!(rig.all.is_empty());
     }
 
     #[test]
@@ -2991,7 +3035,7 @@ mod component {
     #[test]
     fn every_note_menu_item_is_enabled() {
         let items = crate::ui::piano_roll::more_items();
-        assert_eq!(items.len(), 19);
+        assert_eq!(items.len(), 20);
         assert!(items.iter().all(|i| !i.disabled));
     }
 
@@ -4380,6 +4424,7 @@ mod component {
 // ---- the grid background ----
 
 mod grid {
+    use crate::ui::piano_roll::appearance::NoteStyle;
     use eframe::egui::{Color32, Context, LayerId, RawInput, Rect, Shape, pos2};
 
     use super::n;
@@ -4556,6 +4601,7 @@ mod grid {
                 false,
                 Some(past),
                 RED,
+                NoteStyle::Classic,
                 cx,
             );
         });

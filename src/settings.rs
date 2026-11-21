@@ -184,6 +184,12 @@ pub struct Settings {
     /// Display-only policy, independent of the audio output profile.
     #[serde(rename = "waveformQuality")]
     pub waveform_quality: crate::ui::waveform_quality::WaveformQuality,
+    #[serde(rename = "pianoRollNoteStyle")]
+    pub piano_roll_note_style: crate::ui::piano_roll::appearance::NoteStyle,
+    pub envelope_display: crate::ui::envelope_display::EnvelopeDisplay,
+    /// Visibility of contextual information icons only; help content remains available.
+    #[serde(rename = "showInformationButtons")]
+    pub show_information_buttons: bool,
     /// `Enable audio recording latency compensation` (our own key): ON compensates. BanaForge change (#129, #130): the
     /// earlier `reclatency` toggle compensated while OFF or unset; a load moves it here once, keeping whether it
     /// compensated ([`migrate_keys`]). On by default, as the earlier unset key compensated.
@@ -239,6 +245,9 @@ pub struct Settings {
     /// Optional visual-only Playlist channel activity lights.
     #[serde(rename = "trackActivityIndicators")]
     pub track_activity_indicators: bool,
+    /// Visual only: use each channel color rather than white for activity.
+    #[serde(rename = "trackActivityColors")]
+    pub track_activity_colors: bool,
     /// `Show hidden tracks` (our own key): the playlist shows the tracks `Hide track` hid, dimmed. Off by default.
     #[serde(rename = "showHiddenTracks")]
     pub show_hidden_tracks: bool,
@@ -422,6 +431,9 @@ impl Default for Settings {
             background_audio: false,
             sound_mode: DEFAULT_SOUND_MODE,
             waveform_quality: Default::default(),
+            piano_roll_note_style: Default::default(),
+            envelope_display: Default::default(),
+            show_information_buttons: true,
             latency_compensation: true,
             multitrack_recording: false,
             count_in: true,
@@ -439,6 +451,7 @@ impl Default for Settings {
             continuous_scroll: false,
             playlist_follow_position: 250,
             track_activity_indicators: false,
+            track_activity_colors: false,
             show_hidden_tracks: false,
             hardware_meters: true,
             lock_pads: true,
@@ -880,6 +893,9 @@ mod tests {
                 .map(|&(id, _)| id)
                 .unwrap_or(d.sound_mode),
             waveform_quality: crate::ui::waveform_quality::WaveformQuality::Balanced,
+            piano_roll_note_style: crate::ui::piano_roll::appearance::NoteStyle::Accent,
+            envelope_display: crate::ui::envelope_display::EnvelopeDisplay { visible: false, colors: [[20, 80, 255], [255, 255, 255]] },
+            show_information_buttons: false,
             latency_compensation: !d.latency_compensation,
             multitrack_recording: !d.multitrack_recording,
             count_in: !d.count_in,
@@ -897,6 +913,7 @@ mod tests {
             continuous_scroll: !d.continuous_scroll,
             playlist_follow_position: 675,
             track_activity_indicators: !d.track_activity_indicators,
+            track_activity_colors: true,
             show_hidden_tracks: !d.show_hidden_tracks,
             hardware_meters: !d.hardware_meters,
             lock_pads: !d.lock_pads,
@@ -1052,6 +1069,22 @@ mod tests {
             Settings::load(&stored(r#"{"playlistFollowPosition":65000}"#)).playlist_follow_position,
             950
         );
+    }
+
+    #[test]
+    fn information_buttons_default_on_and_persist_without_changing_other_preferences() {
+        assert!(Settings::load(&stored("{}")).show_information_buttons);
+        assert!(Settings::load(&stored(r#"{"showInformationButtons":"invalid"}"#)).show_information_buttons);
+        for visible in [false, true] {
+            let mut s = Settings::default();
+            s.show_information_buttons = visible;
+            let mut mem = Mem::default();
+            s.save(&mut mem);
+            let mut loaded = Settings::load(&mem);
+            assert_eq!(loaded.show_information_buttons, visible);
+            loaded.show_information_buttons = true;
+            assert_eq!(loaded, Settings::default());
+        }
     }
 
     #[test]
@@ -1246,6 +1279,7 @@ mod tests {
                 "editorRibbonShift",
                 "enableAnimations",
                 "enableInertia",
+                "envelope_display",
                 "ghostnotes",
                 "graphTabShift",
                 "gridSize",
@@ -1264,9 +1298,11 @@ mod tests {
                 "multithreaded",
                 "multitrackrec",
                 "performanceOverlay",
+                "pianoRollNoteStyle",
                 "pianoRollPanSnap",
                 "pianoRollVelocitySnap",
                 "pickerKeys",
+                "playlistFollowPosition",
                 "pluginFolders",
                 "preferredKbdSizeCells",
                 "projectVersionSizeLimit",
@@ -1280,6 +1316,7 @@ mod tests {
                 "screenOrientation",
                 "showHardwareMeters",
                 "showHiddenTracks",
+                "showInformationButtons",
                 "showKeyNames",
                 "showRangeIndexLabels",
                 "showTwoRows",
@@ -1288,6 +1325,8 @@ mod tests {
                 "soundsNoticeSeen",
                 "soundsOverMobileData",
                 "theme",
+                "trackActivityColors",
+                "trackActivityIndicators",
                 "uiscalefactor",
                 "vocalSynth.browserVisible",
                 "vocalSynth.desktopWorkspace",
@@ -1298,6 +1337,7 @@ mod tests {
                 "vocalSynth.simpleMode",
                 "vocalSynth.waveformEnabled",
                 "vocalSynth.waveformOffsetY",
+                "waveformQuality",
                 "whatsNewSeen",
                 "writeTagsOnExport"
             ]
@@ -1618,5 +1658,38 @@ mod tests {
         assert!(!unflushed(&file));
         let stored = FileStorage::open(folder.join("storage.json"));
         assert_eq!(stored.get_string("k").as_deref(), Some("v"));
+    }
+}
+
+#[cfg(test)]
+mod playlist_activity_settings_regressions {
+    use super::*;
+    #[test]
+    fn layout_regression_activity_colors_default_white_and_persist_independently() {
+        let mut s: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!s.track_activity_colors);
+        s.track_activity_colors = true;
+        let loaded: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(loaded.track_activity_colors);
+        assert!(!loaded.track_activity_indicators);
+    }
+}
+
+#[cfg(test)]
+mod note_appearance_tests {
+    use super::*;
+    use crate::ui::piano_roll::appearance::NoteStyle;
+    #[test]
+    fn note_appearance_defaults_to_classic_and_all_styles_persist() {
+        let default: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(default.piano_roll_note_style, NoteStyle::Classic);
+        for style in NoteStyle::ALL {
+            let mut s = Settings::default();
+            s.piano_roll_note_style = style;
+            let loaded: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+            assert_eq!(loaded.piano_roll_note_style, style);
+            assert_eq!(loaded.key_names, s.key_names);
+            assert_eq!(loaded.sound_mode, s.sound_mode);
+        }
     }
 }

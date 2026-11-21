@@ -16,16 +16,16 @@ impl FollowCursor {
     pub(super) fn rect(&self, marks: Rect, cx: &UiCtx) -> Rect {
         let x = marks.left() + marks.width() * self.fraction() as f32;
         Rect::from_center_size(
-            pos2(x, marks.top() + cx.m.u(0.32)),
-            vec2(cx.m.u(1.2), cx.m.u(0.64)),
+            pos2(x, marks.top() + cx.m.u(0.65)),
+            vec2(cx.m.u(1.3), cx.m.u(1.3)),
         )
         .intersect(marks)
     }
 
-    /// Invisible padding: same visual cap, a 1.8 U wide by 1.3 U tall grab zone inside the ruler.
+    /// Generous finger target, clipped to the available ruler.
     fn hit_rect(&self, marks: Rect, cx: &UiCtx) -> Rect {
         let r = self.rect(marks, cx);
-        Rect::from_center_size(r.center(), vec2(cx.m.u(1.8), cx.m.u(1.3))).intersect(marks)
+        Rect::from_center_size(r.center(), vec2(cx.m.u(2.0), cx.m.u(1.65))).intersect(marks)
     }
 
     /// Returns true for the complete owned gesture, including its release. Raw hit-testing is deliberate:
@@ -80,7 +80,7 @@ impl FollowCursor {
 
     pub(super) fn paint(&self, ui: &egui::Ui, marks: Rect, cx: &UiCtx) {
         let rect = self.rect(marks, cx);
-        let ink = egui::Color32::from_rgb(255, 213, 64);
+        let ink = egui::Color32::from_gray(235);
         let painter = ui.painter_at(marks);
         painter.rect_filled(rect, cx.m.u(0.12), cx.theme.colors.background.to_color32());
         painter.rect_stroke(
@@ -203,11 +203,11 @@ mod tests {
     }
 
     #[test]
-    fn padded_follow_handle_can_be_grabbed_outside_unchanged_visual_cap() {
+    fn padded_follow_handle_can_be_grabbed_outside_square_visual_cap() {
         let ctx = Context::default();
         let mut cursor = FollowCursor::default();
         frame(&ctx, &mut cursor, vec![], true, false);
-        // Visual cap ends at x319.2/y20.48 at this scale; enlarged touch zone extends to x328.8/y31.
+        // The square ends at x320.8; the finger target extends farther.
         let p = pos2(324.0, 25.0);
         assert!(frame(
             &ctx,
@@ -258,5 +258,34 @@ mod tests {
         ));
         assert_eq!(cursor.position, Some(50));
         assert!(!frame(&ctx, &mut cursor, vec![], true, false));
+    }
+}
+
+#[cfg(test)]
+mod layout_regressions {
+    use super::*;
+    use crate::metrics::{DEFAULT_UI_SCALE, Metrics};
+    #[test]
+    fn layout_regression_follow_square_and_touch_target_fit_small_rulers() {
+        let m = Metrics::from_pixels_per_point(1.0, DEFAULT_UI_SCALE);
+        let theme = crate::theme::theme_by_id(0);
+        let cx = UiCtx {
+            m: &m,
+            theme: &theme,
+        };
+        for width in [180.0, 320.0, 720.0] {
+            let marks = Rect::from_min_size(pos2(10.0, 0.0), vec2(width, m.u(2.0)));
+            for position in [50, 250, 950] {
+                let cursor = FollowCursor {
+                    position: Some(position),
+                    ..Default::default()
+                };
+                let cap = cursor.rect(marks, &cx);
+                let hit = cursor.hit_rect(marks, &cx);
+                assert!(marks.contains_rect(cap) && marks.contains_rect(hit));
+                assert!(hit.contains_rect(cap));
+                assert!(cap.height() >= m.u(1.2));
+            }
+        }
     }
 }

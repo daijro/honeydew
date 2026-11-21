@@ -42,6 +42,8 @@ impl State {
 /// Draws the piano roll of `channel`'s note lane in `app.regions.editor`; back to the playlist once the channel is gone
 /// (the app collapses an editor whose clip goes).
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usize) -> Option<Nav> {
+    app.covered |=
+        crate::ui::help::corner(ui, app.regions.editor, crate::ui::help::Topic::PianoRoll);
     if channel >= app.song.channels.len() {
         return Some(Nav::Show(View::Playlist));
     }
@@ -61,6 +63,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     } else {
         Some(app.regions.editor)
     };
+    roll.note_style = app.settings.piano_roll_note_style;
     roll.lyric_bar_enabled = app.settings.vocal_lyric_bar_enabled;
     roll.simple_mode = app.settings.vocal_simple_mode;
     roll.waveform_enabled = app.settings.vocal_waveform_enabled;
@@ -106,6 +109,7 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
         roll.hide(app.song)
     };
     [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
+    app.settings.piano_roll_note_style = roll.note_style;
     app.settings.grid_size = roll.snap.size;
     app.settings.graph_tab_shift = roll.graph_tab_shift;
     for action in actions {

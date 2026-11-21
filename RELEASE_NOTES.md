@@ -1,3 +1,44 @@
+BanaForge 0.5.29 — Android ARMv7 / ARM64 compatibility delivery
+
+- Ship a universal playtest APK containing actual `armeabi-v7a` and `arm64-v8a` native engines and matching C++ runtimes. Existing per-ABI builds remain selectable; previous playtest artifacts were explicitly ARM64-only.
+- Strengthen packaging validation: check every native ELF class/machine, same-ABI non-system dependencies, NativeActivity entry point and Java native callback exports. Keep signing, CRC and alignment checks.
+- Add packaging-verifier regressions and a physical 32/64-bit install/audio/recording/module acceptance checklist in ANDROID_COMPATIBILITY.md. No physical-device runtime testing is claimed.
+
+BanaForge 0.5.28 — Piano Roll note appearance
+
+- Five persistent visual-only styles: Classic (unchanged/default), Smooth, Outline, Gradient and Accent. Channel colors and selected-note tint are retained; outline labels contrast with the grid.
+- Choose in Settings → User interface → Piano Roll Note Style, or select notes → More… → Note Appearance… to preview directly in the roll. No new editing toolbar buttons.
+- Style changes affect drawing only: no MIDI edits, undo entries, timing changes or audio commands. Keyboard, grid, ruler, editing geometry, selection/resize handles and vocal controls remain unchanged.
+- Decoration is visible-note-only with constant geometry: one rectangle/stroke, two rectangles for Accent, or one four-vertex mesh for Gradient. No textures, animation or audio-thread work.
+- Adds style/persistence/geometry/menu/data-invariance checks and runs existing Piano Roll editing regressions. Physical Android readability, overlap and touch performance remain playtest acceptance items.
+
+BanaForge 0.5.27 — Playlist visual and touch polish
+
+- Activity lights now occupy a dedicated gutter, with square faces and spacing clear of the original controls. White is the default flash; optional persistent track-color matching sits beside the existing visibility switch. Uses real channel output meters, including monitoring, without a new timer or audio processing.
+- Larger square white follow-position handle and padded ruler-clipped finger target. Saved anchor, drag clamping, and playback behavior are unchanged.
+- Playlist track names and module titles use a bounded prefix with end ellipsis; truncated labels are additionally clipped to their cells, including extremely narrow layouts. Full project/file names are not changed.
+- Hide the top-right BanaForge menu button while the channel rack/module interface is visible; restore it when closed.
+- Adds multi-scale geometry, settings persistence and existing interaction regressions. Physical Android touch/performance verification remains necessary.
+
+BanaForge 0.5.26 — compact channel controls, Gross Beat layout and help alignment
+
+- Channel Settings: bound Monitor and Record arm controls to compact themed buttons with captions, rather than sizing their discs from the color-wheel row. Recording/monitoring functionality remains connected to the same settings. Keep brightness Value caption and numeric slider within the color column; clamp audio-channel dialog width to the viewport.
+- Banana Gross Beat: replace compressed multi-item TIME/VOLUME lists with one mode selector on the active tab, and separate mode, Length and Mix rows. Presets, custom points and processing are unchanged.
+- Settings information icons now paint and interact in their actual scrolling parent row, with the page clip. Workspace help chrome is suppressed while menus or other app overlays are open, so it cannot float above Settings navigation. The persisted Show information buttons preference is preserved.
+- Adds layout/clip regressions for channel button bounds, narrow color captions, both Gross Beat tabs, scrolling info rows and workspace/menu isolation. Physical Android acceptance remains necessary across display sizes/scales.
+
+BanaForge 0.5.25 — optional contextual information icons
+
+- Settings → User interface → Show information buttons defaults ON. Turn it OFF to hide contextual icons and their touch targets throughout Playlist, Piano Roll, Mixer, Audio Editor and Settings; turn it ON to restore their original positions.
+- The preference persists independently of project files. Help content and already-open explanations are preserved. Audio processing, envelope data, other controls and their positions are unchanged.
+
+BanaForge 0.5.24 — PAN runtime restoration, stereo waveform prediction, contextual help
+
+- Reasserts each active audio clip's compiled VOL/PAN/SPEED at render-block boundaries; seek/relaunch restores base settings where no previous envelope step applies. Live envelope handover retains sample phase and sounding voices. PAN remains linear stereo balance: it attenuates the opposite channel, not folds its content into the other side.
+- Playlist and Audio Editor waveforms show predicted left output above right when PAN points exist, with quantized VOL×PAN gain. Mono source peaks can supply both output rows without another PCM decode. This is before channel/master effects, not a final-output meter; overview columns retain conservative peak gain. Overlay visibility/colors remain display-only and persisted.
+- Small circular information buttons open compact, scrollable, dismissible explanations in Playlist, Piano Roll, Mixer, Audio Editor and relevant advanced Settings rows. Includes actual effects, ON/OFF meaning where applicable and stereo/device limitations. Help does not send audio commands. Further individual plugin/control topics can use the shared catalog.
+- Regression suite verifies real mono and stereo PCM, center/left/right balance, live phase preservation, envelope shape/persistence/overlap behavior, help opening/dismissal, and existing editors. Physical Android routes, accessibility mono-audio settings, touch layouts and heavy-project performance still require device testing. See PAN_HELP_TESTING.md.
+
 BanaForge 0.5.21 — waveform quality and easier follow-handle grabs
 
 - New persisted Waveform Quality selector immediately after Sound mode: High Quality (default/current filled detail), Balanced (larger adjacent peak groups), Performance (sparse independent one-device-pixel vertical amplitude bars).

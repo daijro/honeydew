@@ -2200,7 +2200,7 @@ fn ellipsis<'a>(shown: &'a str, full: &str) -> (&'a str, &'a str) {
 }
 
 #[test]
-fn a_card_name_wider_than_its_label_is_truncated_keeping_5_tail_characters() {
+fn a_card_name_wider_than_its_label_is_truncated_with_end_ellipsis() {
     // A 15.5 U (full-screen) rack: 0.5 U margins and 14.5 U cards, whose name label (3.25 U in, up to the ◀ of the
     // preset button) is narrower than `SoundFont Player` at 12 pt.
     let mut song = crate::song::Song::default();
@@ -2218,7 +2218,7 @@ fn a_card_name_wider_than_its_label_is_truncated_keeping_5_tail_characters() {
         .expect("the name")
         .clone();
     let (head, tail) = ellipsis(&shown, full);
-    assert_eq!(tail, "layer", "{shown}");
+    assert_eq!(tail, "", "{shown}");
     assert!(head.len() > 5, "{shown}");
     assert_eq!(size, 24.0);
     let card = flow(

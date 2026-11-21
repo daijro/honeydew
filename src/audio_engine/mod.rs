@@ -833,9 +833,10 @@ impl SongAudioEngine {
             kit.render(&mut self.buffers);
         }
         let speed = self.speed();
+        let rolling = self.rolling();
         for (clips, buffer) in self.clips.iter_mut().zip(&mut self.buffers) {
             if let Some(clips) = clips {
-                clips.render(buffer, speed);
+                clips.render(buffer, speed, self.frame, context.start_beat, rolling);
             }
         }
         if let Some(monitor) = &mut self.monitor {

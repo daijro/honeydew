@@ -46,6 +46,8 @@ impl State {
 /// Draws `channel`'s audio editor in `app.regions.editor`, on the clip it holds for the channel (the app points it at the
 /// playlist's current clip, [`super::Slots::follow`], which collapses the editor once that clip is gone).
 pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usize) -> Option<Nav> {
+    app.covered |=
+        crate::ui::help::corner(ui, app.regions.editor, crate::ui::help::Topic::AudioEditor);
     let Some(key) = state.current(app.song, channel) else {
         state.clips.remove(&channel);
         return None;

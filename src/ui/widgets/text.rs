@@ -70,7 +70,11 @@ pub fn truncated(
     k: usize,
 ) {
     let shown = truncated_text(painter, text, font.clone(), rect.width(), k);
-    painter.text(align.pos_in_rect(&rect), align, shown, font, color);
+    if rect.is_positive() {
+        painter
+            .with_clip_rect(painter.clip_rect().intersect(rect))
+            .text(align.pos_in_rect(&rect), align, shown, font, color);
+    }
 }
 
 /// [`truncated`] in a heavier stroke (#73: folder names and the folder title): the app's one font has no bold weight,

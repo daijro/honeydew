@@ -27,18 +27,16 @@ pub(in crate::panels) fn panel(id: u16) -> Panel {
             hstack([
                 display(2).draw(envelope).w(Size::Flex(4.0)),
                 vstack([
-                    list(
-                        3,
-                        "Through · Half · Tape Stop · Stutter · Custom",
-                        Bar::Right,
-                    )
-                    .p(1)
-                    .show(Show::Tab(0)),
-                    list(4, "Through · Gate · Pump · Custom", Bar::Right)
+                    menu_button(3, "Mode")
+                        .p(1)
+                        .h(Size::U(1.0))
+                        .show(Show::Tab(0)),
+                    menu_button(4, "Mode")
                         .p(2)
+                        .h(Size::U(1.0))
                         .show(Show::Tab(1)),
-                    spinner(5, "Length").p(3).h(Size::U(1.5)),
-                    knob(6, "Mix").p(4).h(Size::U(2.0)),
+                    menu_button(5, "Length").p(3).h(Size::U(1.0)).mt(0.2),
+                    knob(6, "Mix").p(4).h(Size::U(2.0)).mt(0.2),
                 ])
                 .w(Size::Flex(1.7)),
             ]),
@@ -153,4 +151,41 @@ fn envelope(
         cx.theme.colors.text.to_color32(),
     );
     edits
+}
+
+#[cfg(test)]
+mod layout_regressions {
+    use super::*;
+    #[test]
+    fn layout_regression_gross_beat_modes_are_single_selectors_in_disjoint_rows() {
+        let module = ModuleInstance::new(b::GROSS_BEAT, 1);
+        for tab in [0, 1] {
+            for width in [12.0, 20.0] {
+                let bounds =
+                    Rect::from_min_size(pos2(0.0, 0.0), vec2(width * 32.0, 6.0 * 32.0 - 1.0));
+                let state = PanelState {
+                    tab,
+                    ..Default::default()
+                };
+                let panel = panel(b::GROSS_BEAT);
+                let leaves = crate::panels::place(&panel, &module, &state, bounds, 32.0);
+                assert!(
+                    leaves
+                        .iter()
+                        .any(|(l, _)| l.id == if tab == 0 { 3 } else { 4 })
+                );
+                assert!(
+                    !leaves
+                        .iter()
+                        .any(|(l, _)| l.id == if tab == 0 { 4 } else { 3 })
+                );
+                for (i, (_, a)) in leaves.iter().enumerate() {
+                    assert!(bounds.contains_rect(*a));
+                    for (_, b) in &leaves[i + 1..] {
+                        assert!(!a.intersect(*b).is_positive());
+                    }
+                }
+            }
+        }
+    }
 }

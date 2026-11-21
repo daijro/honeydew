@@ -190,6 +190,7 @@ enum Kind {
     ForgetPluginFolders,
     /// `Theme creator`: the label and an `Edit` button, which opens the theme creator ([`SettingsTab::take_creator`]).
     ThemeCreator,
+    EnvelopeColors,
 }
 
 /// What the plugin rows asked the app for ([`SettingsTab::take_plugin_action`]).
@@ -216,6 +217,7 @@ const PLUGIN_ROWS: [Row; 4] = [
 enum Choice {
     SoundMode,
     WaveformQuality,
+    NoteStyle,
     Theme,
     /// `Animation`: `Full`, `Reduced` (no animations) or `Minimal` (no scroll inertia either).
     Animation,
@@ -258,7 +260,7 @@ fn platform_row_visible(r: &Row, desktop: bool, web: bool) -> bool {
 
 /// Every row of the SETTINGS tab, in order.
 // The raw buffer slider is desktop-only; mobile has one fewer settings row.
-const ROWS: [Row; 72 + cfg!(desktop) as usize] = {
+const ROWS: [Row; 78 + cfg!(desktop) as usize] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -306,7 +308,18 @@ const ROWS: [Row; 72 + cfg!(desktop) as usize] = {
         row("Scaling:", Scaling),
         row("Scale is currently limited to", ScaleLimit),
         row("Animation:", Dropdown(Choice::Animation)),
+        row(
+            "Show information buttons",
+            Toggle(|s| &mut s.show_information_buttons),
+        ),
         row("Application:", Header),
+        row("Edit:", Header),
+        row(
+            "Show Playlist envelopes",
+            Toggle(|s| &mut s.envelope_display.visible),
+        ),
+        row("VOL / PAN colors", EnvelopeColors),
+        row("Piano Roll Note Style:", Dropdown(Choice::NoteStyle)),
         row("Enable ghost notes", Toggle(|s| &mut s.ghost_notes)),
         row(
             "Show key names on keyboard and piano roll",
@@ -325,6 +338,10 @@ const ROWS: [Row; 72 + cfg!(desktop) as usize] = {
         row(
             "Track activity indicators",
             Toggle(|s| &mut s.track_activity_indicators),
+        ),
+        row(
+            "Match activity indicators to track color",
+            Toggle(|s| &mut s.track_activity_colors),
         ),
         row("Show hidden tracks", Toggle(|s| &mut s.show_hidden_tracks)),
         row(
@@ -668,7 +685,9 @@ impl SettingsTab {
             ui.painter().rect_filled(thumb, 0.0, ink);
         }
         ui.set_clip_rect(outer_clip);
+        crate::ui::help::publish_icon_visibility(ui.ctx(), settings.show_information_buttons);
         self.popup(ui, cx, settings);
+        crate::ui::envelope_display::panel(ui.ctx(), &mut settings.envelope_display);
     }
 
     /// Draws row `index` in its `slot` of the list (a pitch tall) and applies its edit.
@@ -682,6 +701,13 @@ impl SettingsTab {
         s: &mut Settings,
     ) {
         let (m, colors) = (cx.m, &cx.theme.colors);
+        if let Some(topic) = crate::ui::help::setting(row.label) {
+            crate::ui::help::button(
+                ui,
+                Pos2::new(slot.left() - m.u(TOGGLE_OUT) - 32.0, slot.center().y - 15.0),
+                topic,
+            );
+        }
         // Headers and the metronome row take the whole slot; the other rows are a control row, centred in it.
         let r = match row.kind {
             Kind::Header | Kind::Level | Kind::Scaling | Kind::BufferSize | Kind::WaveformGap => {
@@ -1057,6 +1083,12 @@ impl SettingsTab {
                 label(ui, before(button_rect), FontSize::Pt10);
                 light_button(ui, button_rect, "Sign In", false);
             }
+            Kind::EnvelopeColors => {
+                label(ui, before(button_rect), FontSize::Pt10);
+                if light_button(ui, button_rect, "Colors", true) {
+                    crate::ui::envelope_display::open(ui.ctx());
+                }
+            }
             Kind::ThemeCreator => {
                 label(ui, before(button_rect), FontSize::Pt10);
                 self.creator |= light_button(ui, button_rect, "Edit", true);
@@ -1261,6 +1293,11 @@ impl Choice {
     /// The items in menu order, as (stored value, label).
     fn items(self) -> Vec<(usize, String)> {
         match self {
+            Choice::NoteStyle => crate::ui::piano_roll::appearance::NoteStyle::ALL
+                .into_iter()
+                .enumerate()
+                .map(|(i, s)| (i, s.label().to_owned()))
+                .collect(),
             Choice::WaveformQuality => crate::ui::waveform_quality::WaveformQuality::ALL
                 .into_iter()
                 .enumerate()
@@ -1298,6 +1335,7 @@ impl Choice {
         match self {
             Choice::SoundMode => usize::from(s.sound_mode),
             Choice::WaveformQuality => s.waveform_quality as usize,
+            Choice::NoteStyle => s.piano_roll_note_style as usize,
             // A theme of the user's is no built-in one.
             Choice::Theme if !s.custom_theme.is_empty() => usize::MAX,
             Choice::Theme => s.theme as usize,
@@ -1313,6 +1351,12 @@ impl Choice {
     fn set(self, s: &mut Settings, value: usize) {
         match self {
             Choice::SoundMode => s.sound_mode = value as u8,
+            Choice::NoteStyle => {
+                s.piano_roll_note_style = crate::ui::piano_roll::appearance::NoteStyle::ALL
+                    .get(value)
+                    .copied()
+                    .unwrap_or_default()
+            }
             Choice::WaveformQuality => {
                 s.waveform_quality = crate::ui::waveform_quality::WaveformQuality::ALL
                     .get(value)
@@ -1440,6 +1484,24 @@ mod tests {
     }
 
     #[test]
+    fn note_appearance_selector_has_five_live_choices_and_classic_default() {
+        use crate::ui::piano_roll::appearance::NoteStyle;
+        let mut s = Settings::default();
+        assert_eq!(Choice::NoteStyle.get(&s), 0);
+        assert_eq!(Choice::NoteStyle.items().len(), 5);
+        for (i, style) in NoteStyle::ALL.into_iter().enumerate() {
+            Choice::NoteStyle.set(&mut s, i);
+            assert_eq!(s.piano_roll_note_style, style);
+            assert_eq!(Choice::NoteStyle.label(&s), style.label());
+        }
+        assert!(platform_row_visible(
+            &ROWS[index("Piano Roll Note Style:")],
+            false,
+            false
+        ));
+    }
+
+    #[test]
     fn waveform_quality_selector_is_live_and_next_to_sound_mode_on_mobile() {
         use crate::ui::waveform_quality::WaveformQuality;
         assert_eq!(index("Waveform Quality:"), index("Sound mode:") + 1);
@@ -1509,7 +1571,12 @@ mod tests {
                 "Scaling:",
                 "Scale is currently limited to",
                 "Animation:",
+                "Show information buttons",
                 "Application:",
+                "Edit:",
+                "Show Playlist envelopes",
+                "VOL / PAN colors",
+                "Piano Roll Note Style:",
                 "Enable ghost notes",
                 "Show key names on keyboard and piano roll",
                 "Set middle C to C4",
@@ -1517,6 +1584,7 @@ mod tests {
                 "Keyboard in pickers",
                 "Continuous scrolling during playback",
                 "Track activity indicators",
+                "Match activity indicators to track color",
                 "Show hidden tracks",
                 "Show CPU and RAM meters",
                 "Show performance overlay",

@@ -37,13 +37,26 @@ struct Span {
     envelopes: [Vec<(u32, f32)>; 3],
     /// Its slot's `STR1` mode is on (SYNC): the sample is stretched for the build's tempo.
     sync: bool,
+    base: [f32; 3],
 }
 
 impl Clips {
     /// Adds one block of every clip slot into the channel's buffer, before its rack runs. `speed`: the live tempo over
     /// the build's, which a SYNC clip's sample is stretched for. It resamples by it, so it stays on the beat with the
     /// transport, its pitch moving with the tempo like tape (BanaForge change, #126); SYNC off plays at its native speed.
-    pub fn render(&mut self, buffer: &mut OwnedStereoBuffer, speed: f64) {
+    pub fn render(
+        &mut self,
+        buffer: &mut OwnedStereoBuffer,
+        speed: f64,
+        frame: u64,
+        beat: f64,
+        rolling: bool,
+    ) {
+        // Authoritative clip-local state at every render boundary. Scheduled actions split
+        // blocks at curve steps; this also repairs stale values after seek/loop/handover.
+        if rolling {
+            self.apply_envelopes(frame, beat);
+        }
         for (pad, span) in self.spans.iter().enumerate() {
             let rate = if span.sync { speed } else { 1.0 };
             (self.sampler).process_at(pad, &mut buffer.left, &mut buffer.right, rate);
@@ -54,18 +67,20 @@ impl Clips {
     /// Runs at handover on the audio thread: bounded scans and copies, no allocation or sample relaunch.
     pub fn adopt_envelopes(&mut self, old: &Clips, frame: u64, beat: f64) {
         self.sampler.adopt(&old.sampler, Some);
+        self.apply_envelopes(frame, beat);
+    }
+
+    fn apply_envelopes(&mut self, frame: u64, beat: f64) {
         for (pad, span) in self.spans.iter().enumerate() {
             if frame < span.start || frame >= span.end {
                 continue;
             }
-            let content = ((beat - span.start_beat).rem_euclid(span.loop_beats) + span.offset)
-                .rem_euclid(span.loop_beats)
+            let tick = ((beat - span.start_beat + span.offset).rem_euclid(span.loop_beats))
                 * f64::from(PPQ);
             for (index, steps) in span.envelopes.iter().enumerate() {
-                let n = steps.partition_point(|&(tick, _)| f64::from(tick) <= content);
-                if let Some(&(_, value)) = n.checked_sub(1).and_then(|i| steps.get(i)) {
-                    self.sampler.set_param(pad, index, value);
-                }
+                let n = steps.partition_point(|&(t, _)| f64::from(t) <= tick + 1e-7);
+                let value = n.checked_sub(1).map_or(span.base[index], |i| steps[i].1);
+                self.sampler.set_param(pad, index, value);
             }
         }
     }
@@ -88,10 +103,12 @@ impl Clips {
                 c -= span.loop_beats;
             }
             for (index, steps) in span.envelopes.iter().enumerate() {
-                let before = steps.partition_point(|&(pos, _)| f64::from(pos) < c * f64::from(PPQ));
-                if let Some(&(_, value)) = before.checked_sub(1).and_then(|i| steps.get(i)) {
-                    self.sampler.set_param(pad, index, value);
-                }
+                let before =
+                    steps.partition_point(|&(pos, _)| f64::from(pos) <= c * f64::from(PPQ) + 1e-7);
+                let value = before
+                    .checked_sub(1)
+                    .map_or(span.base[index], |i| steps[i].1);
+                self.sampler.set_param(pad, index, value);
             }
             self.sampler
                 .hit_at(pad, 1.0, 0.5, 1.0, c * 60.0 / f64::from(tempo_bpm));
@@ -235,6 +252,7 @@ pub(super) fn build(
             offset: clip.offset_beats,
             envelopes,
             sync: slot.file.stretch_mode != 0,
+            base: [slot.params[0], slot.params[1], slot.params[2]],
         });
     }
     if pads.is_empty() {
@@ -418,6 +436,103 @@ mod clip_envelope_audio_tests {
     use crate::song::points::{self, Point, PointKey, Shape, ShapeKind};
     use banaforge_audio::device::AudioRenderer;
 
+    #[test]
+    fn clip_envelope_hidden_and_custom_colors_never_change_pcm_or_project() {
+        let (mut song, cache) = fixture();
+        constant(&mut song, 0, 24000);
+        constant(&mut song, 1, 50000);
+        let original = song.clone();
+        let ctx = eframe::egui::Context::default();
+        crate::ui::envelope_display::EnvelopeDisplay::default().publish(&ctx);
+        let visible = render(&mut engine(&song, &cache), 12000);
+        crate::ui::envelope_display::EnvelopeDisplay {
+            visible: false,
+            colors: [[0, 70, 255], [255; 3]],
+        }
+        .publish(&ctx);
+        let hidden = render(&mut engine(&song, &cache), 12000);
+        assert_eq!(visible, hidden);
+        assert_eq!(song, original);
+    }
+    #[test]
+    fn clip_envelope_pan_render_boundary_restores_authoritative_balance_after_stale_slot() {
+        let (mut song, cache) = fixture();
+        constant(&mut song, 1, 65535);
+        let mut heard = engine(&song, &cache);
+        render(&mut heard, 4000);
+        // Simulate stale/reset pad state at an output block boundary. Compiled
+        // clip-local envelopes, not whatever the pad happened to retain, must win.
+        heard.clips[1]
+            .as_mut()
+            .unwrap()
+            .sampler
+            .set_param(0, 1, 0.5);
+        let pcm = render(&mut heard, 1000);
+        assert!(energy(&pcm, 0) < 1e-12);
+        assert!(energy(&pcm, 1) > 0.0);
+    }
+    #[test]
+    fn clip_envelope_pan_seek_before_first_point_restores_base_not_previous_endpoint() {
+        let (mut song, cache) = fixture();
+        curve(
+            &mut song,
+            1,
+            vec![Point {
+                tick: 64,
+                value: 65535,
+                ..Default::default()
+            }],
+        );
+        let mut clips = build(&song, 1, 44100.0, 120.0, &cache).unwrap().unwrap();
+        clips.sampler.set_param(0, 1, 1.0);
+        clips.relaunch(1000, 0.05, 120.0);
+        let mut buffer = OwnedStereoBuffer {
+            left: vec![0.0; 1000],
+            right: vec![0.0; 1000],
+        };
+        clips.render(&mut buffer, 1.0, 1000, 0.05, true);
+        assert!(
+            buffer
+                .left
+                .iter()
+                .zip(&buffer.right)
+                .all(|(l, r)| (l - r).abs() < 1e-6)
+        );
+    }
+    #[test]
+    fn clip_envelope_true_stereo_pan_attenuates_each_source_channel_independently() {
+        let (song, _) = fixture();
+        let data: Vec<i16> = (0..100000)
+            .flat_map(|i| {
+                [
+                    if i % 2 == 0 { 9000 } else { -9000 },
+                    if i % 3 == 0 { 3000 } else { -3000 },
+                ]
+            })
+            .collect();
+        let mut wav = crate::sample_cache::tests::wav(&data);
+        wav[22..24].copy_from_slice(&2u16.to_le_bytes());
+        wav[28..32].copy_from_slice(&176400u32.to_le_bytes());
+        wav[32..34].copy_from_slice(&4u16.to_le_bytes());
+        let mut cache = SampleCache::default();
+        cache.load(&song, &|_| Some(wav.clone()));
+        let reference = render(&mut engine(&song, &cache), 8000);
+        assert!((energy(&reference, 0) - energy(&reference, 1)).abs() > 0.01);
+        for (pan, silent) in [(0, 1usize), (65535, 0usize)] {
+            let mut changed = song.clone();
+            constant(&mut changed, 1, pan);
+            let pcm = render(&mut engine(&changed, &cache), 8000);
+            assert!(energy(&pcm, silent) < 1e-12);
+            for (a, b) in pcm
+                .iter()
+                .skip(1 - silent)
+                .step_by(2)
+                .zip(reference.iter().skip(1 - silent).step_by(2))
+            {
+                assert!((a - b).abs() < 2e-5);
+            }
+        }
+    }
     fn fixture() -> (Song, SampleCache) {
         let mut song = Song {
             tempo_bpm: 120.0,
@@ -425,7 +540,10 @@ mod clip_envelope_audio_tests {
         };
         song.add_channel(crate::song::ChannelKind::AudioClip);
         let mut slot = SamplerSlot::default();
-        slot.file.path = Some(ContentPath::Shorthand { root: crate::flm::chunk::ContentRoot::User, relative: "My Samples/clip-envelope-noise.wav".into() });
+        slot.file.path = Some(ContentPath::Shorthand {
+            root: crate::flm::chunk::ContentRoot::User,
+            relative: "My Samples/clip-envelope-noise.wav".into(),
+        });
         let clip = song.channels[1].lanes[0].add_clip(0, 4.0);
         clip.file.sample = Some(Box::new(slot));
         let mut x = 1u32;
@@ -522,8 +640,10 @@ mod clip_envelope_audio_tests {
                 let b = render(&mut reference, 220);
                 assert!(a.iter().all(|v| v.is_finite()));
                 if kind == ShapeKind::Square && frame < 10000 {
-                    assert!(energy(&a, 0) + energy(&a, 1) < (energy(&b, 0) + energy(&b, 1)) * 1e-5,
-                        "VOL zero retains the sampler's existing -60 dB floor");
+                    assert!(
+                        energy(&a, 0) + energy(&a, 1) < (energy(&b, 0) + energy(&b, 1)) * 1e-5,
+                        "VOL zero retains the sampler's existing -60 dB floor"
+                    );
                 }
                 if kind == ShapeKind::Linear && i > 20 {
                     assert!(energy(&a, 0) + energy(&a, 1) > 0.0);
@@ -611,7 +731,14 @@ mod clip_envelope_audio_tests {
         );
         let loaded_audio = render(&mut engine(&loaded, &cache), 7000);
         let expected = render(&mut engine(&together, &cache), 7000);
-        let difference = loaded_audio.iter().zip(&expected).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
-        assert!(difference < 2e-5, "roundtrip max PCM difference {difference}");
+        let difference = loaded_audio
+            .iter()
+            .zip(&expected)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            difference < 2e-5,
+            "roundtrip max PCM difference {difference}"
+        );
     }
 }

@@ -156,8 +156,9 @@ pub struct Column<'a> {
     pub press: f32,
     /// Multitrack recording is on: an armed Audio Record channel shows its dot.
     pub multitrack: bool,
-    /// Playback-gated, opt-in activity lights; no independent refresh timer.
+    /// Opt-in output activity lights; no independent refresh timer.
     pub activity: bool,
+    pub activity_colors: bool,
     /// This frame's meters (the channel strip's are instance 0), if the audio runs.
     pub meters: Option<&'a [ModuleMeter]>,
 }
@@ -199,7 +200,9 @@ pub fn show(
             top..=top + row_h * row.rows() - 1.0 / m.ppp(),
         );
         // Invisible rows do not query meters or emit indicator geometry.
-        if !rect.intersects(ui.clip_rect()) { continue; }
+        if !rect.intersects(ui.clip_rect()) {
+            continue;
+        }
         let kind = RowKind::of(song, &row);
         let ink = channel_color(song.channels[row.channel].color_token(), cx.theme).to_color32();
         let painter = ui.painter().clone();
@@ -244,19 +247,21 @@ pub fn show(
             }
         }
         if col.activity && kind != RowKind::Sub {
-            // Meters are channel-strip output, not clip scheduling or MIDI velocity.
-            // Sub/automation lanes share a strip; do not invent independent levels.
+            // Channel-strip output, including live monitoring; no independent timer or DSP.
             let level = activity_intensity(peaks);
-            let size = vec2(m.u(0.18).max(2.0 / m.ppp()),
-                m.u(0.65).min(rect.height() * 0.5));
-            let light = Rect::from_center_size(
-                pos2(rect.right() - size.x, rect.center().y), size);
-            painter.rect_filled(light, size.x * 0.3,
-                c.background.to_color32());
+            let light = activity_rect(rect, m);
+            painter.rect_filled(light, m.u(0.06), c.background.to_color32());
             if level > 0.0 {
-                painter.rect_filled(light, size.x * 0.3, ink.gamma_multiply(level));
+                let flash = activity_color(col.activity_colors, ink);
+                painter.rect_filled(light, m.u(0.06), flash.gamma_multiply(level));
             }
         }
+        // Reserve a separate gutter: controls retain their original width and touch targets.
+        let rect = if col.activity {
+            rect.with_max_x(rect.right() - m.u(ACTIVITY_W))
+        } else {
+            rect
+        };
         if !col.expanded {
             continue;
         }
@@ -275,11 +280,11 @@ pub fn show(
             if let Some(&(_, solo)) = mini.last() {
                 label.min.x = solo.right() + m.u(LABEL_INSET);
             }
-            widgets::truncated(&painter, label, Align2::RIGHT_CENTER, name, font, ink, 5);
+            widgets::truncated(&painter, label, Align2::RIGHT_CENTER, name, font, ink, 0);
             strip(&mut ui, cx, song, row, &mini, ink, peaks, &mut out);
             continue;
         }
-        widgets::truncated(&painter, label, Align2::RIGHT_TOP, name, font, ink, 5);
+        widgets::truncated(&painter, label, Align2::RIGHT_TOP, name, font, ink, 0);
         if kind == RowKind::Sub {
             sub_slider(&mut ui, cx, song, row, &placed, ink, &mut out);
         } else {
@@ -324,7 +329,12 @@ fn display_name(name: &str, kind: ChannelKind) -> &str {
 
 /// Cheap finite stereo peak → perceptual brightness. No PCM reads or animation state.
 fn activity_intensity(peaks: [f32; 2]) -> f32 {
-    meter(peaks.into_iter().filter(|p| p.is_finite()).fold(0.0_f32, f32::max))
+    meter(
+        peaks
+            .into_iter()
+            .filter(|p| p.is_finite())
+            .fold(0.0_f32, f32::max),
+    )
 }
 
 #[cfg(test)]
@@ -553,3 +563,44 @@ fn sub_slider(
 
 #[cfg(test)]
 mod tests;
+
+/// Extra Playlist column width, including spacing on both sides of the light.
+pub(crate) const ACTIVITY_W: f32 = 0.95;
+fn activity_rect(row: Rect, m: &Metrics) -> Rect {
+    let edge = m.u(0.55).min((row.height() - m.t() * 2.0).max(0.0));
+    Rect::from_center_size(
+        pos2(row.right() - m.u(ACTIVITY_W * 0.5), row.center().y),
+        vec2(edge, edge),
+    )
+}
+
+fn activity_color(matching: bool, ink: Color32) -> Color32 {
+    if matching { ink } else { Color32::WHITE }
+}
+
+#[cfg(test)]
+mod playlist_visual_regressions {
+    use super::*;
+    use crate::metrics::Metrics;
+    #[test]
+    fn layout_regression_square_activity_gutter_preserves_control_room() {
+        for scale in [75, 100, 150, 200] {
+            let m = Metrics::from_pixels_per_point(1.0, scale);
+            for width in [1.5, 13.5] {
+                for height in [0.45, 2.0, 4.0] {
+                    let row = Rect::from_min_size(
+                        pos2(0.0, 0.0),
+                        vec2(m.u(width + ACTIVITY_W), m.u(height)),
+                    );
+                    let lamp = activity_rect(row, &m);
+                    assert!(row.contains_rect(lamp));
+                    assert!((lamp.width() - lamp.height()).abs() < 0.001);
+                    assert!(lamp.left() > row.right() - m.u(ACTIVITY_W));
+                    assert!((row.width() - m.u(ACTIVITY_W) - m.u(width)).abs() < 0.001);
+                }
+            }
+        }
+        assert_eq!(activity_color(false, Color32::RED), Color32::WHITE);
+        assert_eq!(activity_color(true, Color32::RED), Color32::RED);
+    }
+}

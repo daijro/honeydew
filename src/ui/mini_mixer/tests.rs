@@ -193,6 +193,7 @@ impl Rig {
             .collect();
         let col = Column {
             activity: false,
+            activity_colors: false,
             left: 0.0,
             width: self.width(),
             expanded: self.expanded,
@@ -460,7 +461,7 @@ fn the_name_is_8_pt_right_and_top_in_the_channel_colour_with_the_kinds_default()
 }
 
 #[test]
-fn a_long_name_is_cut_in_the_middle_keeping_five_characters() {
+fn a_long_name_keeps_its_prefix_with_an_end_ellipsis() {
     let mut rig = Rig::new(true);
     rig.song.channels[1].name =
         "A very long channel name that cannot fit in its row, not even at eight points".into();
@@ -470,7 +471,11 @@ fn a_long_name_is_cut_in_the_middle_keeping_five_characters() {
         .iter()
         .find(|t| t.0.contains("..."))
         .expect("a truncated name");
-    assert!(cut.0.ends_with("oints"), "{}", cut.0);
+    assert!(
+        cut.0.starts_with("A very long") && cut.0.ends_with("..."),
+        "{}",
+        cut.0
+    );
     assert!(cut.3.width() <= 12.5 * U, "{:?}", cut.3);
 }
 

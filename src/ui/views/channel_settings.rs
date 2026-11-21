@@ -59,7 +59,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut AppCtx, channel: usize, name: &mut Stri
     let width = if midi {
         m.u(2.0 * SIZE[0]).min(screen.width() - 4.0 / m.ppp())
     } else {
-        m.u(SIZE[0])
+        m.u(SIZE[0]).min(screen.width() - 4.0 / m.ppp())
     };
     let rect = Rect::from_center_size(
         area.center(),
@@ -227,30 +227,51 @@ fn midi_rows(
         text,
     );
     let mut changed = false;
-    let mut buttons = row(SLIDER);
+    let buttons_row = row((3.7, 2.8));
+    let button_rects = input_button_rects(buttons_row, m.u(1.0));
     let toggles = [
         (IconId::AudioRecord, "monitor", &mut file.input_monitoring),
         (IconId::Record, "arm", &mut file.record_armed),
     ];
-    for (icon, name, on) in toggles {
-        let (rect, rest) = buttons.split_left_right_at_x(buttons.left() + buttons.height());
-        buttons = rest.with_min_x((rest.left() + m.u(BUTTON_GAP)).min(rest.right()));
+    for ((icon, name, on), rect) in toggles.into_iter().zip(button_rects) {
         let b = Button {
             icon: Some(icon),
             shape: ICON_DISC,
             fill_on: ink,
             text_on: contrast,
-            fill_off: text,
-            text_off: Some(colors.module_fill.to_color32()),
+            fill_off: colors.menu_fill.to_color32(),
+            text_off: Some(text),
             ..Button::new(id.with(name), rect, "", true, colors)
         };
-        if button(ui, cx, &b, *on).clicked() {
+        ui.painter_at(buttons_row).text(
+            rect.center_bottom() + vec2(0.0, m.u(0.1)),
+            Align2::CENTER_TOP,
+            if name == "arm" {
+                "Record arm"
+            } else {
+                "Monitor"
+            },
+            m.font_id(FontSize::Pt8),
+            text,
+        );
+        if button(ui, cx, &b, *on)
+            .on_hover_text(if name == "arm" {
+                "Arm channel recording"
+            } else {
+                "Monitor channel input"
+            })
+            .clicked()
+        {
             *on = !*on;
             changed = true;
         }
     }
     let field = row(FIELD);
-    let side = Rect::from_center_size(buttons.center(), vec2(buttons.width(), field.height()));
+    let channel_row = row((7.0, 1.25));
+    let side = Rect::from_center_size(
+        channel_row.center(),
+        vec2(channel_row.width(), field.height()),
+    );
     let (device, channel) = if MIDI_DEVICES {
         (Some(field), side)
     } else {
@@ -295,6 +316,20 @@ fn midi_rows(
         changed = true;
     }
     (changed, opened)
+}
+
+/// Compact, bounded squares: the old 6.5-U-tall color-wheel row must never size MIDI buttons.
+fn input_button_rects(row: Rect, unit: f32) -> [Rect; 2] {
+    let gap = unit * BUTTON_GAP;
+    let side = (unit * 1.8)
+        .min((row.width() - gap).max(0.0) / 2.0)
+        .min((row.height() - unit * 0.7).max(0.0));
+    std::array::from_fn(|i| {
+        Rect::from_min_size(
+            row.min + vec2(i as f32 * (side + gap), 0.0),
+            vec2(side, side),
+        )
+    })
 }
 
 fn accepted_rgb(text: &str) -> Option<[u8; 3]> {
@@ -359,10 +394,19 @@ fn color_wheel(ui: &mut Ui, id: Id, rect: Rect, current: Color32) -> Option<[u8;
         pos2(rect.left(), wheel.bottom() + 2.0),
         vec2(rect.width(), 24.0),
     );
-    let response = ui.put(
-        brightness,
-        egui::Slider::new(&mut v, 0.01..=1.0).text("Value"),
+    let label_width = 44.0_f32.min(brightness.width() * 0.25);
+    ui.painter().text(
+        brightness.left_center(),
+        Align2::LEFT_CENTER,
+        "Value",
+        egui::FontId::proportional(12.0),
+        ui.visuals().text_color(),
     );
+    let slider_rect = brightness.with_min_x(brightness.left() + label_width);
+    let mut slider_ui = ui.new_child(egui::UiBuilder::new().max_rect(slider_rect));
+    slider_ui.set_clip_rect(slider_rect.intersect(ui.clip_rect()));
+    slider_ui.spacing_mut().slider_width = (slider_rect.width() - 64.0).max(16.0);
+    let response = slider_ui.put(slider_rect, egui::Slider::new(&mut v, 0.01..=1.0));
     changed |= response.changed();
     if response.double_clicked() {
         v = 1.0;
@@ -406,6 +450,56 @@ mod color_tests {
         assert_eq!(accepted_rgb("#12abEF"), Some([0x12, 0xab, 0xef]));
         for value in ["#000000", "FFFFFF", "#fff", "#12345G", ""] {
             assert_eq!(accepted_rgb(value), None);
+        }
+    }
+}
+
+#[cfg(test)]
+mod layout_regressions {
+    use super::*;
+    #[test]
+    fn layout_regression_channel_input_buttons_stay_small_and_inside_column() {
+        for width in [110.0, 220.0, 320.0] {
+            let row = Rect::from_min_size(egui::pos2(16.0, 80.0), vec2(width, 90.0));
+            let buttons = input_button_rects(row, 32.0);
+            assert!(!buttons[0].intersect(buttons[1]).is_positive());
+            for b in buttons {
+                assert!(row.contains_rect(b));
+                assert!(b.width() <= 57.61);
+                assert!((b.width() - b.height()).abs() < 0.001);
+                assert!(b.bottom() + 20.0 <= row.bottom());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod brightness_layout_tests {
+    use super::*;
+    #[test]
+    fn layout_regression_brightness_value_caption_stays_inside_narrow_dialog() {
+        let mut off = crate::ui::offscreen::Offscreen::new();
+        for width in [144.0, 216.0, 288.0] {
+            let bounds = Rect::from_min_size(egui::pos2(20.0, 20.0), vec2(width, 208.0));
+            let shapes = off.frame(vec![], &mut |ui, _| {
+                color_wheel(
+                    ui,
+                    Id::new(("narrow-wheel", width.to_bits())),
+                    bounds,
+                    Color32::from_rgb(232, 48, 60),
+                );
+            });
+            let labels: Vec<_> = shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text == "Value" => {
+                        Some(Rect::from_min_size(t.pos, t.galley.size()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(labels.len(), 1);
+            assert!(bounds.contains_rect(labels[0]));
         }
     }
 }

@@ -2236,15 +2236,7 @@ fn paint_clip(
         let ink = sample(&stops, if dim { 0.0 } else { CURVE_TINT }).to_color32();
         automation(&painter, clip, area, axis, ink, m);
         if let Some(wave) = wave {
-            let wave_area = if lane.kind == LaneKind::Audio && area.height() >= 64.0 {
-                Rect::from_min_max(
-                    area.min,
-                    pos2(area.right(), envelopes::lanes(area)[0].top()),
-                )
-            } else {
-                area
-            };
-            waveform(&painter, clip, wave, wave_area, axis, ink, m);
+            waveform(&painter, clip, wave, area, axis, ink, m);
         }
     }
     if lane.kind == LaneKind::Audio && clip.file.sample.is_some() {
@@ -2398,11 +2390,20 @@ fn waveform(
     let from = axis.tick(seen.left()).max(start);
     let to = axis.tick(seen.right()).min(end_tick(clip));
     let sound = (wave.end() * ppq).min(lp);
-    let rows = wave_rows(area, source.summary.len() > 1);
+    let pan_points = crate::song::points::points(clip, crate::song::points::PointKey::Envelope(1));
+    let has_pan = !pan_points.is_empty();
+    let rows = wave_rows(area, source.summary.len() > 1 || has_pan);
     let volume = audio_editor::volume::envelope(
         &crate::song::points::points(clip, crate::song::points::PointKey::Envelope(0)),
         audio_editor::waveform_level_gain(clip.file.sample.as_deref()),
     );
+    let stereo = has_pan.then(|| {
+        audio_editor::volume::stereo(
+            &volume,
+            &pan_points,
+            clip.file.sample.as_ref().map_or(0.5, |s| s.params[1]),
+        )
+    });
     let painter = painter.with_clip_rect(painter.clip_rect().intersect(area));
     let passes =
         ((from - base) / lp).floor().max(0.0) as u64..((to - base) / lp).ceil().max(0.0) as u64;
@@ -2416,7 +2417,7 @@ fn waveform(
         let width = ((axis.x(b) - x0) / px).ceil() as usize;
         let left = (axis.tick(x0) - at) / ppq;
         let span = ((left, beats_per_px), (x0, width));
-        painter.add(egui::Shape::Mesh(quality_wave_mesh(
+        painter.add(egui::Shape::Mesh(stereo_wave_mesh(
             source,
             wave,
             &rows,
@@ -2424,6 +2425,7 @@ fn waveform(
             px,
             ink,
             Some(&volume),
+            stereo.as_ref(),
             crate::ui::waveform_quality::WaveformQuality::current(painter.ctx()),
         )));
     }
@@ -2436,6 +2438,7 @@ struct CachedWaveMesh {
     summary: std::sync::Weak<[Vec<(f32, f32)>]>,
     geometry: WaveMeshGeometry,
     volume: Option<std::sync::Arc<audio_editor::volume::VolumeEnvelope>>,
+    stereo: Option<[std::sync::Arc<audio_editor::volume::VolumeEnvelope>; 2]>,
     rows: Vec<(f32, f32)>,
     mesh: std::sync::Arc<Mesh>,
 }
@@ -2553,6 +2556,31 @@ pub(crate) fn quality_wave_mesh(
     volume: Option<&std::sync::Arc<audio_editor::volume::VolumeEnvelope>>,
     quality: crate::ui::waveform_quality::WaveformQuality,
 ) -> std::sync::Arc<Mesh> {
+    stereo_wave_mesh(
+        source,
+        wave,
+        rows,
+        ((left, beats_per_px), (x0, width)),
+        px,
+        ink,
+        volume,
+        None,
+        quality,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stereo_wave_mesh(
+    source: &Waveform,
+    wave: Wave,
+    rows: &[(f32, f32)],
+    ((left, beats_per_px), (x0, width)): ((f64, f64), (f32, usize)),
+    px: f32,
+    ink: Color32,
+    volume: Option<&std::sync::Arc<audio_editor::volume::VolumeEnvelope>>,
+    stereo: Option<&[std::sync::Arc<audio_editor::volume::VolumeEnvelope>; 2]>,
+    quality: crate::ui::waveform_quality::WaveformQuality,
+) -> std::sync::Arc<Mesh> {
     let geometry = WaveMeshGeometry {
         quality,
         frames: wave.frames,
@@ -2579,6 +2607,13 @@ pub(crate) fn quality_wave_mesh(
                     (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
                     _ => false,
                 }
+                && match (&entry.stereo, stereo) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => {
+                        a.iter().zip(b).all(|(a, b)| std::sync::Arc::ptr_eq(a, b))
+                    }
+                    _ => false,
+                }
                 && entry.rows == rows
         })?;
         let hit = cache.remove(at)?;
@@ -2600,10 +2635,15 @@ pub(crate) fn quality_wave_mesh(
     );
     let full = width / stride;
     let column_px = px * stride as f32;
-    for (channel, ((samples, summary), &row)) in source.channels().zip(rows).enumerate() {
+    for (channel, &row) in rows.iter().enumerate() {
+        let source_channel = channel.min(source.summary.len().saturating_sub(1));
+        let Some((samples, summary)) = source.channels().nth(source_channel) else {
+            continue;
+        };
+        let volume = stereo.map(|s| &s[channel.min(1)]).or(volume);
         let overview = |left: f64, span: f64, width| {
             source.overview_columns(
-                channel,
+                source_channel,
                 wave.frames,
                 wave.reversed,
                 left * wave.per_beat,
@@ -2649,7 +2689,9 @@ pub(crate) fn quality_wave_mesh(
     let mesh = std::sync::Arc::new(mesh);
     // Four MiB / 256 entries maximum; many tiny clips must not thrash a 32-entry cache.
     const BUDGET: usize = 4 * 1024 * 1024;
-    let retained_bytes = mesh_bytes(&mesh) + volume.map_or(0, |v| v.memory_bytes());
+    let retained_bytes = mesh_bytes(&mesh)
+        + volume.map_or(0, |v| v.memory_bytes())
+        + stereo.map_or(0, |s| s.iter().map(|v| v.memory_bytes()).sum());
     if retained_bytes <= BUDGET {
         WAVE_MESHES.with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -2659,6 +2701,10 @@ pub(crate) fn quality_wave_mesh(
                     .map(|entry| {
                         mesh_bytes(&entry.mesh)
                             + entry.volume.as_ref().map_or(0, |v| v.memory_bytes())
+                            + entry
+                                .stereo
+                                .as_ref()
+                                .map_or(0, |s| s.iter().map(|v| v.memory_bytes()).sum::<usize>())
                     })
                     .sum::<usize>()
                     + retained_bytes
@@ -2671,6 +2717,7 @@ pub(crate) fn quality_wave_mesh(
                 summary: std::sync::Arc::downgrade(&source.summary),
                 geometry,
                 volume: volume.cloned(),
+                stereo: stereo.cloned(),
                 rows: rows.to_vec(),
                 mesh: mesh.clone(),
             });
@@ -5640,8 +5687,8 @@ mod tests {
         lane.clips[0].visible_len_beats = 4.0;
         let (cols, texts) = columns(&lane, false, plain, ink);
         assert!(texts.contains(&("Loop 01".to_owned(), content.to_color32())));
-        assert!(texts.iter().any(|t| t.0 == "VOL"));
-        assert!(texts.iter().any(|t| t.0 == "PAN"));
+        assert!(!texts.iter().any(|t| t.0 == "VOL"));
+        assert!(!texts.iter().any(|t| t.0 == "PAN"));
         assert_eq!(cols.len(), 128);
         assert_eq!(
             (cols[63], cols[64], cols[96]),
@@ -5656,7 +5703,7 @@ mod tests {
         assert_eq!(cols.len(), 128);
         // No sample to draw: the name alone; no name: the channel's.
         let (fills, texts, _) = painted(&lane);
-        assert_eq!((fills.len(), texts.len()), (5, 4));
+        assert_eq!((fills.len(), texts.len()), (1, 1));
         lane.clips[0].file.sample = None;
         assert_eq!(painted(&lane).1[0].0, synth().channels[1].name);
     }
