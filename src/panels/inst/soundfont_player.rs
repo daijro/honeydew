@@ -463,7 +463,7 @@ fn mod_key_text(v: f32) -> String { format!("{:+} c", (2400.0 * v - 1200.0).roun
 const ZONE_TABS: [&str; 6] = [
     "Vol Env",
     "Mod Env",
-    "Mod Map",
+    "Env Map",
     "Pitch LFO",
     "Mod LFO",
     "Tone",
@@ -752,7 +752,9 @@ pub fn panel() -> Option<Panel> {
                 .margins(0.0, 0.35, 0.08, 0.35)
                 .draw(zone_tabs),
             hstack([
+                knob(7128, "Delay").value_fn(mod_time_text),
                 v_slider(7100, "Attack").value_text().value_fn(zone_time_text),
+                knob(7129, "Hold").value_fn(mod_time_text),
                 v_slider(7101, "Decay").value_text().value_fn(zone_time_text),
                 v_slider(7102, "Sustain").default(1.0).value_text().value_fn(zone_pct_text),
                 v_slider(7103, "Release").value_text().value_fn(zone_time_text),
@@ -772,10 +774,12 @@ pub fn panel() -> Option<Panel> {
             .mr(0.2)
             .show(Show::Setting(ZONE_PAGE, 1)),
             hstack([
-                knob(7124, "-> Pitch").default(0.5).value_fn(mod_env_pitch_text),
-                knob(7125, "-> Filter").default(0.5).value_fn(mod_filter_text),
-                knob(7126, "Key->Hold").default(0.5).value_fn(mod_key_text),
-                knob(7127, "Key->Decay").default(0.5).value_fn(mod_key_text),
+                knob(7124, "Mod->Pit").default(0.5).value_fn(mod_env_pitch_text),
+                knob(7125, "Mod->Fil").default(0.5).value_fn(mod_filter_text),
+                knob(7130, "Vol KeyH").default(0.5).value_fn(mod_key_text),
+                knob(7131, "Vol KeyD").default(0.5).value_fn(mod_key_text),
+                knob(7126, "Mod KeyH").default(0.5).value_fn(mod_key_text),
+                knob(7127, "Mod KeyD").default(0.5).value_fn(mod_key_text),
             ])
             .ml(0.2)
             .mr(0.2)

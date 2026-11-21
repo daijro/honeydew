@@ -83,10 +83,14 @@ const SUSTAIN_MOD_ENV: usize = 29;
 const RELEASE_MOD_ENV: usize = 30;
 const KEY_TO_MOD_ENV_HOLD: usize = 31;
 const KEY_TO_MOD_ENV_DECAY: usize = 32;
+const DELAY_VOL_ENV: usize = 33;
 const ATTACK: usize = 34;
+const HOLD_VOL_ENV: usize = 35;
 const DECAY: usize = 36;
 const SUSTAIN: usize = 37;
 const RELEASE: usize = 38;
+const KEY_TO_VOL_ENV_HOLD: usize = 39;
+const KEY_TO_VOL_ENV_DECAY: usize = 40;
 const INSTRUMENT: u16 = 41;
 const KEYS: usize = 43;
 const VELS: usize = 44;
@@ -102,7 +106,7 @@ const ROOT: usize = 58;
 /// Operators 0..=60 are defined; others are ignored.
 const GENERATORS: usize = 61;
 
-pub const ZONE_FIELDS: usize = 28;
+pub const ZONE_FIELDS: usize = 32;
 pub const ZONE_SELECT_KEY: u32 = 7000;
 pub const ZONE_RESET_KEY: u32 = 7005;
 pub const ZONE_CTL_BASE: u32 = 7100;
@@ -129,6 +133,8 @@ const fn defaults(instrument: bool) -> Gens {
         gens[HOLD_MOD_ENV] = -12000;
         gens[DECAY_MOD_ENV] = -12000;
         gens[RELEASE_MOD_ENV] = -12000;
+        gens[DELAY_VOL_ENV] = -12000;
+        gens[HOLD_VOL_ENV] = -12000;
         gens[FILTER_FC] = 13500;
         gens[SCALE] = 100;
         gens[ROOT] = -1;
@@ -640,6 +646,10 @@ impl SoundFont {
             decay: add(DECAY) as f32,
             sustain: 10f32.powf(-centibels(SUSTAIN) / 200.0),
             release: add(RELEASE) as f32,
+            vol_delay: add(DELAY_VOL_ENV) as f32,
+            vol_hold: add(HOLD_VOL_ENV) as f32,
+            key_vol_hold: add(KEY_TO_VOL_ENV_HOLD).clamp(-1200, 1200) as f32,
+            key_vol_decay: add(KEY_TO_VOL_ENV_DECAY).clamp(-1200, 1200) as f32,
             vibrato: [
                 add(VIB_LFO_TO_PITCH).clamp(-12000, 12000) as f32,
                 LFO_HZ * 2f32.powf(add(FREQ_VIB_LFO).clamp(-16000, 4500) as f32 / 1200.0),
@@ -808,6 +818,10 @@ fn region_defaults(r: &Region) -> [f32; ZONE_FIELDS] {
         ((r.mod_env.to_filter + 12000.0) / 24000.0).clamp(0.0, 1.0),
         ((r.mod_env.key_hold + 1200.0) / 2400.0).clamp(0.0, 1.0),
         ((r.mod_env.key_decay + 1200.0) / 2400.0).clamp(0.0, 1.0),
+        mod_tc_to_slider(r.vol_delay),
+        mod_tc_to_slider(r.vol_hold),
+        ((r.key_vol_hold + 1200.0) / 2400.0).clamp(0.0, 1.0),
+        ((r.key_vol_decay + 1200.0) / 2400.0).clamp(0.0, 1.0),
     ]
 }
 
@@ -868,6 +882,10 @@ fn apply_zone_field(r: &mut Region, field: usize, v: f32) {
         }
         26 => r.mod_env.key_hold = 2400.0 * v - 1200.0,
         27 => r.mod_env.key_decay = 2400.0 * v - 1200.0,
+        28 => r.vol_delay = mod_slider_to_tc(v),
+        29 => r.vol_hold = mod_slider_to_tc(v),
+        30 => r.key_vol_hold = 2400.0 * v - 1200.0,
+        31 => r.key_vol_decay = 2400.0 * v - 1200.0,
         _ => {}
     }
 }
@@ -914,6 +932,10 @@ pub struct Region {
     /// Level.
     sustain: f32,
     release: f32,
+    vol_delay: f32,
+    vol_hold: f32,
+    key_vol_hold: f32,
+    key_vol_decay: f32,
     /// A SoundFont's vibrato LFO: its pitch depth (cents), rate (Hz) and delay (seconds); an SFZ's has no depth.
     vibrato: [f32; 3],
     /// A SoundFont's modulation LFO: pitch depth (cents), rate (Hz) and delay (seconds).
@@ -1108,6 +1130,10 @@ fn sfz_region(
         decay: 0.0,
         sustain: 0.0,
         release: 0.0,
+        vol_delay: -12000.0,
+        vol_hold: -12000.0,
+        key_vol_hold: 0.0,
+        key_vol_decay: 0.0,
         vibrato: [0.0; 3],
         mod_lfo: [0.0; 3],
         filter: None,
@@ -1683,10 +1709,31 @@ impl Voice {
             return self.dahdsr();
         }
         match self.stage {
+            Stage::Delay => {
+                if self.wait > 0 {
+                    self.wait -= 1;
+                }
+                if self.wait == 0 {
+                    self.stage = Stage::Attack;
+                }
+            }
             Stage::Attack => {
                 self.level += (ATTACK_TARGET - self.level) * self.attack;
                 if self.level >= 1.0 {
                     self.level = 1.0;
+                    self.stage = if self.hold > 0 {
+                        self.wait = self.hold;
+                        Stage::Hold
+                    } else {
+                        Stage::Decay
+                    };
+                }
+            }
+            Stage::Hold => {
+                if self.wait > 0 {
+                    self.wait -= 1;
+                }
+                if self.wait == 0 {
                     self.stage = Stage::Decay;
                 }
             }
@@ -1698,7 +1745,6 @@ impl Voice {
                     return false;
                 }
             }
-            Stage::Delay | Stage::Hold => {}
         }
         true
     }
@@ -2256,30 +2302,51 @@ impl SoundFontPlayer {
         self.voices.iter().filter(|v| v.on).count()
     }
 
-    /// The envelope of a voice of `region` starting now: attack, decay and release coefficients and the sustain
-    /// level. Envelope (p5) at any value ≠ 0 is Custom (the sliders), else Original (the SoundFont's): the panel reads
-    /// `Custom` only above 0.5, but 0 < v ≤ 0.5 plays Custom too.
-    fn envelope(&self, region: &Region) -> [f32; 4] {
-        let rate = self.sample_rate;
-        let [attack, decay, sustain, release] = if self.params[5] > 0.5 {
+    fn vol_env(rate: f32, params: &[f32], region: &Region, key: u8) -> ([f32; 4], u32, u32) {
+        if params[5] > 0.5 {
             let time = |v: f32| (10.0 * 0.95f32.mul_add(v, 0.05).powi(3)).max(MIN_TIME);
-            let x = (127.0 * self.params[3]).round().clamp(1.0, 127.0) / 127.0;
-            [
-                1.25f32.ln() / (rate * time(self.params[1])),
-                100f32.ln() / (rate * time(self.params[2])),
-                10f32.powf(5.0 * x.powf(0.2) - 5.0),
-                100f32.ln() / (rate * time(self.params[4])),
-            ]
-        } else {
-            let stage = |num: f32, tc: f32| num / (rate * 2f32.powf(tc / 1200.0).max(MIN_TIME));
-            [
-                stage(1.25f32.ln(), region.attack),
-                stage(ORIGINAL_RATE, region.decay),
-                region.sustain,
-                stage(ORIGINAL_RATE, region.release),
-            ]
+            let x = (127.0 * params[3]).round().clamp(1.0, 127.0) / 127.0;
+            return (
+                [
+                    (1.25f32.ln() / (rate * time(params[1]))).min(1.0),
+                    (100f32.ln() / (rate * time(params[2]))).min(1.0),
+                    10f32.powf(5.0 * x.powf(0.2) - 5.0),
+                    (100f32.ln() / (rate * time(params[4]))).min(1.0),
+                ],
+                0,
+                0,
+            );
+        }
+        let stage = |num: f32, tc: f32| num / (rate * 2f32.powf(tc / 1200.0).max(MIN_TIME));
+        let frames = |tc: f32| {
+            if tc <= -11950.0 {
+                0
+            } else {
+                (2f32.powf(tc.clamp(-12000.0, 5000.0) / 1200.0) * rate).round() as u32
+            }
         };
-        [attack.min(1.0), decay.min(1.0), sustain, release.min(1.0)]
+        let key_delta = 60.0 - f32::from(key);
+        let delay = frames(region.vol_delay);
+        let hold = frames(region.vol_hold + region.key_vol_hold * key_delta);
+        let decay_tc = (region.decay + region.key_vol_decay * key_delta).clamp(-12000.0, 8000.0);
+        (
+            [
+                stage(1.25f32.ln(), region.attack).min(1.0),
+                stage(ORIGINAL_RATE, decay_tc).min(1.0),
+                region.sustain,
+                stage(ORIGINAL_RATE, region.release).min(1.0),
+            ],
+            delay,
+            hold,
+        )
+    }
+
+    fn vol_envelope(&self, region: &Region, key: u8) -> ([f32; 4], u32, u32) {
+        Self::vol_env(self.sample_rate, &self.params, region, key)
+    }
+
+    fn envelope(&self, region: &Region) -> [f32; 4] {
+        self.vol_envelope(region, 60).0
     }
 
     pub fn apply_zone_overrides(&mut self, overrides: &[ZoneOverride]) {
@@ -2299,14 +2366,16 @@ impl SoundFontPlayer {
         let Some(r) = self.regions.get(zone).cloned() else {
             return;
         };
-        let [attack, decay, sustain, release] = self.envelope(&r);
-        let rate = f64::from(self.sample_rate);
+        let (rate_f32, params) = (self.sample_rate, self.params);
+        let rate = f64::from(rate_f32);
         for voice in self.voices.iter_mut().filter(|v| v.on && v.region == zone) {
+            let ([attack, decay, sustain, release], _, hold) =
+                Self::vol_env(rate_f32, &params, &r, voice.key);
             let octaves =
                 (f64::from(voice.key) - f64::from(r.root) + r.tune) * r.scale / 1200.0;
             voice.step = 2f64.powf(octaves) * r.rate / rate;
-            (voice.attack, voice.decay, voice.sustain, voice.release) =
-                (attack, decay, sustain, release);
+            (voice.attack, voice.decay, voice.sustain, voice.release, voice.hold) =
+                (attack, decay, sustain, release, hold);
         }
     }
 }
@@ -2341,7 +2410,8 @@ impl Instrument for SoundFontPlayer {
         let skip = matches.count().saturating_sub(VOICES);
         let regions = self.regions.iter().enumerate();
         for (index, region) in regions.filter(|(_, r)| r.plays(key, steps)).skip(skip) {
-            let [attack, decay, sustain, release] = self.envelope(region);
+            //let [attack, decay, sustain, release] = self.envelope(region);
+            let ([attack, decay, sustain, release], delay, hold) = self.vol_envelope(region, key);
             let octaves =
                 (f64::from(key) - f64::from(region.root) + region.tune) * region.scale / 1200.0;
             let step = 2f64.powf(octaves) * region.rate / f64::from(self.sample_rate);
@@ -2359,6 +2429,7 @@ impl Instrument for SoundFontPlayer {
                     self.sample_rate,
                 );
             }
+            
             self.voices[slot] = Voice {
                 on: true,
                 key,
@@ -2373,6 +2444,9 @@ impl Instrument for SoundFontPlayer {
                 sustain,
                 release,
                 mod_env,
+                stage: if delay > 0 { Stage::Delay } else { Stage::Attack },
+                wait: delay,
+                hold,
                 m: Motion {
                     filter,
                     ..Motion::default()
@@ -2542,6 +2616,9 @@ impl Instrument for SoundFontPlayer {
                         break 'voice;
                     }
                     mod_gain += gain_ramp;
+                    if voice.stage == Stage::Delay {
+                        continue;
+                    }
                     let at = |k| font.frame(k);
                     let sample = interpolate(region, region.looping, voice.position, cubic, at);
                     let sample = voice.m.filter.run_mono(sample);

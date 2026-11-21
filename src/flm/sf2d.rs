@@ -94,6 +94,21 @@ impl Sf2z {
             }
             return Some(Self { patch, zones });
         }
+        let mid_stride = 10 + 4 * 28;
+        if count > 0 && b.len() == 8 + count * mid_stride {
+            let mut zones = Vec::with_capacity(count);
+            for entry in b[8..].chunks_exact(mid_stride).take(count) {
+                let zone = u16::from_le_bytes([entry[0], entry[1]]);
+                let mask = u64::from_le_bytes(entry[2..10].try_into().ok()?);
+                let mut values = [0.0; ZONE_FIELDS];
+                for (i, slot) in values[..28].iter_mut().enumerate() {
+                    let at = 10 + 4 * i;
+                    *slot = f32::from_le_bytes(entry[at..at + 4].try_into().ok()?);
+                }
+                zones.push(ZoneOverride { zone, mask, values });
+            }
+            return Some(Self { patch, zones });
+        }
         let mut zones = Vec::with_capacity(count.min((b.len() - 8) / stride));
         for entry in b[8..].chunks_exact(stride).take(count) {
             let zone = u16::from_le_bytes([entry[0], entry[1]]);
