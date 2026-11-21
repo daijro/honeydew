@@ -1,3 +1,9 @@
+BanaForge 0.5.29 — Android ARMv7 / ARM64 compatibility delivery
+
+- Ship a universal playtest APK containing actual `armeabi-v7a` and `arm64-v8a` native engines and matching C++ runtimes. Existing per-ABI builds remain selectable; previous playtest artifacts were explicitly ARM64-only.
+- Strengthen packaging validation: check every native ELF class/machine, same-ABI non-system dependencies, NativeActivity entry point and Java native callback exports. Keep signing, CRC and alignment checks.
+- Add packaging-verifier regressions and a physical 32/64-bit install/audio/recording/module acceptance checklist in ANDROID_COMPATIBILITY.md. No physical-device runtime testing is claimed.
+
 BanaForge 0.5.28 — Piano Roll note appearance
 
 - Five persistent visual-only styles: Classic (unchanged/default), Smooth, Outline, Gradient and Accent. Channel colors and selected-note tint are retained; outline labels contrast with the grid.

@@ -55,6 +55,8 @@ jobs:
         with:
           packages: 'platform-tools'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Native packaging verifier regressions
+        run: python3 -m unittest discover -s tools -p test_android_native.py -v
       - name: Android build tools
         run: |
           sudo apt-get update && sudo apt-get install -y libclang-dev
