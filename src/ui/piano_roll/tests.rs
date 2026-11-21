@@ -1707,6 +1707,8 @@ mod component {
         rig.tap(rig.text("More...").unwrap());
         rig.frame(vec![]);
         rig.tap(rig.text("Note Appearance...").unwrap());
+        // A new popup Area sizes itself on its first frame, as the other note dialogs do.
+        rig.frame(vec![]);
         rig.frame(vec![]);
         rig.tap(rig.text("Outline").unwrap());
         rig.frame(vec![]);
