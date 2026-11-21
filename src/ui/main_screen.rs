@@ -1116,7 +1116,7 @@ impl MainScreen {
         actions.header = Some(channel);
     }
 
-    /// The header column's width: 1.5 U + c·12 U.
+    /// The header column width: original controls plus an optional dedicated activity gutter.
     fn header_w(&self, m: &Metrics) -> f32 {
         m.u(HEADER_W + HEADER_GROW * self.column.0 + if self.activity_space { mini_mixer::ACTIVITY_W } else { 0.0 })
     }
@@ -1241,7 +1241,7 @@ impl MainScreen {
     /// `ink`) and the logo. The app draws them over the rack and under every other overlay.
     /// - Logo: a 1.5 U circle whose top-left is (screen right − 2.1 U, top + 0.2 U), icon 6 centred in it; its
     ///   touch area runs from its left edge to the screen's right edge, from the top down to 1.7 U. Hidden while the
-    ///   rack is open across the full width.
+    ///   rack/module interface is open (including a partial-width rack).
     /// - Rack tab: a 1.5 U × 2.43 U pill, its left edge 2.1 U from the screen's right edge, at `tab_place` in the
     ///   space the content area leaves it ([`rack_tab`](crate::ui::rack::rack_tab): 0 at the top, 1 at the bottom,
     ///   0.5 centred; PR #87: a drag up or down moves it, kept in that space, and the app keeps the place in

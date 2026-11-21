@@ -156,7 +156,7 @@ pub struct Column<'a> {
     pub press: f32,
     /// Multitrack recording is on: an armed Audio Record channel shows its dot.
     pub multitrack: bool,
-    /// Playback-gated, opt-in activity lights; no independent refresh timer.
+    /// Opt-in output activity lights; no independent refresh timer.
     pub activity: bool,
     pub activity_colors: bool,
     /// This frame's meters (the channel strip's are instance 0), if the audio runs.
