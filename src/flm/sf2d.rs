@@ -3,8 +3,11 @@
 //! kept as it is.
 
 use super::chunk::{ChunkIter, ChunkWriter, ContentPath, FlmError};
+use honeydew_audio::soundfont::{PATCH_MODS, PatchMod, ZONE_FIELDS, ZoneOverride};
 
 const ID: [u8; 4] = *b"SF2D";
+const ZONE_ID: [u8; 4] = *b"SF2Z";
+const MOD_ID: [u8; 4] = *b"SF2M";
 
 /// What a SoundFont Player plays: the SoundFont at `path` and its patch `patch` (an index into its patches in file
 /// order, [`crate::sf2::presets`]).
@@ -13,6 +16,18 @@ pub struct Sf2d {
     pub path: ContentPath,
     pub patch: i32,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sf2z {
+    pub patch: i32,
+    pub zones: Vec<ZoneOverride>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Sf2m {
+    pub mods: [PatchMod; PATCH_MODS],
+}
+
 
 impl Sf2d {
     /// The `SF2D` in the `CSTM` blob `cstm`. `None` without one, or with one whose path is cut short or empty. A
@@ -53,6 +68,150 @@ impl Sf2d {
         }
         if !written {
             sf2d(&mut writer)?;
+        }
+        Ok(writer.into_bytes())
+    }
+}
+
+impl Sf2z {
+    pub fn read(cstm: &[u8]) -> Option<Self> {
+        let chunk = ChunkIter::new(cstm, "CSTM")
+            .map_while(Result::ok)
+            .find(|c| c.id == ZONE_ID)?;
+        let b = chunk.payload;
+        if b.len() < 8 {
+            return None;
+        }
+        let patch = i32::from_le_bytes(b[0..4].try_into().ok()?);
+        let count = u32::from_le_bytes(b[4..8].try_into().ok()?) as usize;
+        let stride = 10 + 4 * ZONE_FIELDS;
+        let old_stride = 4 + 4 * 16;
+        if count > 0 && b.len() == 8 + count * old_stride {
+            let mut zones = Vec::with_capacity(count);
+            for entry in b[8..].chunks_exact(old_stride).take(count) {
+                let zone = u16::from_le_bytes([entry[0], entry[1]]);
+                let mask = u64::from(u16::from_le_bytes([entry[2], entry[3]]));
+                let mut values = [0.0; ZONE_FIELDS];
+                for (i, slot) in values[..16].iter_mut().enumerate() {
+                    let at = 4 + 4 * i;
+                    *slot = f32::from_le_bytes(entry[at..at + 4].try_into().ok()?);
+                }
+                zones.push(ZoneOverride { zone, mask, values });
+            }
+            return Some(Self { patch, zones });
+        }
+        for &n in &[28usize, 32, 34, 38] {
+            let s = 10 + 4 * n;
+            if count > 0 && b.len() == 8 + count * s {
+                let mut zones = Vec::with_capacity(count);
+                for entry in b[8..].chunks_exact(s).take(count) {
+                    let zone = u16::from_le_bytes([entry[0], entry[1]]);
+                    let mask = u64::from_le_bytes(entry[2..10].try_into().ok()?);
+                    let mut values = [0.0; ZONE_FIELDS];
+                    for (i, slot) in values[..n].iter_mut().enumerate() {
+                        let at = 10 + 4 * i;
+                        *slot = f32::from_le_bytes(entry[at..at + 4].try_into().ok()?);
+                    }
+                    zones.push(ZoneOverride { zone, mask, values });
+                }
+                return Some(Self { patch, zones });
+            }
+        }
+        let mut zones = Vec::with_capacity(count.min((b.len() - 8) / stride));
+        for entry in b[8..].chunks_exact(stride).take(count) {
+            let zone = u16::from_le_bytes([entry[0], entry[1]]);
+            let mask = u64::from_le_bytes(entry[2..10].try_into().ok()?);
+            let mut values = [0.0; ZONE_FIELDS];
+            for (i, slot) in values.iter_mut().enumerate() {
+                let at = 10 + 4 * i;
+                *slot = f32::from_le_bytes(entry[at..at + 4].try_into().ok()?);
+            }
+            zones.push(ZoneOverride { zone, mask, values });
+        }
+        Some(Self { patch, zones })
+    }
+
+    pub fn write(&self, cstm: Option<&[u8]>) -> Result<Vec<u8>, FlmError> {
+        let mut buf = Vec::with_capacity(8 + self.zones.len() * (10 + 4 * ZONE_FIELDS));
+        buf.extend_from_slice(&self.patch.to_le_bytes());
+        buf.extend_from_slice(&(self.zones.len() as u32).to_le_bytes());
+        for ov in &self.zones {
+            buf.extend_from_slice(&ov.zone.to_le_bytes());
+            buf.extend_from_slice(&ov.mask.to_le_bytes());
+            for v in ov.values {
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        let mut writer = ChunkWriter::default();
+        let mut written = false;
+        for chunk in ChunkIter::new(cstm.unwrap_or_default(), "CSTM").map_while(Result::ok) {
+            if chunk.id == ZONE_ID {
+                if !self.zones.is_empty() && !std::mem::replace(&mut written, true) {
+                    writer.chunk(ZONE_ID, |w| w.raw(&buf))?;
+                }
+            } else {
+                writer.chunk(chunk.id, |w| w.raw(chunk.payload))?;
+            }
+        }
+        if !self.zones.is_empty() && !written {
+            writer.chunk(ZONE_ID, |w| w.raw(&buf))?;
+        }
+        Ok(writer.into_bytes())
+    }
+
+    pub fn clear(cstm: Option<&[u8]>) -> Result<Vec<u8>, FlmError> {
+        Self {
+            patch: 0,
+            zones: Vec::new(),
+        }
+        .write(cstm)
+    }
+}
+
+impl Sf2m {
+    pub fn read(cstm: &[u8]) -> Option<Self> {
+        let chunk = ChunkIter::new(cstm, "CSTM")
+            .map_while(Result::ok)
+            .find(|c| c.id == MOD_ID)?;
+        let b = chunk.payload;
+        if b.len() < 7 * PATCH_MODS {
+            return None;
+        }
+        let mut mods = [PatchMod::default(); PATCH_MODS];
+        for (i, slot) in mods.iter_mut().enumerate() {
+            let at = 7 * i;
+            *slot = PatchMod {
+                src: b[at],
+                curve: b[at + 1],
+                dest: b[at + 2],
+                amount: f32::from_le_bytes(b[at + 3..at + 7].try_into().ok()?),
+            };
+        }
+        Some(Self { mods })
+    }
+
+    pub fn write(&self, cstm: Option<&[u8]>) -> Result<Vec<u8>, FlmError> {
+        let empty = self.mods.iter().all(|m| *m == PatchMod::default());
+        let mut buf = Vec::with_capacity(7 * PATCH_MODS);
+        for m in &self.mods {
+            buf.push(m.src);
+            buf.push(m.curve);
+            buf.push(m.dest);
+            buf.extend_from_slice(&m.amount.to_le_bytes());
+        }
+        let mut writer = ChunkWriter::default();
+        let mut written = false;
+        for chunk in ChunkIter::new(cstm.unwrap_or_default(), "CSTM").map_while(Result::ok) {
+            if chunk.id == MOD_ID {
+                if !empty && !std::mem::replace(&mut written, true) {
+                    writer.chunk(MOD_ID, |w| w.raw(&buf))?;
+                }
+            } else {
+                writer.chunk(chunk.id, |w| w.raw(chunk.payload))?;
+            }
+        }
+        if !empty && !written {
+            writer.chunk(MOD_ID, |w| w.raw(&buf))?;
         }
         Ok(writer.into_bytes())
     }

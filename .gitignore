@@ -10,3 +10,4 @@ content-out/
 *.keystore
 /docs/
 __pycache__/
+build-debug.sh
