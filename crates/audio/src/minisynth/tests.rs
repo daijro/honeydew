@@ -309,6 +309,19 @@ fn slides_add_pitch_and_clear_when_a_free_voice_starts() {
     assert_eq!(synth.voices[4].slide, [2.0, 0.0, 0.0]);
     synth.note_on(64, 1.0);
     assert_eq!(synth.voices[3].slide, [0.0; 3]);
+    // Honeydew change (#143): a new note on a busy voice (MONO's, a LEAD legato, a stolen one) clears them too, so it
+    // starts at its own pitch. They used to clear only on an idle voice.
+    for (mode, held) in [(0.5, false), (1.0, true)] {
+        let mut synth = fresh();
+        synth.set_parameter(1, mode).unwrap();
+        synth.note_on(60, 1.0);
+        synth.slide(2.0, 0.1, 0.1);
+        if !held {
+            synth.note_off(60);
+        }
+        synth.note_on(64, 1.0);
+        assert_eq!(synth.voices[0].slide, [0.0; 3], "mode {mode}");
+    }
 }
 
 #[test]

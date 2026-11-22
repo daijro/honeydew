@@ -66,7 +66,7 @@ pub const SOUND_MODES: [(u8, &str); 1] = [(3, "NATIVE")];
 
 /// Buffer-size slider positions. Zero keeps the audio device's native/default buffer;
 /// positive values are targets that the backend clamps to the device's supported range.
-pub const BUFFER_SIZES: [u32; 7] = [0, 64, 128, 256, 512, 1024, 2048];
+pub const BUFFER_SIZES: [u32; 8] = [0, 64, 128, 256, 512, 1024, 2048, 4096];
 pub const MCP_DEFAULT_PORT: u16 = 57831;
 
 #[cfg(desktop)]
@@ -138,8 +138,9 @@ pub struct Settings {
     /// is not connected: the choice reconnects when the device returns.
     #[serde(rename = "MidiDevice")]
     pub midi_device: String,
-    /// `Multi core processing`: parallel independent desktop channel racks.
-    #[serde(rename = "multithreaded")]
+    /// `Multi core processing`: parallel independent channel racks, on the desktop and (a Honeydew change, #145, #156)
+    /// Android. Our own key: the older `multithreaded` moves here once, off on Android ([`migrate_keys`]).
+    #[serde(rename = "multiCore")]
     pub multi_core: bool,
     #[serde(rename = "mcpEnabled")]
     pub mcp_enabled: bool,
@@ -354,7 +355,22 @@ pub struct Settings {
     /// tag fields into the file ([`crate::project_files::export::tags`]). On by default.
     #[serde(rename = "writeTagsOnExport")]
     pub write_tags: bool,
+    /// `Input gain` (our own key; Honeydew change, #129), in dB within [`INPUT_GAIN_DB`]: the audio input is raised or
+    /// lowered by it before monitoring, recording and `Calibrate` hear it. 0 by default.
+    #[serde(rename = "recInputGainDb")]
+    pub input_gain_db: f32,
+    /// `Show value while dragging` (our own key; Honeydew change, #171): a dragged knob or slider shows its value in a
+    /// bubble by the finger or pointer (`ui::widgets::set_value_bubble`). On by default.
+    #[serde(rename = "showValueWhileDragging")]
+    pub value_bubble: bool,
+    /// SETTINGS `Library folders` (our own key; Honeydew change, #144, #155, #165; Android only): the folders the
+    /// user added to the library, by path, in the order added ([`crate::ui::main_menu::library::library_folders`]).
+    #[serde(rename = "libraryFolders")]
+    pub library_folders: Vec<String>,
 }
+
+/// `Input gain`'s range in dB.
+pub const INPUT_GAIN_DB: std::ops::RangeInclusive<f32> = -12.0..=24.0;
 
 /// `Project version size limit:`'s items, in MB.
 pub const VERSION_SIZE_LIMITS: [u32; 7] = [64, 128, 256, 512, 1024, 2048, 4096];
@@ -431,6 +447,9 @@ impl Default for Settings {
             picker_keys: true,
             rack_tab_place: 0.5,
             write_tags: true,
+            input_gain_db: 0.0,
+            value_bubble: true,
+            library_folders: Vec::new(),
         }
     }
 }
@@ -460,7 +479,7 @@ impl Settings {
                 fields.remove("uiscalefactor");
             }
         }
-        migrate_keys(&mut fields);
+        migrate_keys(&mut fields, cfg!(target_os = "android"));
         // Older versions stored this setting as a boolean toggle. Preserve an enabled toggle as the
         // smallest target when loading those settings into the buffer-size slider.
         if let Some(enabled) = fields.get("lowlatency").and_then(Value::as_bool) {
@@ -537,6 +556,9 @@ impl Settings {
         if !VERSION_SIZE_LIMITS.contains(&s.version_size_limit) {
             s.version_size_limit = d.version_size_limit;
         }
+        if !INPUT_GAIN_DB.contains(&s.input_gain_db) {
+            s.input_gain_db = d.input_gain_db;
+        }
         s
     }
 
@@ -587,7 +609,7 @@ pub const DEMO_SONGS_VERSION: i32 = 2;
 /// Moves the values of the preference keys that newer ones replaced to those, where they hold nothing yet: the panel
 /// heights move to the `…Cells` keys (ours were in U already), and `demoSongsRestored` becomes the current demo-song
 /// set. The former keys are read no more and go with the next save.
-fn migrate_keys(fields: &mut Map<String, Value>) {
+fn migrate_keys(fields: &mut Map<String, Value>, android: bool) {
     for (old, new) in [
         ("preferredKbdSize", "preferredKbdSizeCells"),
         ("recentKbdSize", "recentKbdSizeCells"),
@@ -610,6 +632,14 @@ fn migrate_keys(fields: &mut Map<String, Value>) {
     {
         let compensates = toggle != Value::Bool(true);
         fields.insert("recLatencyCompensation".into(), compensates.into());
+    }
+    // Honeydew change (#145, #156): `multithreaded` did nothing on Android before 0.5.5; there an On saved then loads
+    // off once, so nobody lands in the experimental multi-core racks unknowingly. The desktop keeps its choice.
+    if let Some(on) = fields.remove("multithreaded")
+        && !fields.contains_key("multiCore")
+    {
+        let kept = on == Value::Bool(true) && !android;
+        fields.insert("multiCore".into(), kept.into());
     }
 }
 
@@ -883,6 +913,9 @@ mod tests {
             picker_keys: !d.picker_keys,
             rack_tab_place: 0.25,
             write_tags: !d.write_tags,
+            input_gain_db: 6.5,
+            value_bubble: !d.value_bubble,
+            library_folders: vec!["/storage/emulated/0/Music".into()],
         }
     }
 
@@ -972,6 +1005,33 @@ mod tests {
         }
     }
 
+    /// Honeydew change (#145, #156): `multithreaded` did nothing on Android before 0.5.5, so an On saved there must not
+    /// switch the experimental multi-core racks on unknowingly. It moves to `multiCore` once: off on Android, kept on
+    /// the desktop.
+    #[test]
+    fn a_saved_multi_core_moves_once_and_starts_off_on_android() {
+        for (json, android, want) in [
+            (r#"{"multithreaded": true}"#, true, Some(false)),
+            (r#"{"multithreaded": true}"#, false, Some(true)),
+            (r#"{"multithreaded": false}"#, false, Some(false)),
+            ("{}", true, None),
+            // Moved already: the choice since stays, whatever an older version left.
+            (
+                r#"{"multiCore": true, "multithreaded": false}"#,
+                true,
+                Some(true),
+            ),
+        ] {
+            let mut fields: Map<String, Value> = serde_json::from_str(json).unwrap();
+            migrate_keys(&mut fields, android);
+            let got = fields.get("multiCore").and_then(Value::as_bool);
+            assert_eq!(got, want, "{json} on Android {android}");
+            assert!(!fields.contains_key("multithreaded"), "{json}");
+        }
+        let s = Settings::load(&stored(r#"{"multithreaded": true}"#));
+        assert_eq!(s.multi_core, !cfg!(target_os = "android"));
+    }
+
     #[test]
     fn missing_fields_are_defaults_and_unknown_ones_are_ignored() {
         let s = Settings::load(&stored(r#"{"middlec4": true, "someday": 7}"#));
@@ -1001,7 +1061,7 @@ mod tests {
     #[test]
     fn out_of_range_values_load_as_defaults() {
         let s = Settings::load(&stored(
-            r#"{"theme": 9, "uiscale": 9, "soundModeAndr": 4, "mtmlevel": 1.5, "ghostnotes": false}"#,
+            r#"{"theme": 9, "uiscale": 9, "soundModeAndr": 4, "mtmlevel": 1.5, "recInputGainDb": 30, "ghostnotes": false}"#,
         ));
         assert_eq!(
             s,
@@ -1108,6 +1168,7 @@ mod tests {
                 "keyboardKind",
                 "lastAudioFileFormat",
                 "lastSong",
+                "libraryFolders",
                 "lockpads",
                 "lowlatency",
                 "mcpEnabled",
@@ -1115,7 +1176,7 @@ mod tests {
                 "middlec4",
                 "midiApplyNoteEffects",
                 "mtmlevel",
-                "multithreaded",
+                "multiCore",
                 "multitrackrec",
                 "performanceOverlay",
                 "pianoRollPanSnap",
@@ -1126,6 +1187,7 @@ mod tests {
                 "projectVersionSizeLimit",
                 "rackTabPlace",
                 "rackTabShift",
+                "recInputGainDb",
                 "recLatencyCompensation",
                 "recMetronome",
                 "reccount",
@@ -1137,6 +1199,7 @@ mod tests {
                 "showKeyNames",
                 "showRangeIndexLabels",
                 "showTwoRows",
+                "showValueWhileDragging",
                 "showWheels",
                 "soundModeAndr",
                 "soundsNoticeSeen",

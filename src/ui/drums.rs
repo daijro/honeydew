@@ -739,17 +739,26 @@ fn control(
         }
         (Kind::HSlider, Some(p)) => {
             let value = &mut slot.params[p];
-            widgets::h_slider(ui, cx, &c, value, |_| String::new()).changed()
+            // Honeydew change (#171): its value text, for the drag bubble.
+            let text = |v| pspec.map_or_else(String::new, |s| s.display_text(v));
+            widgets::h_slider(ui, cx, &c, value, text).changed()
         }
         (Kind::Knob(text), Some(p)) => {
             let steps = match pspec.map(|p| p.kind) {
                 Some(ParamKind::Continuous { display }) => display.step_count(),
                 _ => None,
             };
-            let c = Control { steps, ..c };
+            // Honeydew change (#171): a knob with no text of its own shows its param's in the drag bubble only.
+            let ring_text = text.is_some();
+            let c = Control {
+                steps,
+                ring_text,
+                ..c
+            };
             // `Start` drags at half the knob law.
             let s = if spec.ctl == Ctl::Start { 0.5 } else { 1.0 };
-            let text = |v| text.map_or_else(String::new, |text| text(v));
+            let param = |v| pspec.map_or_else(String::new, |s| s.display_text(v));
+            let text = |v| text.map_or_else(|| param(v), |text| text(v));
             widgets::strip_knob(ui, cx, &c, &mut slot.params[p], s, text).changed()
         }
         (Kind::Knob(_), None) => return held_knob(ui, cx, &c, spec.ctl, row, slot, state),

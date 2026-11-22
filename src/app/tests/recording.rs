@@ -858,6 +858,29 @@ mod audio {
     }
 
     #[test]
+    fn the_input_gain_raises_the_input_before_it_records() {
+        // Honeydew change (#129): `Input gain` at +6 dB doubles what records (0.25 alone writes 8191).
+        let mut a = AudioRig::new("gain", false);
+        a.rig.app.settings.input_gain_db = 6.0;
+        a.rig.app.settings.count_in = false;
+        a.rig.frame(vec![]);
+        a.rig.click(PLAY);
+        a.feed(FRAMES_PER_BEAT, 0.25);
+        a.at(BEAT);
+        a.rig.click(PLAY);
+        let bytes = std::fs::read(a.user.join("My Recordings").join("Rec.wav")).unwrap();
+        let samples: Vec<i16> = (bytes[46..].as_chunks::<2>().0.iter())
+            .map(|b| i16::from_le_bytes(*b))
+            .collect();
+        assert!(!samples.is_empty());
+        assert!(
+            (samples.iter()).all(|&x| (f32::from(x) / 8191.0 - 2.0).abs() < 0.01),
+            "{:?}",
+            &samples[..4]
+        );
+    }
+
+    #[test]
     fn a_track_the_stop_adds_moves_the_selection_and_the_editor_on_the_tracks_after_it() {
         // Record 1: its audio track's clip covers the record start, so the take needs a new audio track, which goes
         // before the Level automation track that holds the selected clip, open in the automation editor.

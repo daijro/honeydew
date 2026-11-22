@@ -165,10 +165,17 @@ fn an_offset_clip_starts_offset_beats_into_its_sample_at_the_song_tempo() {
     assert_at(&out, BEAT, 11_025.0);
     assert_at(&out, BEAT + 100, 11_125.0);
 
-    // Speed +12 steps twice as fast but does not scale the offset (a quirk); Sample Start adds to it.
+    // Speed +12 steps twice as fast and scales the offset, as the playlist draws it (Honeydew change, PR #173: the
+    // original leaves Speed out of it): 0.5 beats are 0.5 s of source. A seek relaunches the same way: 0.5 beats
+    // into the clip is content beat 1, 1 s. Sample Start adds to it.
     slot(&mut song.channels[1].lanes[0].clips[0]).params[2] = 0.75;
     let out = play(&song, 2 * BEAT);
-    assert_at(&out, BEAT + 100, 11_225.0);
+    assert_at(&out, BEAT + 100, 22_250.0);
+    let mut engine = engine(&song);
+    engine.play();
+    render(&mut engine, 100);
+    engine.seek(128 + 64);
+    assert_at(&render(&mut engine, 100), 50, 2.0 * BEAT as f32 + 100.0);
     let slot = slot(&mut song.channels[1].lanes[0].clips[0]);
     slot.params[2] = 0.5;
     // v = 0.6: u = 0.2, s = +0.02 s = 882 frames.

@@ -628,7 +628,7 @@ fn show_menu(
 }
 
 /// Shows the editor's "Type in value" box at editor pixel `at` over the editor in `rect`, starting with `text`: Enter
-/// answers with what was typed, Escape or a press outside cancels.
+/// or its `OK` answers with what was typed, Escape or a press outside cancels.
 #[allow(clippy::too_many_arguments)]
 fn type_in(
     ctx: &egui::Context,
@@ -654,21 +654,30 @@ fn type_in(
         .order(Order::Foreground)
         .fixed_pos(min)
         .show(ctx, |ui| {
-            let mut r = ui.add(TextEdit::singleline(typed).id(field).desired_width(width));
-            // The whole text starts selected: typing replaces it. The release of the press that opened it keeps it.
-            if fresh || (opening && r.lost_focus()) {
-                r.request_focus();
-                let mut state = TextEditState::load(ui.ctx(), field).unwrap_or_default();
-                let all = CCursorRange::two(CCursor::new(0), CCursor::new(typed.chars().count()));
-                state.cursor.set_char_range(Some(all));
-                state.store(ui.ctx(), field);
-            }
-            // Issue #91: Android has no keyboard for an egui field; its text editor types the value (the Lemon Slicer's
-            // BPM and BEATS have no other way in on a phone), and its OK is this field's Enter.
-            crate::android_text::edit(&mut r, typed, usize::MAX);
-            done = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-            cancel = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
-                || (r.lost_focus() && !done && !fresh && !opening);
+            ui.horizontal(|ui| {
+                let mut r = ui.add(TextEdit::singleline(typed).id(field).desired_width(width));
+                // The whole text starts selected: typing replaces it. The release of the press that opened it keeps
+                // it.
+                if fresh || (opening && r.lost_focus()) {
+                    r.request_focus();
+                    let mut state = TextEditState::load(ui.ctx(), field).unwrap_or_default();
+                    let all =
+                        CCursorRange::two(CCursor::new(0), CCursor::new(typed.chars().count()));
+                    state.cursor.set_char_range(Some(all));
+                    state.store(ui.ctx(), field);
+                }
+                // Issue #91: Android has no keyboard for an egui field; its text editor types the value (the Lemon
+                // Slicer's BPM and BEATS have no other way in on a phone), and its OK is this field's Enter.
+                crate::android_text::edit(&mut r, typed, usize::MAX);
+                // Issue #166: an OK beside it, so a touch never depends on a soft keyboard's Enter reaching egui.
+                // Twice as wide as tall, for a finger.
+                let h = r.rect.height();
+                let ok = ui.add(egui::Button::new("OK").min_size(vec2(2.0 * h, h)));
+                let ok = ok.clicked();
+                done = ok || (r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
+                cancel = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+                    || (r.lost_focus() && !done && !fresh && !opening);
+            });
         })
         .response
         .rect;
@@ -1013,6 +1022,24 @@ mod tests {
         rig.frame(finger(TouchPhase::Start, at));
         rig.frame(vec![]);
         let typed = matches!(embed::modal(editor), Some(Modal::TypeIn { text, .. }) if text == "t");
+        assert!(typed, "{:?}", embed::modal(editor));
+        // Issue #166: its OK, at the box's right end, answers it too, with no Enter from the keyboard.
+        rig.frame(finger(TouchPhase::End, at));
+        for _ in 0..3 {
+            rig.frame(vec![]);
+        }
+        rig.frame(vec![Event::Text("u".into())]);
+        let area = Id::new(("lemon editor", editor)).with("type in area");
+        let shown = rig
+            .ctx
+            .memory(|m| m.area_rect(area))
+            .expect("the box shows");
+        rig.tap(shown.right_center() - vec2(8.0, 0.0));
+        rig.frame(vec![]);
+        assert_eq!(embed::modal(editor), None, "OK answered it");
+        rig.frame(finger(TouchPhase::Start, at));
+        rig.frame(vec![]);
+        let typed = matches!(embed::modal(editor), Some(Modal::TypeIn { text, .. }) if text == "u");
         assert!(typed, "{:?}", embed::modal(editor));
     }
 }

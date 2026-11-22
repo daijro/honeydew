@@ -128,7 +128,7 @@ impl KitRig {
                     let response = match kit {
                         Kit::Arc(arc) => arc_slider(ui, &cx, &c, &arc, value, display),
                         Kit::Tag(right) => tag_slider(ui, &cx, &c, value, right, display),
-                        Kit::Graph(falling) => graph_knob(ui, &cx, &c, value, falling),
+                        Kit::Graph(falling) => graph_knob(ui, &cx, &c, value, falling, display),
                         Kit::Pad => xy_pad(ui, &cx, &c, value, y),
                     };
                     changed = response.changed();

@@ -531,10 +531,50 @@ fn shift_ctrl_t_mid_drag_closes_the_tempo_dialog_and_ends_the_drag_as_one_edit()
     assert_eq!(rig.app.song.tempo_bpm, 120.25);
 }
 
-/// Android's Back (#72: Android 16 left the app with a message open) closes the topmost message first, then the menu
-/// under it, as Escape does; with nothing open it closes nothing (Android then puts the app in the background).
+/// Back closes whatever is open before it ever asks to exit (#147): the Drumsets picker a new Drums channel opens, a
+/// pick made in it, then a panel that takes no Escape (the rack); only with nothing open does it ask.
 #[test]
-fn back_closes_the_topmost_message_then_the_menu_under_it() {
+fn back_closes_the_topmost_open_thing_before_it_asks_to_exit() {
+    use crate::ui::rack::PresetTarget;
+    let mut rig = rig();
+    rig.app
+        .insert_channel(2, crate::song::ChannelKind::Drums, 0);
+    let drumset = Overlay::PresetPicker {
+        channel: 2,
+        target: PresetTarget::Drumset,
+    };
+    // `Default`, the built-in kit: the picker stays open after it.
+    super::rack_wiring::click_row(&mut rig, 1);
+    for _ in 0..3 {
+        rig.frame(vec![]);
+    }
+    assert_eq!(rig.overlays(), [drumset]);
+    let back = |rig: &mut Rig| {
+        rig.key(Key::BrowserBack, NONE);
+        for _ in 0..3 {
+            rig.frame(vec![]);
+        }
+    };
+    back(&mut rig);
+    assert_eq!(rig.overlays(), []);
+    rig.app.navigate(Nav::Open(Overlay::Rack(2)));
+    for _ in 0..30 {
+        rig.frame(vec![]);
+    }
+    back(&mut rig);
+    assert_eq!(rig.overlays(), []);
+    back(&mut rig);
+    assert!(matches!(
+        rig.overlays()[..],
+        [Overlay::Message { tag: QUIT_TAG, .. }]
+    ));
+}
+
+/// Android's Back (#72: Android 16 left the app with a message open) closes the topmost message first, then the menu
+/// under it, as Escape does. Honeydew change (#147; #72 put the app in the background): with nothing open it
+/// asks `Exit Honeydew?`, whose `Cancel` stays and `Exit` closes the app.
+#[test]
+fn back_closes_the_topmost_message_then_the_menu_under_it_then_asks_to_exit() {
     let mut rig = rig();
     rig.app
         .navigate(Nav::Open(Overlay::MainMenu(MenuTab::Project)));
@@ -553,5 +593,12 @@ fn back_closes_the_topmost_message_then_the_menu_under_it() {
     rig.frame(vec![]);
     assert_eq!(rig.overlays(), []);
     rig.key(Key::BrowserBack, NONE);
+    let exit = format!("Exit {}?", crate::APP_NAME);
+    assert!(shows_in_order(&mut rig, &[&exit, "Exit", "Cancel"]));
+    choose(&mut rig, 2);
+    assert!(!closes(&rig.out) && !closes(&rig.output(vec![])));
     assert_eq!(rig.overlays(), []);
+    rig.key(Key::BrowserBack, NONE);
+    choose(&mut rig, 1);
+    assert!(closes(&rig.out));
 }

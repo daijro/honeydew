@@ -89,3 +89,87 @@ fn dropped_audio_files_become_clips_on_the_audio_track_or_new_channels_one_undo_
     rig.app.step(&ctx, Step::Undo, 0);
     assert!(rig.app.song.channels[1].lanes[0].clips.is_empty());
 }
+
+/// #167 (a Honeydew change): Tesla's Convert to score makes a new clip at the playhead, on the selected channel when it
+/// has a notes track, else on the first channel after it with one, else on a new MiniSynth channel; the clip is current,
+/// its loop fitted to the notes, one undo step a send.
+#[test]
+fn tesla_scores_become_a_new_clip_on_the_selected_or_next_notes_channel_or_a_new_minisynth() {
+    use crate::song::{Event, SynthKind};
+    use os_plugkit::embed::NoteOut;
+    let mut rig = Rig::with_drums_and_synth();
+    let note = |start, end, key| NoteOut {
+        start,
+        end,
+        key,
+        velocity: 127,
+    };
+    let notes = [note(4.0, 5.5, 69), note(0.0, 0.5, 60)];
+    let steps = rig.app.history.steps();
+    // The drums selected: the synth after them takes the clip, at the playhead.
+    rig.app.selected_channel = 1;
+    rig.app.place_score(&notes, 256);
+    let clips = |rig: &Rig, c: usize| rig.app.song.channels[c].lanes[0].clips.clone();
+    let [clip] = &clips(&rig, 2)[..] else {
+        panic!("{:?}", clips(&rig, 2));
+    };
+    assert_eq!((clip.start_tick, clip.loop_len_beats), (256, 8.0));
+    let note = |pos, len_beats, key| Event::Note {
+        pos,
+        len_beats,
+        key,
+        velocity: 254,
+        pan: Event::DEFAULT_PAN,
+        slide: false,
+    };
+    assert_eq!(clip.events, [note(0, 0.5, 60), note(512, 1.5, 69)]);
+    assert_eq!(rig.app.selected_channel, 2);
+    let current = rig.current_clip().map(|r| (r.channel, r.lane, r.id));
+    assert_eq!(current, Some((2, 0, clip.id)));
+    assert_eq!(rig.app.history.steps(), steps + 1);
+    // The synth selected: its own track again, after that clip.
+    rig.app.place_score(&notes, 256 + 1024);
+    assert_eq!(clips(&rig, 2).len(), 2);
+    // An audio channel past the last notes channel: a new MiniSynth channel at the end.
+    rig.app.add_bare_channel(ChannelKind::AudioClip, 0);
+    rig.app.place_score(&notes, 0);
+    let synth = ChannelKind::Synth(SynthKind::MiniSynth);
+    assert_eq!(rig.app.song.channels.len(), 5);
+    assert_eq!(rig.app.song.channels[4].kind, synth);
+    assert_eq!(clips(&rig, 4).len(), 1);
+    assert_eq!(rig.app.history.steps(), steps + 4);
+}
+
+/// #167: a score never lands over a clip: it takes the chosen channel's first notes track with room under its span at
+/// the playhead, else a new track of that channel, still one undo step.
+#[test]
+fn a_tesla_score_takes_the_channels_next_free_track_at_the_playhead() {
+    use crate::song::LaneKind::Notes;
+    use os_plugkit::embed::NoteOut;
+    let mut rig = Rig::with_drums_and_synth();
+    rig.app.song.channels[2].lanes[0].add_clip(0, 4.0);
+    rig.app.song_edited(SongEdit::Final, 0);
+    rig.app.selected_channel = 2;
+    let steps = rig.app.history.steps();
+    // One bar of notes: a 4-beat clip.
+    let notes = [NoteOut {
+        start: 0.0,
+        end: 1.0,
+        key: 60,
+        velocity: 100,
+    }];
+    let tracks = |rig: &Rig| {
+        (rig.app.song.channels[2].lanes.iter())
+            .map(|l| (l.kind, l.clips.iter().map(|c| c.start_tick).collect()))
+            .collect::<Vec<(_, Vec<u32>)>>()
+    };
+    // Over the main track's clip: a new track.
+    rig.app.place_score(&notes, 256);
+    assert_eq!(tracks(&rig), [(Notes, vec![0]), (Notes, vec![256])]);
+    let current = rig.current_clip().map(|r| (r.channel, r.lane));
+    assert_eq!(current, Some((2, 1)));
+    // Where that clip has ended, the main track has room again.
+    rig.app.place_score(&notes, 512);
+    assert_eq!(tracks(&rig), [(Notes, vec![0, 512]), (Notes, vec![256])]);
+    assert_eq!(rig.app.history.steps(), steps + 2);
+}

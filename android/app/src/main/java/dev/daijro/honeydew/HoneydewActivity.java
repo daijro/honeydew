@@ -19,6 +19,7 @@ import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.DocumentsContract.Document;
 import android.provider.OpenableColumns;
@@ -59,12 +60,16 @@ public final class HoneydewActivity extends NativeActivity {
     private static native void onInterrupted();
     private static native void onLeaving();
     private static native void onBack();
+    private static native void onLibraryFolderPicked(String path, String error);
 
     private static final int OPEN_DOCUMENT = 1;
     private static final int OPEN_FOLDER = 2;
     private static final int RECORD_AUDIO = 3;
+    private static final int LIBRARY_FOLDER = 4;
+    private static final int READ_STORAGE = 5;
     private long openLimit;
     private AudioFocusRequest focus;
+    private volatile boolean quitting;
 
     // Headphones among the outputs go to Rust whenever a device comes or goes (and once at registration): monitoring
     // plays the microphone only in headphones, never through the speaker it would feed back from.
@@ -88,8 +93,8 @@ public final class HoneydewActivity extends NativeActivity {
         hideSystemBars();
         getSystemService(AudioManager.class).registerAudioDeviceCallback(outputs, null);
         // Back goes to the app (Android 13 and up; older ones send it as a key): it closes the topmost message, popup
-        // or panel, and with none open the app moves to the background (Rust's `android::move_to_back`), as Android's
-        // own Back did. Without it Android 16 left the app with a message open.
+        // or panel, and with none open it asks "Exit Honeydew?" (#147; see quit). Without it Android 16 left the app
+        // with a message open.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, HoneydewActivity::onBack);
@@ -184,7 +189,8 @@ public final class HoneydewActivity extends NativeActivity {
     // the app thread pauses, it writes the song's unsaved changes (onLeaving waits for that frame).
     @Override
     protected void onPause() {
-        onLeaving();
+        // Once quitting, the app thread has ended and wrote what it keeps: no frame would answer.
+        if (!quitting) onLeaving();
         super.onPause();
         onInterrupted();
     }
@@ -309,6 +315,55 @@ public final class HoneydewActivity extends NativeActivity {
                 onFolderPicked(null, String.valueOf(e.getMessage()));
             }
         });
+    }
+
+    // Library folders (#144, Rust `android::all_files_access`): the app may read the phone's whole storage, with All
+    // files access from Android 11 up, the storage permission before.
+    public boolean allFiles() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return Environment.isExternalStorageManager();
+        return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    // The system's All files access screen for this app (else its list of apps), or before Android 11 the storage
+    // permission's question. Rust reads the answer again as SETTINGS shows.
+    public void askAllFiles() {
+        runOnUiThread(() -> {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                requestPermissions(new String[] {Manifest.permission.READ_EXTERNAL_STORAGE}, READ_STORAGE);
+                return;
+            }
+            Uri app = Uri.parse("package:" + getPackageName());
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, app));
+            } catch (RuntimeException e) {
+                startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+            }
+        });
+    }
+
+    // SETTINGS `Add folder` (#144): the system folder picker; the folder's path on the phone goes back to Rust.
+    public void openLibraryFolder() {
+        runOnUiThread(() -> {
+            try {
+                startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), LIBRARY_FOLDER);
+            } catch (RuntimeException e) {
+                onLibraryFolderPicked(null, String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
+    // A picked folder's path on the phone, from its document id in the system's storage provider ("primary:Music" is
+    // the shared storage's Music, "1234-ABCD:Loops" an SD card's Loops); null for another provider's folder.
+    private static String storagePath(Uri tree) {
+        if (!"com.android.externalstorage.documents".equals(tree.getAuthority())) return null;
+        String id = DocumentsContract.getTreeDocumentId(tree);
+        int colon = id.indexOf(':');
+        if (colon < 0) return null;
+        String volume = id.substring(0, colon), rest = id.substring(colon + 1);
+        String root = volume.equals("primary")
+                ? Environment.getExternalStorageDirectory().getPath()
+                : "/storage/" + volume;
+        return rest.isEmpty() ? root : root + "/" + rest;
     }
 
     // The picked folder's files, listed on their own thread (a big folder takes a while), go back to Rust.
@@ -498,6 +553,14 @@ public final class HoneydewActivity extends NativeActivity {
 
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
+        if (request == LIBRARY_FOLDER) {
+            Uri tree = result == RESULT_OK && data != null ? data.getData() : null;
+            String path = tree == null ? null : storagePath(tree);
+            if (tree == null) onLibraryFolderPicked(null, null);
+            else if (path == null) onLibraryFolderPicked(null, "Pick a folder on the phone's storage or an SD card.");
+            else onLibraryFolderPicked(path, null);
+            return;
+        }
         if (request != OPEN_DOCUMENT && request != OPEN_FOLDER) {
             super.onActivityResult(request, result, data);
             return;
@@ -550,11 +613,31 @@ public final class HoneydewActivity extends NativeActivity {
         return name == null ? "" : name.replace('/', '_').replace('\\', '_').replace('\0', '_');
     }
 
+    // Exit (#147, Rust `android::quit`): the app closed (Back's "Exit Honeydew?", after the song's autosave) or failed to
+    // start, so the activity finishes with its task, and the process ends once it is destroyed: the app thread starts
+    // once per process (winit makes one event loop per process), so a cached process could not start the app again.
+    // The focus the finish takes away ends the app thread's loop; should it not, the process ends 3 s later anyway,
+    // as everything is written.
+    public void quit() {
+        quitting = true;
+        runOnUiThread(this::finishAndRemoveTask);
+        Thread backstop = new Thread(() -> {
+            try {
+                Thread.sleep(3000);
+            } catch (InterruptedException ignored) {
+            }
+            System.exit(0);
+        });
+        backstop.setDaemon(true);
+        backstop.start();
+    }
+
     @Override
     protected void onDestroy() {
         if (editorDialog != null) editorDialog.dismiss();
         getSystemService(AudioManager.class).unregisterAudioDeviceCallback(outputs);
         super.onDestroy();
         onDisplayDpi(0);
+        if (quitting) System.exit(0);
     }
 }

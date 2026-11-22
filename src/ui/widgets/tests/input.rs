@@ -249,8 +249,36 @@ fn the_knob_value_text_updates_live_and_nothing_pops_up() {
     rig.frame(vec![Event::PointerMoved(start + vec2(0.0, -10.0))]);
     rig.frame(vec![Event::PointerMoved(start + vec2(0.0, -INCH))]);
     let shown: Vec<String> = texts(&rig.shapes).into_iter().map(|t| t.0).collect();
-    // Only the label and the live value: no popup.
+    // Only the label and the live value: no popup (the value bubble, #171, is off in tests unless a test sets it).
     assert_eq!(shown, ["Label", "0.49"]);
+}
+
+/// Honeydew change (#171): with `Show value while dragging` on, a dragged knob's value text also shows, live, in a
+/// bubble above the pointer, which goes with the release; with the setting off there is none.
+#[test]
+fn a_dragged_knob_shows_its_value_in_a_bubble_above_the_pointer_unless_turned_off() {
+    for on in [true, false] {
+        let mut rig = Rig::new(Kind::Knob, 0.25);
+        bubble::set_shown(&rig.ctx, on);
+        let start = RECT.center();
+        rig.frame(vec![Event::PointerMoved(start)]);
+        rig.button(start, PointerButton::Primary, true);
+        rig.frame(vec![Event::PointerMoved(start + vec2(0.0, -10.0))]);
+        // Half an inch up: 0.25 + 0.12.
+        let at = start + vec2(0.0, -INCH / 2.0);
+        rig.frame(vec![Event::PointerMoved(at)]);
+        let above = |rig: &Rig| {
+            let boxes = text_boxes(&rig.shapes).into_iter();
+            boxes
+                .filter(|b| {
+                    b.0 == "0.37" && b.1.bottom() < at.y && (b.1.center().x - at.x).abs() < 1.0
+                })
+                .count()
+        };
+        assert_eq!(above(&rig), usize::from(on), "on: {on}");
+        rig.button(at, PointerButton::Primary, false);
+        assert_eq!(above(&rig), 0, "on: {on}");
+    }
 }
 
 // Desktop hover.

@@ -58,7 +58,8 @@ pub fn show(
 ) -> Option<Nav> {
     let page = state.page;
     // A new dialog is the song's.
-    if state.dialog.is_none() {
+    let new = state.dialog.is_none();
+    if new {
         state.midi_channel = None;
     }
     let dialog = state.dialog.get_or_insert_with(|| SaveDialog {
@@ -66,9 +67,12 @@ pub fn show(
         ..SaveDialog::new(std::mem::take(name))
     });
     let song = &*app.song;
-    dialog.song_secs = estimated_secs(song, RenderRange::Full) as f32;
-    dialog.selection_secs = range_ticks(song, RenderRange::Selection)
-        .map(|_| estimated_secs(song, RenderRange::Selection) as f32);
+    // Once a dialog: an estimate builds an engine for the song's tempo automation.
+    if new {
+        dialog.song_secs = estimated_secs(song, RenderRange::Full) as f32;
+        dialog.selection_secs = range_ticks(song, RenderRange::Selection)
+            .map(|_| estimated_secs(song, RenderRange::Selection) as f32);
+    }
     dialog.midi_effects = app.settings.midi_note_effects;
     let action = dialog.show(ui.ctx(), &app.cx);
     name.clone_from(&dialog.name);

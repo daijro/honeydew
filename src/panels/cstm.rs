@@ -580,7 +580,8 @@ pub fn load_dw_programs(song: &mut Song, read: &Reader<'_>) {
 
 /// The program loader took the file at `path` for a DW Sampler's pick: it is now the module's program, in place of its
 /// zones and path, with its `MIDI` kept. `attack_release`: what a `.dwp` with zones sets, init and current; an audio
-/// file or a `.dwp` without zones sets nothing. Returns `false`, changing nothing, for a path no `PATh` can hold.
+/// file or a `.dwp` without zones sets nothing. The `PATh` ends with [`dwp::USER_SAMPLE_ROOT`], which an audio file
+/// plays at (Honeydew change, #102). Returns `false`, changing nothing, for a path no `PATh` can hold.
 pub fn pick_dw_program(
     module: &mut ModuleInstance,
     path: &ContentPath,
@@ -595,7 +596,8 @@ pub fn pick_dw_program(
     let written = w.raw(&MAGIC_DW01).and_then(|()| {
         w.chunk(*b"PATh", |w| {
             w.content_path32(path)?;
-            picked.program_init().iter().try_for_each(|&v| w.f32(v))
+            picked.program_init().iter().try_for_each(|&v| w.f32(v))?;
+            w.u8(dwp::USER_SAMPLE_ROOT)
         })?;
         w.chunk(*b"MIDI", |w| w.raw(&dw_midi(module)))
     });
@@ -1551,11 +1553,13 @@ mod tests {
         zone.resize(1065, 0);
         let midi = chunk(b"MIDI", &[7, 0]);
         let module = dw(&[chunk(b"ZONE", &zone), midi.clone()]);
+        // The floats, then the root an audio file plays at (Honeydew change, #102).
+        let picked_tail = |a: f32, r: f32| [pair(a, r), vec![60]].concat();
         let saved = |a: f32, r: f32| {
             Some(
                 [
                     b"10WD".to_vec(),
-                    path_chunk(b"PATh", PROGRAM, &pair(a, r)),
+                    path_chunk(b"PATh", PROGRAM, &picked_tail(a, r)),
                     midi.clone(),
                 ]
                 .concat(),
@@ -1579,7 +1583,7 @@ mod tests {
         let midi_new = chunk(b"MIDI", &[2, 0]);
         let expected = [
             b"10WD".to_vec(),
-            path_chunk(b"PATh", PROGRAM, &pair(0.0, 0.1)),
+            path_chunk(b"PATh", PROGRAM, &picked_tail(0.0, 0.1)),
             midi_new,
         ]
         .concat();

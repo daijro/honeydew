@@ -16,16 +16,20 @@
 //!
 //! The level in dB (#133, a Honeydew addition): under a tall fader's cap, where its lowest value leaves room
 //! ([`widgets::below_cap`]); and in the name slot while the fader is held, at every height.
+//!
+//! The master's live peak in dB (#143, a Honeydew addition): in its name slot while it is over −60 dB, held a second and then
+//! falling at the meters' release ([`Peak`]). The slot turns the record red once the peak goes over 0 dBFS, until a
+//! tap on the master strip off its controls.
 
 use eframe::egui::{Align2, Id, Pos2, Rect, Ui, UiBuilder, Vec2, pos2, vec2};
-use honeydew_audio::device::ModuleMeter;
+use honeydew_audio::device::{ModuleMeter, RELEASE_DB_PER_S};
 
 use crate::icons::draw_icon;
 use crate::metrics::{FontSize, Metrics};
 use crate::midi::links;
-use crate::params::CHANNEL_PARAMS;
+use crate::params::{CHANNEL_PARAMS, Fmt, Sign};
 use crate::song::{AutomationTarget, ChannelKind, Song};
-use crate::theme::{DISABLED_ALPHA, channel_color};
+use crate::theme::{DISABLED_ALPHA, RECORD_COLOR, channel_color};
 use crate::ui::UiCtx;
 use crate::ui::ctrl_menu::Touch;
 use crate::ui::fine_tune;
@@ -39,6 +43,8 @@ use crate::ui::widgets::{self, Button, Control, ParamMenu, Pill};
 pub const STRIP_W: f32 = 4.0;
 /// The least room under a fader's cap (U) that shows its level in dB: the 6 pt readout's size.
 const DB_ROOM: f32 = 0.375;
+/// How long the master's peak readout holds a peak (s) before it falls.
+const PEAK_HOLD: f64 = 1.0;
 
 /// The leaves of a strip. The four controls' ids are their channel param indices.
 const FADER: NodeId = 0;
@@ -68,6 +74,32 @@ pub struct MixerState {
     pub touch: Option<(usize, Touch)>,
     /// The row's scroll controller: the touch it has, its fling and spring.
     scroller: Scroller,
+    /// The master's peak readout.
+    peak: Peak,
+}
+
+/// The master's held peak (#143): its level (linear), when it was taken (s), and whether a peak went over 0 dBFS since
+/// the last tap on the master strip.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Peak {
+    level: f32,
+    at: f64,
+    clipped: bool,
+}
+
+impl Peak {
+    /// Takes this frame's `peak` at `now` (s) and returns the level to show: the held one, fallen at the meters'
+    /// release once [`PEAK_HOLD`] is over, unless `peak` is louder.
+    fn update(&mut self, peak: f32, now: f64) -> f32 {
+        let fall = (now - self.at - PEAK_HOLD).max(0.0) as f32;
+        let shown = self.level * 10f32.powf(-RELEASE_DB_PER_S / 20.0 * fall);
+        self.clipped |= peak > 1.0;
+        if peak < shown {
+            return shown;
+        }
+        (self.level, self.at) = (peak, now);
+        peak
+    }
 }
 
 /// A strip `h` U tall: the 0.75 U name slot, fader (60 % wide, flex), pan knob (80 % wide, 2 U), the mute/solo row
@@ -182,6 +214,15 @@ pub fn show(
     let tap = scroll_row(ui, state, rect, content, m.u(1.0));
     let soloed = any_soloed(song);
     let mut unsolo = false;
+    let [left, right] = mini_mixer::meter_peaks(meters, 0);
+    let peak = state.peak.update(left.max(right), ui.input(|i| i.time));
+    // Over −60 dB, where the meters' law starts; it falls to there even with no more input to repaint for.
+    let peak = (mini_mixer::meter(peak) > 0.0).then(|| {
+        ui.ctx().request_repaint();
+        Fmt::new(1, " dB")
+            .sign(Sign::Positive)
+            .apply(f64::from(20.0 * peak.log10()))
+    });
 
     ui.painter()
         .rect_filled(rect, 0.0, colors.module_fill.to_color32());
@@ -210,6 +251,7 @@ pub fn show(
                 .any(|&(leaf, r)| (leaf <= SOLO || leaf == UNSOLO) && (r / ppp).contains(p))
         {
             state.selected = Some(i);
+            state.peak.clipped &= !master;
         }
         for (leaf, r) in placed {
             let (id, r) = (base.with((i, leaf)), r / ppp);
@@ -221,27 +263,32 @@ pub fn show(
             };
             let none = |_| String::new();
             let changed = match leaf {
-                // In the channel colour, truncated keeping 5 tail characters; the level while the fader is held.
+                // In the channel colour, truncated keeping 5 tail characters; the level while the fader is held, else
+                // the master's peak. Red on the master after an over.
                 NAME => {
                     let fader = ui.ctx().read_response(base.with((i, FADER)));
                     let level = CHANNEL_PARAMS[0].display_text(params[0]);
                     let held = fader.is_some_and(|f| f.is_pointer_button_down_on());
                     let font = m.font_id(FontSize::Pt10);
-                    widgets::truncated(
-                        ui.painter(),
-                        r,
-                        Align2::CENTER_CENTER,
-                        if held { level.as_str() } else { name },
-                        font,
-                        color,
-                        5,
-                    );
+                    let text = match &peak {
+                        _ if held => level.as_str(),
+                        Some(peak) if master => peak,
+                        _ => name,
+                    };
+                    let ink = if master && state.peak.clipped {
+                        ui.painter().rect_filled(r, 0.0, RECORD_COLOR.to_color32());
+                        colors.background.to_color32()
+                    } else {
+                        color
+                    };
+                    widgets::truncated(ui.painter(), r, Align2::CENTER_CENTER, text, font, ink, 5);
                     false
                 }
                 // Reset to 0.85312, unity, not the 0.8531 a new channel stores.
                 FADER => {
                     let c = control("", widgets::UNITY);
-                    let changed = widgets::fader(&mut ui, cx, &c, &mut params[0]).changed();
+                    let level = |v| CHANNEL_PARAMS[0].display_text(v);
+                    let changed = widgets::fader(&mut ui, cx, &c, &mut params[0], level).changed();
                     for bar in strip_meters(r, mini_mixer::meter_peaks(meters, i), m) {
                         ui.painter().rect_filled(bar, 0.0, color);
                     }
@@ -255,8 +302,14 @@ pub fn show(
                     }
                     changed
                 }
+                // Honeydew change (#171): no text on the ring, the pan in the drag bubble.
                 KNOB => {
-                    widgets::knob(&mut ui, cx, &control("", 0.5), &mut params[1], none).changed()
+                    let c = Control {
+                        ring_text: false,
+                        ..control("", 0.5)
+                    };
+                    let pan = |v| CHANNEL_PARAMS[1].display_text(v);
+                    widgets::knob(&mut ui, cx, &c, &mut params[1], pan).changed()
                 }
                 // Dot up = not muted: the inverted pill, bound to the Mute param itself.
                 MUTE => {
@@ -1577,5 +1630,52 @@ mod tests {
             )
         };
         assert_eq!(one, [bar(cap + 2.0), bar(cap + 10.0)]);
+    }
+
+    #[test]
+    fn the_master_name_reads_its_held_peak_and_goes_red_over_0_dbfs_until_tapped() {
+        use honeydew_audio::MeterSnapshot;
+        use honeydew_audio::device::ModuleKey;
+        let mut rig = Rig::new(1);
+        let master = |peak: f32| ModuleMeter {
+            key: ModuleKey {
+                channel: 0,
+                instance_id: 0,
+            },
+            value: MeterSnapshot {
+                peak_left: peak / 2.0,
+                peak_right: peak,
+                ..MeterSnapshot::default()
+            },
+            analysis: Vec::new(),
+        };
+        let name = rig.part(0, NAME);
+        let red = crate::theme::RECORD_COLOR.to_color32();
+        let lit = |rig: &Rig| {
+            (rig.shapes.iter())
+                .any(|s| matches!(&s.shape, Shape::Rect(r) if r.fill == red && r.rect == name))
+        };
+        let text = |rig: &Rig| rig.texts(name)[0].0.clone();
+        let master_name = rig.song.channels[0].name.clone();
+        assert_eq!(text(&rig), master_name);
+        // The louder side's peak in dB, in place of the name.
+        rig.meters = vec![master(0.5)];
+        rig.frame(vec![]);
+        assert_eq!((text(&rig), lit(&rig)), ("-6.0 dB".into(), false));
+        // Over 0 dBFS: red. The peak holds a second while the level drops, then falls to it at the meters' release.
+        rig.meters = vec![master(1.2)];
+        rig.frame(vec![]);
+        assert_eq!((text(&rig), lit(&rig)), ("+1.6 dB".into(), true));
+        rig.meters = vec![master(0.25)];
+        rig.idle(0.9);
+        assert_eq!((text(&rig), lit(&rig)), ("+1.6 dB".into(), true));
+        rig.idle(0.6);
+        assert_eq!((text(&rig), lit(&rig)), ("-12.0 dB".into(), true));
+        // A tap on it puts the red out; under −60 dB the name is back.
+        rig.click(name.center());
+        assert!(!lit(&rig));
+        rig.meters = vec![master(0.0)];
+        rig.idle(3.0);
+        assert_eq!((text(&rig), lit(&rig)), (master_name, false));
     }
 }

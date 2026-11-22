@@ -544,7 +544,7 @@ pub fn level_gain(v: f32) -> f32 {
 }
 
 /// Slot Sample Start v in seconds: the signed square ±0.5·u², u = 2v − 1.
-fn sample_start_seconds(v: f32) -> f64 {
+pub fn sample_start_seconds(v: f32) -> f64 {
     let u = 2.0 * v - 1.0;
     f64::from(0.5 * u * u * u.signum())
 }

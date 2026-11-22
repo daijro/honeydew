@@ -105,6 +105,7 @@ use crate::sample_cache::{
 use crate::sf2::Preset;
 use crate::song::Rack;
 use crate::song::chords::ChordSet;
+use crate::song::plugin::is_plugin;
 use crate::song::{ChannelKind, DrumKit, KeyboardState, ModuleInstance};
 use crate::ui::drums::PAD_COUNT;
 use crate::ui::modules_browser::{InsertAt, add_module};
@@ -374,7 +375,7 @@ pub(super) const WORKER_LOST: &str = "The file could not be loaded.";
 /// Runs `job` on a worker thread; on the web, which has none, at once. The sample picker's picks decode here too.
 // ponytail: no cancellation. A pick replaced or closed while it loads still runs to its end and its result is dropped
 // (`state.loading = None`); that is bounded by `MAX_FILE_BYTES` for the file and `MAX_FRAMES` of decoded samples.
-// Add a shared `AtomicBool` the decoder polls if abandoned picks ever pile up.
+// Only a sample pick's own decode stops (`sample_picker::Decoding`, #153); do the same here if abandoned picks pile up.
 pub(super) fn spawn<T: Send + 'static>(job: impl FnOnce() -> T + Send + 'static) -> Receiver<T> {
     let (tx, rx) = mpsc::channel();
     #[cfg(test)]
@@ -555,7 +556,20 @@ pub fn show(
     let (exts, top) = (exts(target, module_type), top(target, module_type));
     let files = &*app.files;
     let fresh = state.picker.is_none();
-    let picker = (state.picker).get_or_insert_with(|| picker(files, target, module_type));
+    // Honeydew change (#149, 0.5.5): a plugin module's picker is its plugin's, which keeps its own place.
+    let plugin = match target {
+        PresetTarget::Module(id) => app.song.find_module(channel, id),
+        _ => None,
+    }
+    .filter(|m| is_plugin(m.type_id));
+    let place_id = match plugin {
+        Some(m) => place(target, module_type).with(m.title()),
+        None => place(target, module_type),
+    };
+    let picker = (state.picker).get_or_insert_with(|| {
+        (plugin.and_then(|m| plugin_picker(files, m)))
+            .unwrap_or_else(|| picker(files, target, module_type))
+    });
     let open_at = match (fresh, target) {
         (true, PresetTarget::Module(id)) if module_type == Some(DW) => {
             (app.song.find_module(channel, id)).and_then(|m| dw_start(files, m))
@@ -591,7 +605,7 @@ pub fn show(
         if let Some((file, true)) = &open_at {
             picker.reveal(library, file);
         }
-        let kept = fresh && picker.keep_place(ctx, library, place(target, module_type));
+        let kept = fresh && picker.keep_place(ctx, library, place_id);
         if let (Some((folder, false)), false) = (&open_at, kept) {
             picker.open_to(library, folder);
         }
@@ -613,7 +627,10 @@ pub fn show(
     };
     if action == PickerAction::Import {
         if let Some(dir) = module_type.and_then(|t| import_dir(app.files, t)) {
-            app.files.import_audio(dir);
+            match module_type {
+                Some(DW) => app.files.import_program(dir),
+                _ => app.files.import_audio(dir),
+            }
         }
         return None;
     }
@@ -1074,7 +1091,8 @@ pub(crate) fn step_preset(
         .filter(|_| !file.as_os_str().is_empty())
         .map(|root| root.join(file))
         .collect();
-    let mut picker = picker(app.files, target, Some(type_id));
+    let plugin = plugin_picker(app.files, module);
+    let mut picker = plugin.unwrap_or_else(|| picker(app.files, target, Some(type_id)));
     let (exts, top) = (exts(target, Some(type_id)), top(target, Some(type_id)));
     let next = app.files.with_preset_files(top, exts, |library| {
         let current = files.into_iter().find(|f| library.exists(f));
@@ -1211,7 +1229,7 @@ fn start(
                 type_id == THREE_OSC,
             );
             spawn(move || {
-                let decoded = sample_picker::decode_pick(key, Ok(bytes), shape, into);
+                let decoded = sample_picker::decode_pick(key, Ok(bytes), shape, into, None);
                 Done {
                     picked: Picked::Sample(decoded.wave),
                     samples: decoded.samples,
@@ -1408,6 +1426,15 @@ fn built_in_folder(target: PresetTarget, module_type: Option<u16>) -> Option<Pat
     Some(Path::new(content::ROOT).join(folder))
 }
 
+/// Honeydew change (#149, 0.5.5): plugin module `module`'s picker, titled by its plugin: its plugin's presets, in
+/// `My Presets/<plugin name>` ([`ProjectFiles::module_presets_dir`]), with no `Default` (its plugin's init state is not
+/// known) and no factory bank. `None` for any other module.
+fn plugin_picker(files: &ProjectFiles, module: &ModuleInstance) -> Option<PresetPicker> {
+    let dir = files.module_presets_dir(module);
+    is_plugin(module.type_id)
+        .then(|| PresetPicker::new(module.title(), dir, PRESET_EXT, false).of_type(module.type_id))
+}
+
 /// A fresh picker for `target` (a module of type `module_type`, a drum kit or a rack), over the user's folder, our own
 /// bank ([`built_in_folder`]) and the factory folders in `files`.
 fn picker(files: &ProjectFiles, target: PresetTarget, module_type: Option<u16>) -> PresetPicker {
@@ -1541,7 +1568,11 @@ fn load_into(
     instruments: bool,
 ) -> Result<usize, String> {
     let files: &ProjectFiles = app.files;
-    let Some(module) = (app.song.channels.get_mut(channel)).and_then(|c| c.rack.get_mut(id)) else {
+    let Some(ch) = app.song.channels.get_mut(channel) else {
+        return Ok(0);
+    };
+    let channel_id = ch.id;
+    let Some(module) = ch.rack.get_mut(id) else {
         return Ok(0);
     };
     let name = match pick {
@@ -1555,6 +1586,8 @@ fn load_into(
             let fst = (path.extension()).is_some_and(|e| e.eq_ignore_ascii_case(FST_EXT));
             let category = module.file.category.clone();
             files.name_module(module, path);
+            // Honeydew change (#149, 0.5.5): a plugin's preset is its running plugin's state.
+            crate::plugins::load_preset_state(channel_id, module);
             if fst {
                 let file = &mut module.file;
                 file.provenance = format!("{category}/{}", file.preset_name);

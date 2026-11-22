@@ -77,7 +77,7 @@ pub fn tag_slider(
         len: (1.0 - TAG_H) * c.rect.height(),
         horizontal: false,
     };
-    let (response, v) = drag_control(ui, cx, c, value, law);
+    let (response, v) = drag_control(ui, cx, c, value, law, &display);
     // An empty rect has no tag to draw.
     if c.rect.width() > 0.0 && c.rect.height() > 0.0 {
         let fill = c.channel.gamma_multiply(TAG_ALPHA);

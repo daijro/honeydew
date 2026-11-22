@@ -520,6 +520,16 @@ pub fn take_sent() -> Vec<std::path::PathBuf> {
     os_hostlink::take_sent().into_iter().map(Into::into).collect()
 }
 
+/// Issue #167: the notes this thread's editors sent since the last call (Tesla's `Convert to score and dump to piano
+/// roll`), which Honeydew answers although no editor joins its strip (`os_hostlink`'s `Notes`): one list a send, oldest
+/// first, each note's start and end in beats from where the notes go.
+pub fn take_scored() -> Vec<Vec<NoteOut>> {
+    os_hostlink::take_scored()
+}
+
+/// A note of [`take_scored`].
+pub use os_hostlink::NoteOut;
+
 /// Whether editor `id` is open.
 pub fn is_open(id: Parent) -> bool {
     get(id).is_some()

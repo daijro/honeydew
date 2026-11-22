@@ -1,6 +1,6 @@
 [package]
 name = "honeydew"
-version = "0.5.4"
+version = "0.5.5"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
@@ -83,6 +83,8 @@ eframe = { version = "0.33.3", default-features = false, features = ["default_fo
 android-activity = { version = "0.6.1", features = ["native-activity"] }
 # Already used by CPAL; connects Android's standard text editor to egui fields.
 jni = "0.21.1"
+# The rack workers' priority (`audio_engine::parallel`). Already in the tree (CPAL).
+libc = "0.2"
 
 # iOS draws with Metal through wgpu (OpenGL ES is not available there through glutin). The Objective-C bindings are the
 # versions winit and egui-winit use on iOS: the document pickers, the audio session and the microphone permission
@@ -104,8 +106,11 @@ os-vst3 = { path = "vendor/lemon-studio/os-vst3" }
 os-vst2 = { path = "vendor/lemon-studio/os-vst2" }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos", target_os = "windows"))'.dependencies]
-rayon = "1.11"
 getrandom = "0.3.4"
+
+# The rack worker pool (`multi_core` in build.rs): the desktop and, a Honeydew change (#145, #156), Android.
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos", target_os = "windows", target_os = "android"))'.dependencies]
+rayon = "1.11"
 
 # M11 J2: MIDI input over ALSA (cpal's `alsa 0.11`), CoreMIDI and WinMM. 0.11.1 takes `alsa >=0.9, <0.13`: cpal 0.18's
 # 0.11 (0.10.x needs `^0.9`, and two `alsa-sys` cannot link). Its ALSA backend is Linux only, so FreeBSD has no MIDI

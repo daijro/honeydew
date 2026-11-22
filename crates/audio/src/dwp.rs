@@ -60,9 +60,14 @@ impl Default for Zone {
     }
 }
 
+/// The root key a plain audio file loaded into the DW Sampler plays at, so that middle C plays it as recorded
+/// (Honeydew change, #102). A song saved before keeps the earlier 48 ([`Zone::user_sample`]): a pick writes this one
+/// into its `PATh` ([`ProgramRef::root`]).
+pub const USER_SAMPLE_ROOT: u8 = 60;
+
 impl Zone {
     /// A user sample: one zone over all keys, root 48 (the `smpl` unity note ignored), looping over the file's
-    /// `smpl` loop when it has one.
+    /// `smpl` loop when it has one. A pick's `PATh` plays it at [`USER_SAMPLE_ROOT`] instead.
     // Loop mode 2 with start = end, so the loop rule takes the file's `smpl` loop.
     pub fn user_sample() -> Self {
         Self {
@@ -458,6 +463,10 @@ pub struct ProgramRef<'a> {
     /// the current values. `None` unless both are there (≥ 8 bytes after the path, both finite); a legacy
     /// `PATH` has none.
     pub init: Option<(f32, f32)>,
+    /// Honeydew's own `u8` after the two floats (Honeydew change, #102): the root key a plain audio file (a user
+    /// sample) plays at, [`USER_SAMPLE_ROOT`] since a pick writes it. `None` (a song saved before, a legacy `PATH`, a
+    /// key over 127): the earlier 48 ([`Zone::user_sample`]). A program's zones keep their own roots.
+    pub root: Option<u8>,
     /// The whole chunk, header included, in the blob: what a save rewrites with the init values.
     pub chunk: Range<usize>,
 }
@@ -515,10 +524,13 @@ impl<'a> Cstm<'a> {
                         && !path.is_empty()
                     {
                         let at = 4 + path.len();
-                        let floats = f32_at(body, at).zip(f32_at(body, at + 4));
+                        let init =
+                            (f32_at(body, at).zip(f32_at(body, at + 4))).filter(|_| id == *b"PATh");
+                        let root = body.get(at + 8).copied().filter(|&key| key < 128);
                         cstm.program = Some(ProgramRef {
                             path,
-                            init: floats.filter(|_| id == *b"PATh"),
+                            init,
+                            root: init.and(root),
                             chunk: start..blob.len() - chunks.len(),
                         });
                     }

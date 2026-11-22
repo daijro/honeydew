@@ -129,6 +129,27 @@ fn a_sample_strip_plays_its_pick_from_the_start_once_decoded_and_stops_once() {
 }
 
 #[test]
+fn a_strip_plays_a_big_files_first_part_at_once_and_goes_on_in_each_longer_one() {
+    // Issues #131, #153: the first part plays from the start, waiting at its end for more; a longer one plays on from
+    // where it is, with no restart; the whole once more, which ends it; the same whole again (the pick landing) asks
+    // nothing.
+    let mut strip = SampleStrip::new("Long".into(), None);
+    strip.grow(Some(wave(100)), Some(400));
+    assert!(strip.playing());
+    assert_eq!(strip.take_plays(), [Play::From(0), Play::More(true)]);
+    strip.grow(Some(wave(200)), Some(400));
+    assert_eq!(strip.take_plays(), [Play::More(true)]);
+    let whole = wave(400);
+    strip.grow(Some(whole.clone()), None);
+    strip.grow(Some(whole), None);
+    assert_eq!(strip.take_plays(), [Play::More(false)]);
+    // A file that fails after all stops.
+    strip.grow(None, None);
+    assert_eq!(strip.take_plays(), [Play::Stop]);
+    assert!(strip.wave.is_none());
+}
+
+#[test]
 fn the_strips_waveform_is_the_playlists_columns_a_device_pixel_each() {
     // Honeydew change (#124; #108 drew one smoothed band of held peaks scaled to the loudest): the playlist's
     // audio clips' law, each channel's min/max a device pixel a column, stereo in halves, at full scale. A 20 Hz tone at

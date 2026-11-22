@@ -1431,6 +1431,21 @@ fn ghost_notes_show_another_channels_notes_while_the_setting_is_on() {
     rig.app.settings.ghost_notes = false;
     rig.frame(vec![]);
     assert_eq!(rig.rects(ghost).len(), 0);
+    // The roll's snap menu shows or hides them too (#152): `Show` (3, 9) and `Hide` (3, 10) under `Ghosts` set the
+    // setting. A right click opens it; the playhead knob, at beat 0 over the Snap button, at beat 2.
+    rig.rec.0.borrow_mut().tick = 256;
+    let pick = |rig: &mut Rig, cell: (usize, usize)| {
+        rig.secondary_click(rig.rect_of(roll("snap")).center());
+        rig.frame(vec![]);
+        rig.click_id(roll("snap_menu").with(cell));
+        rig.frame(vec![]);
+    };
+    pick(&mut rig, (3, 9));
+    assert!(rig.app.settings.ghost_notes);
+    assert_eq!(rig.rects(ghost).len(), 1);
+    pick(&mut rig, (3, 10));
+    assert!(!rig.app.settings.ghost_notes);
+    assert_eq!(rig.rects(ghost).len(), 0);
 }
 
 /// A key held on the keyboard lights its row in the roll of its channel (the channel colour α 0.1), until it is let go.

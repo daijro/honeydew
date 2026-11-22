@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use eframe::egui;
 use honeydew_audio::device::AudioCommand;
 
-use super::{AppCtx, Nav, View};
+use super::{AppCtx, ClipKey, Nav, View};
 use crate::song::Song;
 use crate::ui::clips::LiveTake;
 use crate::ui::piano_roll::{PianoRoll, PianoRollAction, RollOptions};
@@ -70,12 +70,14 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
     [app.settings.velocity_snap, app.settings.pan_snap] = roll.value_snap;
     app.settings.grid_size = roll.snap.size;
     app.settings.graph_tab_shift = roll.graph_tab_shift;
+    let mut ghost = None;
     for action in actions {
         match action {
             PianoRollAction::SongEdited { final_edit } => app.song_edited(final_edit),
             PianoRollAction::QuietEdit => app.quiet_edited(),
             PianoRollAction::Resync => app.resync_edited(),
             PianoRollAction::Audition => app.edit = app.edit.max(Some(super::SongEdit::Audition)),
+            PianoRollAction::GhostNotes(on) => app.settings.ghost_notes = on,
             PianoRollAction::SetPlayhead(tick) => app.set_playhead(tick),
             PianoRollAction::Play => app.play(),
             PianoRollAction::Seek(tick) => app.seek = Some(tick),
@@ -87,7 +89,28 @@ pub fn show(state: &mut State, ui: &mut egui::Ui, app: &mut AppCtx, channel: usi
                 },
                 None => AudioCommand::NoteOff { channel, key },
             }),
+            PianoRollAction::GhostClip {
+                channel,
+                lane,
+                clip,
+                view,
+            } => {
+                ghost = Some((
+                    ClipKey {
+                        channel,
+                        lane,
+                        id: clip,
+                    },
+                    view,
+                ))
+            }
         }
     }
-    None
+    // #154 (a Honeydew change): a ghost note's long press opens its clip, in its channel's roll, at this roll's view;
+    // the clip becomes the current one, which the bottom editor follows.
+    let (key, view) = ghost?;
+    (state.rolls.entry(key.channel))
+        .or_insert_with(|| PianoRoll::new(key.channel, key.lane, Some(key.id)))
+        .open_at(key.lane, key.id, view);
+    Some(Nav::EditClip(key))
 }

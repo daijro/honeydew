@@ -74,6 +74,13 @@ impl SongAudioEngine {
         if self.resync && self.rolling() {
             self.resync();
         } else {
+            // #140: a key the edit dropped or moved (a note effect changed, a note tapped in before a Randomizer's
+            // draw) waits for a note-off this schedule never sends. What it does not cover gets its note-off now, at
+            // the key it started on; a covered key sounds on to this schedule's note-off. The pads keep theirs.
+            if self.holds_any() {
+                self.cover_to(self.action_index);
+                self.release_uncovered(true, false);
+            }
             self.set_changed_params(old);
             self.keep_bend(old);
         }

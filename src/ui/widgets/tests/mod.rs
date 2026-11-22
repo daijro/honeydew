@@ -409,8 +409,8 @@ fn every_kit_widget_tells_accessibility_tools_its_role_and_name() {
             knob(ui, &cx, &c(0, "Knob"), &mut v, show);
             v_slider(ui, &cx, &c(1, "VSlider"), &mut v, show);
             h_slider(ui, &cx, &c(2, "HSlider"), &mut v, show);
-            fader(ui, &cx, &c(3, "Fader"), &mut v);
-            graph_knob(ui, &cx, &c(4, "Graph"), &mut v, false);
+            fader(ui, &cx, &c(3, "Fader"), &mut v, show);
+            graph_knob(ui, &cx, &c(4, "Graph"), &mut v, false, show);
             let arc = ArcSlider {
                 start: 135.0,
                 span: 90.0,

@@ -21,8 +21,8 @@
 //!   `clips::sample`, so the piano roll's, the drum grid's and the step sequencer's hit colours move with it.
 //! - The drum editor's spacer (the rest of the header column, the mixer's c·12 U, while c > 0) shows the current
 //!   row's slot's sample ([`spacer_wave`]) by the audio clip editor's waveform law: the whole source sample fitted to
-//!   the spacer's width (no Speed, stretch or Sample Start), REV mirrored, in the plain opaque channel colour. A slot
-//!   whose sample is missing leaves it empty.
+//!   the spacer's width (no Speed), REV mirrored, in the plain opaque channel colour. A slot whose sample is missing
+//!   leaves it empty. Honeydew change (#175, 0.5.5): it shows the slot's Stretch and Sample Start too.
 //! - The `Show graph editor` / `Close graph editor` shortcuts and the gamepad steps are not wired. `showGraphEditor`
 //!   is bound only to the gamepad's LB+RB+↓, the app reads no gamepad (`keymap.rs` skips those entries), and neither
 //!   built-in keyboard map binds it, so nothing could fire it. The focus system (`ui/focus.rs`) is there: wiring them
@@ -41,15 +41,17 @@ use crate::icons::{IconId, draw_icon};
 use crate::metrics::Metrics;
 use crate::sample_cache::Waveform;
 use crate::song::Event;
+use crate::song::SamplerSlot;
 use crate::theme::{Rgba, ThemeColors};
 use crate::ui::anim;
-use crate::ui::audio_editor::{Wave, add_column, columns, pixel_columns, wave_rows};
+use crate::ui::audio_editor::{Wave, add_column, columns, pixel_columns, stretch_of, wave_rows};
 use crate::ui::automation::value::{Land, ValueSnap};
 use crate::ui::clips::{mix, sample, tint_stops};
 use crate::ui::main_screen::{CLEAR_U, CORNER_W};
 use crate::ui::piano_roll::notes::note;
 use crate::ui::widgets::{Bar, ItemList, item_list_index};
 use crate::ui::{UiCtx, gesture, primary_down_live};
+use honeydew_audio::drums::SAMPLE_START;
 
 /// The height fraction f: its cap and the first open's.
 const F_MAX: f32 = 0.7;
@@ -574,37 +576,67 @@ pub fn content(strip: Rect, m: &Metrics) -> Rect {
     strip.with_min_y((strip.top() + GAP_PX / m.ppp()).min(strip.bottom()))
 }
 
-/// The drum editor's spacer `spacer` (the expanded mixer's room in the header column) showing a sample's waveform in
-/// `ink`, by the audio clip editor's waveform law (a 1 px column a device pixel from min/max peaks, mono centred at
-/// scale h/2, stereo halves at h/4 and 3h/4 at scale h/4, a column under 1 px a 1 px line, a `reversed` sample
-/// mirrored): the whole sample fitted to the spacer's width.
+/// The drum editor's spacer `spacer` (the expanded mixer's room in the header column) showing `slot`'s sample `wave`
+/// in `ink`, by the audio clip editor's waveform law (a 1 px column a device pixel from min/max peaks, mono centred at
+/// scale h/2, stereo halves at h/4 and 3h/4 at scale h/4, a column under 1 px a 1 px line, a REV sample mirrored): the
+/// whole sample fitted to the spacer's width.
+///
+/// Honeydew change (#175, 0.5.5): the sample as it plays, stretched by the slot's Stretch, on a time line as long as
+/// the longer of the sample and its stretched length, so a stretch shows at either end: the stretched end, short of
+/// the spacer's right edge (a shorter sample), or the sample's own end, short of it (a longer one), is a 1 px `text`
+/// line. The part a positive Sample Start skips is veiled in `background` up to a 1 px `text` line at the start.
 pub fn spacer_wave(
     painter: &Painter,
     spacer: Rect,
-    wave: &Waveform,
-    reversed: bool,
-    ink: Color32,
+    (wave, slot): (&Waveform, &SamplerSlot),
+    (ink, colors): (Color32, &ThemeColors),
     m: &Metrics,
 ) {
     let px = 1.0 / m.ppp();
     let (x0, width) = pixel_columns(spacer, m);
     let frames = wave.data.frames();
+    let stretch = stretch_of(slot);
+    // The stretched sample's columns, of the `width` the longer length takes.
+    let shown = ((width as f64 * stretch / stretch.max(1.0)).round() as usize).max(1);
     // One "beat" a frame: `columns` then mirrors a reversed sample over exactly the frames it shows.
     let fit = Wave {
         frames,
         per_beat: 1.0,
-        reversed,
+        reversed: slot.file.reverse,
     };
-    let fpp = frames as f64 / width.max(1) as f64;
+    let fpp = frames as f64 / shown as f64;
     let rows = wave_rows(spacer, wave.summary.len() > 1);
     let mut mesh = Mesh::default();
     for ((samples, summary), &row) in wave.channels().zip(&rows) {
-        let cols = columns(samples, summary, fit, 0.0, fpp, width);
+        let cols = columns(samples, summary, fit, 0.0, fpp, shown);
         for (i, peak) in cols.into_iter().enumerate() {
             add_column(&mut mesh, x0 + i as f32 * px, peak, row, px, ink);
         }
     }
     painter.add(mesh);
+    let line = |column: usize| {
+        let x = x0 + column.min(width.saturating_sub(1)) as f32 * px;
+        let rect = Rect::from_x_y_ranges(x..=x + px, spacer.y_range());
+        painter.rect_filled(rect, 0.0, colors.text.to_color32());
+    };
+    let rate = f64::from(wave.data.sample_rate.max(1));
+    let seconds = frames as f64 / rate * stretch;
+    let start = honeydew_audio::drums::sample_start_seconds(slot.params[SAMPLE_START]);
+    if start > 0.0 && seconds > 0.0 {
+        let column = (start / seconds * shown as f64).round() as usize;
+        let veil = Rect::from_x_y_ranges(x0..=x0 + column as f32 * px, spacer.y_range());
+        let background = colors.background.to_color32();
+        painter.rect_filled(veil, 0.0, background.gamma_multiply(0.7));
+        line(column);
+    }
+    // The shorter length's end: the stretched one, else the sample's own.
+    let end = match stretch < 1.0 {
+        true => shown,
+        false => (width as f64 / stretch).round() as usize,
+    };
+    if stretch != 1.0 {
+        line(end);
+    }
 }
 
 /// A drum value area's centre band: 1 U tall across `values` at its centre.

@@ -29,6 +29,12 @@
 //! ([`crate::ui::clips::wave_mesh`]: each channel's min/max a device pixel a column, stereo in halves, at full scale;
 //! #124, where #108 drew one smoothed band of held peaks). While it plays, the editors' playhead line marks the
 //! position on it (#123).
+//!
+//! A big file plays as it decodes (a Honeydew addition, #131, #153): the strip starts on its first part and goes on in
+//! each longer one from where it is ([`SampleStrip::grow`]), its waveform filling in across about the whole's length.
+//! A touch past what is known plays from the known end; at that end the player waits for more, and so does the clock.
+
+use std::sync::Arc;
 
 use eframe::egui::{Align2, Color32, Id, Painter, Pos2, Rect, Sense, Ui, pos2, vec2};
 
@@ -386,6 +392,8 @@ const NAME_SHARE: f32 = 5.0 / 6.0;
 pub enum Play {
     /// Play the sample once from this frame.
     From(usize),
+    /// The sample playing goes on in the strip's, decoded further, from where it is; true: more still comes.
+    More(bool),
     Stop,
 }
 
@@ -394,6 +402,8 @@ pub struct SampleStrip {
     pub name: String,
     /// The decoded sample; `None` while it loads or when it does not decode: no play button, waveform or progress.
     pub wave: Option<Waveform>,
+    /// While the rest of the file decodes: about how many frames the whole has.
+    whole: Option<usize>,
     /// While it plays: when it started (egui seconds; `None` until its first frame) and from which frame.
     playing: Option<(Option<f64>, usize)>,
     /// A touch on the waveform: stopped until its release.
@@ -407,6 +417,7 @@ impl SampleStrip {
         let mut strip = Self {
             name,
             wave: None,
+            whole: None,
             playing: None,
             touching: None,
             plays: Vec::new(),
@@ -421,6 +432,30 @@ impl SampleStrip {
     fn play(&mut self, from: usize) {
         self.playing = Some((None, from));
         self.plays.push(Play::From(from));
+        if self.whole.is_some() {
+            self.plays.push(Play::More(true));
+        }
+    }
+
+    /// Its sample decoded further: `wave`, a longer start of the same file, with about `whole` frames still to come
+    /// (`None`: it is the whole). It plays on from where it is, the first from the start; `None` (the file does not
+    /// decode after all) stops it.
+    pub fn grow(&mut self, wave: Option<Waveform>, whole: Option<usize>) {
+        let Some(wave) = wave else {
+            self.stop();
+            (self.wave, self.whole) = (None, None);
+            return;
+        };
+        let (first, same) = match &self.wave {
+            None => (true, false),
+            Some(old) => (false, Arc::ptr_eq(&old.data, &wave.data)),
+        };
+        (self.wave, self.whole) = (Some(wave), whole);
+        if first {
+            self.play(0);
+        } else if !same && self.playing.is_some() {
+            self.plays.push(Play::More(whole.is_some()));
+        }
     }
 
     /// Stops it, if it plays (a refresh, a new pick, the picker closing).
@@ -494,9 +529,11 @@ impl SampleStrip {
             *since = Some(now);
         }
         let frames = wave.data.frames();
+        let whole = self.whole.map_or(frames, |w| w.max(frames));
         if self.position(now).is_some_and(|at| at >= frames as f64) {
-            // It ended: the player stopped by itself.
-            self.playing = None;
+            // It ended, the player stopped by itself; or while more comes, the player waits at the end of what is
+            // known, and so does the clock.
+            self.playing = self.whole.map(|_| (Some(now), frames));
         }
         if self.playing.is_some() {
             ui.ctx().request_repaint();
@@ -529,7 +566,7 @@ impl SampleStrip {
                 Finger::Up(finger, pos) if self.touching == Some(finger) => {
                     self.touching = None;
                     let u = ((pos.x - wave_rect.left()) / wave_rect.width()).clamp(0.0, 1.0);
-                    let at = ((u * frames as f32) as usize).min(frames.saturating_sub(1));
+                    let at = ((u * whole as f32) as usize).min(frames.saturating_sub(1));
                     self.play(at);
                 }
                 _ => {}
@@ -540,15 +577,18 @@ impl SampleStrip {
         let ink = text.gamma_multiply(WAVE_ALPHA);
         let (x0, width) = pixel_columns(wave_rect, m);
         let rows = wave_rows(wave_rect, wave.summary.len() > 1);
-        let whole = Wave {
+        let all = Wave {
             frames,
             per_beat: 1.0,
             reversed: false,
         };
-        let span = ((0.0, frames as f64 / width.max(1) as f64), (x0, width));
-        painter.add(wave_mesh(&wave, whole, &rows, span, 1.0 / m.ppp(), ink));
+        // The columns of what is known, at the whole's scale.
+        let per_px = whole as f64 / width.max(1) as f64;
+        let known = ((frames as f64 / per_px).ceil() as usize).min(width);
+        let span = ((0.0, per_px), (x0, known));
+        painter.add(wave_mesh(&wave, all, &rows, span, 1.0 / m.ppp(), ink));
         if let Some(at) = self.position(now) {
-            let x = wave_rect.left() + wave_rect.width() * (at / frames.max(1) as f64) as f32;
+            let x = wave_rect.left() + wave_rect.width() * (at / whole.max(1) as f64) as f32;
             crate::ui::timeline::playhead_line(&painter, wave_rect, x, cx);
         }
 

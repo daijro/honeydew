@@ -16,14 +16,15 @@
 //! `read` does not look at what the extracted paths are on disk: a file and a folder of the same name are the
 //! extractor's error.
 //!
-//! [`open_entry`] streams one file of an archive too large to hold in memory (the OBB in an APK).
+//! [`scan`] and [`stream`] are `read` for an archive too large to hold in memory (issue #128, a Honeydew change): the
+//! same checks on its directory, read from the file, then each file's bytes as they are read. `read` is them over the
+//! bytes. [`open_entry`] streams one file of an archive (the OBB in an APK).
 
 use std::collections::HashSet;
 use std::fmt;
 use std::io::{self, Read, Seek, SeekFrom};
 
 use miniz_oxide::deflate::compress_to_vec;
-use miniz_oxide::inflate::decompress_to_vec_with_limit;
 use miniz_oxide::inflate::stream::{InflateState, inflate};
 use miniz_oxide::{DataFormat, MZError, MZFlush, MZStatus};
 
@@ -205,86 +206,102 @@ fn header<'a>(rest: &mut &'a [u8]) -> Result<Header<'a>, ZipError> {
     })
 }
 
-/// A central directory record, checked, with its data located.
-struct Record<'a> {
-    /// `None`: a folder or the repeat of an earlier name, nothing to extract.
-    path: Option<String>,
+/// A file of an archive as [`scan`] checked it, its bytes still in the archive: [`stream`] reads them.
+#[derive(Clone, Debug)]
+pub struct Listed {
+    /// As [`Entry::path`].
+    pub path: String,
+    /// Its size once read, and the CRC-32 of its bytes.
+    pub size: u64,
+    pub crc: u32,
     method: u16,
-    crc: u32,
-    size: u32,
-    packed: &'a [u8],
-    /// The local header's first byte and the data's end, for the overlap check.
-    span: (usize, usize),
+    /// Where its data starts in the archive, and how long it is there.
+    start: u64,
+    packed_len: u64,
 }
 
 /// The files of the archive `bytes`, in directory order. `max_total` caps the bytes of all files together (the
 /// caller's file-size limit); the ratio cap may lower it. A repeated name keeps the first file, folders are left out.
 pub fn read(bytes: &[u8], max_total: u64) -> Result<Vec<Entry>, ZipError> {
-    let end = find_end(bytes).ok_or(ZipError::NotZip)?;
-    let (disk, dir_disk) = (u16_at(bytes, end + 4)?, u16_at(bytes, end + 6)?);
-    let (here, total) = (u16_at(bytes, end + 8)?, u16_at(bytes, end + 10)?);
-    let (dir_len, dir_at) = (u32_at(bytes, end + 12)?, u32_at(bytes, end + 16)?);
+    // The bytes in memory bound the directory: no cap of its own.
+    let files = checked(io::Cursor::new(bytes), max_total, u32::MAX)?;
+    let entry = |f: Listed| {
+        // The declared size, which was checked against the budget, but no more than deflate's 1032:1 can reach from
+        // the packed bytes: a header's claim alone allocates nothing.
+        let mut data = Vec::with_capacity(f.size.min(f.packed_len.saturating_mul(1032)) as usize);
+        let read = stream(io::Cursor::new(bytes), &f).and_then(|mut r| r.read_to_end(&mut data));
+        read.map_err(|_| ZipError::Corrupt)?;
+        Ok(Entry { path: f.path, data })
+    };
+    files.into_iter().map(entry).collect()
+}
+
+/// [`read`] of the archive `file` without reading its files: what it holds, checked as `read` checks it, each file
+/// located for [`stream`]. Its directory may be at most [`MAX_STREAMED_DIR`] long.
+pub fn scan(file: impl Read + Seek, max_total: u64) -> Result<Vec<Listed>, ZipError> {
+    checked(file, max_total, MAX_STREAMED_DIR)
+}
+
+/// The checks of [`read`] and [`scan`], on a directory at most `max_dir` long.
+fn checked(
+    mut file: impl Read + Seek,
+    max_total: u64,
+    max_dir: u32,
+) -> Result<Vec<Listed>, ZipError> {
     // Split archives are refused. zip64's markers (0xFFFF entries, 0xFFFFFFFF sizes and offsets, here and in the
     // records) need no check of their own: they fail the entry cap and the bounds checks, since no file is 4 GiB.
-    if disk != 0 || dir_disk != 0 || here != total || usize::from(total) > MAX_ENTRIES {
+    let (dir, total, dir_at, len) = directory(&mut file, max_dir)?;
+    if usize::from(total) > MAX_ENTRIES {
         return Err(ZipError::Corrupt);
     }
-    let (dir_at, dir_len) = (dir_at as usize, dir_len as usize);
-    let dir = dir_at
-        .checked_add(dir_len)
-        .filter(|&e| e <= end)
-        .and_then(|e| bytes.get(dir_at..e));
-    let dir = dir.ok_or(ZipError::Corrupt)?;
-
-    let mut records = Vec::with_capacity(usize::from(total));
+    let ratio_cap = RATIO_ALLOWANCE.saturating_add(MAX_RATIO.saturating_mul(len));
+    let mut left = max_total.min(ratio_cap);
+    let mut files = Vec::with_capacity(usize::from(total));
+    let mut spans = Vec::with_capacity(usize::from(total));
     let mut names = HashSet::new();
-    let mut rest = dir;
+    let mut rest = &dir[..];
     for _ in 0..total {
         let h = header(&mut rest)?;
-        let special = h.special();
-        let Header {
-            flags,
-            method,
-            crc,
-            packed_len,
-            size,
-            disk,
-            at,
-            name,
-            ..
-        } = h;
-        if flags & ENCRYPTED != 0 || disk != 0 || ![0, 8].contains(&method) || special {
+        if h.flags & ENCRYPTED != 0 || h.disk != 0 || ![0, 8].contains(&h.method) || h.special() {
             return Err(ZipError::Corrupt);
         }
-        let name = match std::str::from_utf8(name) {
+        let name = match std::str::from_utf8(h.name) {
             Ok(s) => s.to_owned(),
-            Err(_) if flags & UTF8 != 0 => return Err(ZipError::Corrupt),
+            Err(_) if h.flags & UTF8 != 0 => return Err(ZipError::Corrupt),
             // ponytail: Latin-1 for names written without the UTF-8 flag (CP437 or a locale code page in the
             // wild); ASCII is exact and nothing fails. A CP437 table if such archives show up with accents.
-            Err(_) => name.iter().map(|&b| char::from(b)).collect(),
+            Err(_) => h.name.iter().map(|&b| char::from(b)).collect(),
         };
         let path = clean(&name)?.filter(|p| names.insert(p.clone()));
 
         // The local header only locates the data (its own sizes may be zero behind a data descriptor).
-        let at = at as usize;
-        let local = bytes
-            .get(at..)
-            .filter(|l| l.starts_with(&SIG_LOCAL) && l.len() >= LOCAL_LEN);
-        let local = local.ok_or(ZipError::Corrupt)?;
-        let start =
-            at + LOCAL_LEN + usize::from(u16_at(local, 26)?) + usize::from(u16_at(local, 28)?);
-        let stop = start
-            .checked_add(packed_len as usize)
-            .filter(|&e| e <= dir_at);
-        let stop = stop.ok_or(ZipError::Corrupt)?;
-        let packed = &bytes[start..stop];
-        records.push(Record {
+        let local = read_at(&mut file, h.at.into(), LOCAL_LEN)?;
+        if !local.starts_with(&SIG_LOCAL) {
+            return Err(ZipError::Corrupt);
+        }
+        let skip =
+            LOCAL_LEN as u64 + u64::from(u16_at(&local, 26)?) + u64::from(u16_at(&local, 28)?);
+        let start = u64::from(h.at) + skip;
+        let stop = start + u64::from(h.packed_len);
+        if stop > u64::from(dir_at) {
+            return Err(ZipError::Corrupt);
+        }
+        // The local header's first byte and the data's end, for the overlap check.
+        spans.push((u64::from(h.at), stop));
+        // A folder, or the repeat of an earlier name: nothing to read.
+        let Some(path) = path else { continue };
+        let size = u64::from(h.size);
+        if size > left || h.method == 0 && h.packed_len != h.size {
+            return Err(ZipError::Corrupt);
+        }
+        left -= size;
+        files.push(Listed {
             path,
-            method,
-            crc,
             size,
-            packed,
-            span: (at, stop),
+            crc: h.crc,
+            method: h.method,
+            start,
+            packed_len: h.packed_len.into(),
         });
     }
 
@@ -295,40 +312,43 @@ pub fn read(bytes: &[u8], max_total: u64) -> Result<Vec<Entry>, ZipError> {
 
     // Entries side by side: a record pointing into another's bytes (or the same ones twice) is how a few KiB become
     // gigabytes without a nested archive.
-    let mut spans: Vec<_> = records.iter().map(|r| r.span).collect();
     spans.sort_unstable();
     if spans.windows(2).any(|w| w[0].1 > w[1].0) {
         return Err(ZipError::Corrupt);
     }
-
-    let ratio_cap = RATIO_ALLOWANCE.saturating_add(MAX_RATIO.saturating_mul(bytes.len() as u64));
-    let mut left = max_total.min(ratio_cap);
-    let mut files = Vec::with_capacity(records.len());
-    for r in records {
-        let Some(path) = r.path else { continue };
-        if u64::from(r.size) > left {
-            return Err(ZipError::Corrupt);
-        }
-        // Inflated into exactly the declared size: one byte more or fewer is an error, and the allocation never
-        // exceeds what was just checked against the budget.
-        let mut data = match r.method {
-            0 if r.packed.len() == r.size as usize => r.packed.to_vec(),
-            0 => return Err(ZipError::Corrupt),
-            _ => decompress_to_vec_with_limit(r.packed, r.size as usize)
-                .map_err(|_| ZipError::Corrupt)?,
-        };
-        if data.len() != r.size as usize || crc32fast::hash(&data) != r.crc {
-            return Err(ZipError::Corrupt);
-        }
-        // Inflating grows the buffer by doubling; without this the kept entries can hold up to twice `max_total`.
-        data.shrink_to_fit();
-        left -= u64::from(r.size);
-        files.push(Entry { path, data });
-    }
     Ok(files)
 }
 
-/// The central directory may be at most this long for [`open_entry`] (an APK's is well under 1 MiB).
+/// The bytes of `listed`, one of the files [`scan`] found in `file`, copied (method 0) or inflated (8) as they are
+/// read. A read fails with `InvalidData` or `UnexpectedEof` when the stream is damaged, ends before or goes on past
+/// the declared size, or its CRC does not match once read to the end (an empty file's too).
+pub fn stream<'a>(
+    mut file: impl Read + Seek + 'a,
+    listed: &Listed,
+) -> io::Result<Box<dyn Read + 'a>> {
+    file.seek(SeekFrom::Start(listed.start))?;
+    let packed = file.take(listed.packed_len);
+    let data: Box<dyn Read + 'a> = match listed.method {
+        0 => Box::new(packed),
+        _ => Box::new(Inflate {
+            packed,
+            state: InflateState::new_boxed(DataFormat::Raw),
+            buf: vec![0; 1 << 16],
+            at: 0,
+            len: 0,
+            done: false,
+        }),
+    };
+    Ok(Box::new(Checked {
+        data,
+        left: listed.size,
+        ended: false,
+        crc: listed.crc,
+        hasher: crc32fast::Hasher::new(),
+    }))
+}
+
+/// The central directory may be at most this long for [`open_entry`] and [`scan`] (an APK's is well under 1 MiB).
 const MAX_STREAMED_DIR: u32 = 16 << 20;
 
 /// `len` bytes of `file` from `at`.
@@ -357,7 +377,7 @@ pub fn open_entry<'a>(
     mut file: impl Read + Seek + 'a,
     name: &str,
 ) -> Result<Option<Streamed<'a>>, ZipError> {
-    let (dir, total, dir_at, len) = directory(&mut file)?;
+    let (dir, total, dir_at, len) = directory(&mut file, MAX_STREAMED_DIR)?;
     let mut rest = &dir[..];
     for _ in 0..total {
         let h = header(&mut rest)?;
@@ -385,35 +405,26 @@ pub fn open_entry<'a>(
         if start + u64::from(h.packed_len) > dir_at.into() {
             return Err(ZipError::Corrupt);
         }
-        file.seek(SeekFrom::Start(start))
-            .map_err(|_| ZipError::Corrupt)?;
-        let packed = file.take(h.packed_len.into());
-        let data: Box<dyn Read + 'a> = match h.method {
-            0 => Box::new(packed),
-            _ => Box::new(Inflate {
-                packed,
-                state: InflateState::new_boxed(DataFormat::Raw),
-                buf: vec![0; 1 << 16],
-                at: 0,
-                len: 0,
-                done: false,
-            }),
-        };
-        let checked = Checked {
-            data,
-            left: h.size.into(),
-            ended: false,
+        let listed = Listed {
+            path: name.to_owned(),
+            size: h.size.into(),
             crc: h.crc,
-            hasher: crc32fast::Hasher::new(),
+            method: h.method,
+            start,
+            packed_len: h.packed_len.into(),
         };
-        return Ok(Some((Box::new(checked), h.size.into())));
+        let data = stream(file, &listed).map_err(|_| ZipError::Corrupt)?;
+        return Ok(Some((data, listed.size)));
     }
     Ok(None)
 }
 
-/// The central directory of `file` as [`open_entry`] reads it: its bytes, its record count, where it starts, and the
+/// The central directory of `file`, at most `max_dir` long: its bytes, its record count, where it starts, and the
 /// archive's length.
-fn directory(file: &mut (impl Read + Seek)) -> Result<(Vec<u8>, u16, u32, u64), ZipError> {
+fn directory(
+    file: &mut (impl Read + Seek),
+    max_dir: u32,
+) -> Result<(Vec<u8>, u16, u32, u64), ZipError> {
     let len = file.seek(SeekFrom::End(0)).map_err(|_| ZipError::NotZip)?;
     let tail_at = len.saturating_sub((END_LEN + 0xFFFF) as u64);
     let tail = read_at(file, tail_at, (len - tail_at) as usize)?;
@@ -425,7 +436,7 @@ fn directory(file: &mut (impl Read + Seek)) -> Result<(Vec<u8>, u16, u32, u64), 
     if disk != 0
         || dir_disk != 0
         || here != total
-        || dir_len > MAX_STREAMED_DIR
+        || dir_len > max_dir
         || dir_end > tail_at + end as u64
     {
         return Err(ZipError::Corrupt);
@@ -441,7 +452,7 @@ fn directory(file: &mut (impl Read + Seek)) -> Result<(Vec<u8>, u16, u32, u64), 
 /// The files of the archive `file`, named as [`open_entry`] takes them, each with its size and CRC-32: the central
 /// directory's word, which [`open_entry`] checks as the file streams. Folders and names [`read`] refuses are left out.
 pub fn list(mut file: impl Read + Seek) -> Result<Vec<(String, u64, u32)>, ZipError> {
-    let (dir, total, ..) = directory(&mut file)?;
+    let (dir, total, ..) = directory(&mut file, MAX_STREAMED_DIR)?;
     let mut rest = &dir[..];
     let mut files = Vec::new();
     for _ in 0..total {
