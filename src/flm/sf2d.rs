@@ -3,10 +3,11 @@
 //! kept as it is.
 
 use super::chunk::{ChunkIter, ChunkWriter, ContentPath, FlmError};
-use honeydew_audio::soundfont::{ZONE_FIELDS, ZoneOverride};
+use honeydew_audio::soundfont::{PATCH_MODS, PatchMod, ZONE_FIELDS, ZoneOverride};
 
 const ID: [u8; 4] = *b"SF2D";
 const ZONE_ID: [u8; 4] = *b"SF2Z";
+const MOD_ID: [u8; 4] = *b"SF2M";
 
 /// What a SoundFont Player plays: the SoundFont at `path` and its patch `patch` (an index into its patches in file
 /// order, [`crate::sf2::presets`]).
@@ -20,6 +21,11 @@ pub struct Sf2d {
 pub struct Sf2z {
     pub patch: i32,
     pub zones: Vec<ZoneOverride>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Sf2m {
+    pub mods: [PatchMod; PATCH_MODS],
 }
 
 
@@ -159,6 +165,55 @@ impl Sf2z {
             zones: Vec::new(),
         }
         .write(cstm)
+    }
+}
+
+impl Sf2m {
+    pub fn read(cstm: &[u8]) -> Option<Self> {
+        let chunk = ChunkIter::new(cstm, "CSTM")
+            .map_while(Result::ok)
+            .find(|c| c.id == MOD_ID)?;
+        let b = chunk.payload;
+        if b.len() < 7 * PATCH_MODS {
+            return None;
+        }
+        let mut mods = [PatchMod::default(); PATCH_MODS];
+        for (i, slot) in mods.iter_mut().enumerate() {
+            let at = 7 * i;
+            *slot = PatchMod {
+                src: b[at],
+                curve: b[at + 1],
+                dest: b[at + 2],
+                amount: f32::from_le_bytes(b[at + 3..at + 7].try_into().ok()?),
+            };
+        }
+        Some(Self { mods })
+    }
+
+    pub fn write(&self, cstm: Option<&[u8]>) -> Result<Vec<u8>, FlmError> {
+        let empty = self.mods.iter().all(|m| *m == PatchMod::default());
+        let mut buf = Vec::with_capacity(7 * PATCH_MODS);
+        for m in &self.mods {
+            buf.push(m.src);
+            buf.push(m.curve);
+            buf.push(m.dest);
+            buf.extend_from_slice(&m.amount.to_le_bytes());
+        }
+        let mut writer = ChunkWriter::default();
+        let mut written = false;
+        for chunk in ChunkIter::new(cstm.unwrap_or_default(), "CSTM").map_while(Result::ok) {
+            if chunk.id == MOD_ID {
+                if !empty && !std::mem::replace(&mut written, true) {
+                    writer.chunk(MOD_ID, |w| w.raw(&buf))?;
+                }
+            } else {
+                writer.chunk(chunk.id, |w| w.raw(chunk.payload))?;
+            }
+        }
+        if !empty && !written {
+            writer.chunk(MOD_ID, |w| w.raw(&buf))?;
+        }
+        Ok(writer.into_bytes())
     }
 }
 

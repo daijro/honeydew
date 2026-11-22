@@ -6,8 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::samples::{sampler_zones, shape_key};
-use crate::flm::sf2d::Sf2d;
-use crate::flm::sf2d::Sf2z;
+use crate::flm::sf2d::{Sf2d, Sf2m, Sf2z};
 use crate::panels::cstm::settings_from_cstm;
 use crate::params::{Role, module_spec};
 use crate::sample_cache::SampleCache;
@@ -141,6 +140,9 @@ fn soundfont_player(
         && sf2z.patch == sf2d.patch
     {
         player.apply_zone_overrides(&sf2z.zones);
+    }
+    if let Some(sf2m) = custom.and_then(Sf2m::read) {
+        player.apply_patch_mods(&sf2m.mods);
     }
     stream(player.rings(), samples);
     player

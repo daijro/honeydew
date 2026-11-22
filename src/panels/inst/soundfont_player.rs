@@ -26,11 +26,13 @@ use eframe::egui::{
 use crate::ui::UiCtx;
 
 use crate::flm::chunk::ContentPath;
-use crate::flm::sf2d::Sf2d;
-use crate::flm::sf2d::Sf2z;
+use crate::flm::sf2d::{Sf2d, Sf2m, Sf2z};
 use crate::panels::build::*;
 use crate::sf2::{Control, Preset, Sf2Error};
-use honeydew_audio::soundfont::{ZONE_CTL_BASE, ZONE_FIELDS, ZONE_RESET_KEY, ZONE_SELECT_KEY, ZoneInfo, ZoneOverride};
+use honeydew_audio::soundfont::{
+    MOD_CLEAR_KEY, MOD_CTL_BASE, MOD_SELECT_KEY, PATCH_MODS, PatchMod, ZONE_CTL_BASE, ZONE_FIELDS,
+    ZONE_RESET_KEY, ZONE_SELECT_KEY, ZoneInfo, ZoneOverride,
+};
 
 /// The SoundFont Player's module type.
 pub const TYPE_ID: u16 = 52;
@@ -60,6 +62,15 @@ const ZONE_KEY_LO: &str = "sf2_key_lo";
 const ZONE_KEY_HI: &str = "sf2_key_hi";
 const ZONE_VEL_LO: &str = "sf2_vel_lo";
 const ZONE_VEL_HI: &str = "sf2_vel_hi";
+
+const MOD_SELECT: u32 = MOD_SELECT_KEY; // 7200
+const MOD_PREV: u32 = 7201;
+const MOD_LABEL: u32 = 7202;
+const MOD_NEXT: u32 = 7203;
+const MOD_CLEAR: u32 = MOD_CLEAR_KEY; // 7205
+const MOD_GRID: u32 = 7207;
+const MOD_SEEDED: &str = "sf2_mod_seeded";
+const MOD_SYNC: &str = "sf2_mod_sync";
 
 /// Honeydew change (GitHub #135): the card wiring's flag for a portrait phone-size window (`ui::rack`, whose
 /// card is taller there): the ten controls under the patch row take two rows of five, so their labels and values fit.
@@ -91,6 +102,79 @@ pub fn edit_zones(
     fonts: &SoundFonts,
 ) -> ZoneOutcome {
     let mut out = ZoneOutcome::default();
+    let pressed = |id| edited.contains(&id) && state.settings.get(&id).is_some_and(|&v| v >= 0.5);
+    let mut msel = state
+        .settings
+        .get(&MOD_SELECT)
+        .copied()
+        .unwrap_or(0.0)
+        .round()
+        .clamp(0.0, (PATCH_MODS - 1) as f32) as usize;
+    if let Some(by) = match (pressed(MOD_PREV), pressed(MOD_NEXT)) {
+        (true, false) => Some(-1_i64),
+        (false, true) => Some(1_i64),
+        _ => None,
+    } {
+        msel = (msel as i64 + by).rem_euclid(PATCH_MODS as i64) as usize;
+        state.settings.insert(MOD_SELECT, msel as f32);
+        state.flags.remove(MOD_SEEDED);
+        state.flags.insert(MOD_SYNC, msel);
+        out.sent.push((MOD_SELECT, msel as f32));
+        return out;
+    }
+    if state.flags.get(MOD_SYNC).copied() != Some(msel) {
+        state.flags.insert(MOD_SYNC, msel);
+        state.flags.remove(MOD_SEEDED);
+        out.sent.push((MOD_SELECT, msel as f32));
+    }
+    let cstm = module.file.custom_data.as_deref();
+    if pressed(MOD_CLEAR) {
+        let mut sf2m = cstm.and_then(Sf2m::read).unwrap_or_default();
+        sf2m.mods[msel] = PatchMod::default();
+        if let Ok(blob) = sf2m.write(cstm) {
+            module.file.custom_data = Some(blob);
+            state.flags.remove(MOD_SEEDED);
+            state.settings.insert(MOD_CTL_BASE, 0.0);
+            state.settings.insert(MOD_CTL_BASE + 1, 0.0);
+            state.settings.insert(MOD_CTL_BASE + 2, 0.0);
+            state.settings.insert(MOD_CTL_BASE + 3, 0.5);
+            out.sent.push((MOD_SELECT, msel as f32));
+            out.sent.push((MOD_CLEAR, 1.0));
+            out.stored = true;
+            out.zone_edit = true;
+            out.commit_now = true;
+        }
+        return out;
+    }
+    let mut mod_touched = false;
+    let mut sf2m = cstm.and_then(Sf2m::read).unwrap_or_default();
+    for &id in edited {
+        if let Some(f) = id.checked_sub(MOD_CTL_BASE)
+            && f < 4
+            && let Some(&v) = state.settings.get(&id)
+        {
+            if !mod_touched {
+                out.sent.push((MOD_SELECT, msel as f32));
+                mod_touched = true;
+            }
+            out.sent.push((id, v));
+            let pm = &mut sf2m.mods[msel];
+            match f {
+                0 => pm.src = v.round().clamp(0.0, 14.0) as u8,
+                1 => pm.curve = v.round().clamp(0.0, 6.0) as u8,
+                2 => pm.dest = v.round().clamp(0.0, 16.0) as u8,
+                3 => pm.amount = v.clamp(0.0, 1.0),
+                _ => {}
+            }
+        }
+    }
+    if mod_touched && let Ok(blob) = sf2m.write(cstm) {
+        module.file.custom_data = Some(blob);
+        out.stored = true;
+        out.zone_edit = true;
+        return out;
+    }
+
     let Some((patch, zones)) = current_zones(module, fonts) else {
         return out;
     };
@@ -98,7 +182,6 @@ pub fn edit_zones(
         return out;
     }
     let sel = state.settings.get(&ZONE_SELECT).copied().unwrap_or(0.0).round().clamp(0.0, (zones.len() - 1) as f32) as usize;
-    let pressed = |id| edited.contains(&id) && state.settings.get(&id).is_some_and(|&v| v >= 0.5);
     if let Some(by) = match (pressed(ZONE_PREV), pressed(ZONE_NEXT)) {
         (true, false) => Some(-1_i64),
         (false, true) => Some(1_i64),
@@ -199,7 +282,9 @@ pub fn wire(
         .flags
         .insert(HAS_CONTROLS, usize::from(!controls.is_empty()));
         
-    if controls.is_empty() && state.tab >= 4 {
+    if controls.is_empty() && state.tab >= 5 {
+        state.tab = 0;
+    } else if !controls.is_empty() && state.tab >= 4 {
         state.tab = 0;
     }
 
@@ -254,6 +339,32 @@ pub fn wire(
         }
     }
     
+    let msel = state
+        .settings
+        .get(&MOD_SELECT)
+        .copied()
+        .unwrap_or(0.0)
+        .round()
+        .clamp(0.0, (PATCH_MODS - 1) as f32) as usize;
+    state.settings.insert(MOD_SELECT, msel as f32);
+    state.texts.insert(MOD_LABEL, format!("Mod {}/{PATCH_MODS}", msel + 1));
+    let mut mh = std::collections::hash_map::DefaultHasher::new();
+    (msel, module.file.custom_data.as_deref()).hash(&mut mh);
+    let mkey = mh.finish() as usize;
+    if state.flags.insert(MOD_SEEDED, mkey) != Some(mkey) {
+        let pm = module
+            .file
+            .custom_data
+            .as_deref()
+            .and_then(Sf2m::read)
+            .unwrap_or_default()
+            .mods[msel];
+        state.settings.insert(MOD_CTL_BASE, f32::from(pm.src));
+        state.settings.insert(MOD_CTL_BASE + 1, f32::from(pm.curve));
+        state.settings.insert(MOD_CTL_BASE + 2, f32::from(pm.dest));
+        state.settings.insert(MOD_CTL_BASE + 3, pm.amount);
+    }
+
     for (slot, key) in SHOWN.iter().enumerate() {
         state.flags.insert(key, usize::from(slot < controls.len()));
     }
@@ -385,8 +496,9 @@ const WITH_CONTROLS: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 1)]);
 const PATCH_SHOWN: Show = Show::All(&[IDLE, Show::Tab(0)]);
 const VIB_SHOWN: Show = Show::All(&[IDLE, Show::Tab(1)]);
 const FILTER_SHOWN: Show = Show::All(&[IDLE, Show::Tab(2)]);
+const MODS_SHOWN: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 0), Show::Tab(3)]);
 const CONTROLS_SHOWN: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 1), Show::Tab(3)]);
-const ZONES_SHOWN: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 0), Show::Tab(3)]);
+const ZONES_SHOWN: Show = Show::All(&[IDLE, Show::Flag(HAS_CONTROLS, 0), Show::Tab(4)]);
 const ZONE_LIST: Show = Show::All(&[ZONES_SHOWN, Show::Flag(HAS_ZONES, 1)]);
 const NO_ZONES: Show = Show::All(&[ZONES_SHOWN, Show::Flag(HAS_ZONES, 0)]);
 
@@ -566,6 +678,119 @@ fn zone_tabs(
     Vec::new()
 }
 
+const MOD_SRC_ITEMS: [&str; 15] = [
+    "Vel", "Key", "ModWhl", "AfterT", "PitchWhl",
+    "CC 2", "CC 11", "CC 71", "CC 72", "CC 73",
+    "CC 74", "CC 75", "CC 76", "CC 77", "Const",
+];
+
+const MOD_CURVE_ITEMS: [&str; 7] = [
+    "Lin", "Inv Lin", "Concave", "Inv Conc", "Convex", "Bipolar", "Switch",
+];
+
+const MOD_DEST_ITEMS: [&str; 17] = [
+    "Off", "Pitch", "Cutoff", "Resonance", "Atten", "Pan",
+    "Vib Depth", "Vib Rate", "Mod Pitch", "Mod Filter", "Mod Vol", "Mod Rate",
+    "Vol Atk", "Vol Dec", "Vol Rel", "Mod Atk", "Mod Dec",
+];
+
+fn mod_amt_text(v: f32) -> String {
+    let pct = (200.0 * v.clamp(0.0, 1.0) - 100.0).round() as i32;
+    if pct == 0 { "0%".into() } else { format!("{pct:+}%") }
+}
+
+fn mod_grid(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    id: Id,
+    rect: Rect,
+    module: &mut ModuleInstance,
+    state: &mut PanelState,
+    ink: Color32,
+) -> Vec<usize> {
+    let px = 1.0 / cx.m.ppp();
+    let u = rect.height() / 2.0;
+    let pad_x = (0.35 * u).min(rect.width() * 0.05);
+    let pad_y = (0.14 * u).min(rect.height() * 0.12);
+    let area = Rect::from_min_max(
+        pos2(rect.left() + pad_x, rect.top() + pad_y),
+        pos2(rect.right() - pad_x, rect.bottom() - pad_y),
+    );
+    if area.width() <= 8.0 * px || area.height() <= 8.0 * px {
+        return Vec::new();
+    }
+
+    let sf2m = module
+        .file
+        .custom_data
+        .as_deref()
+        .and_then(Sf2m::read)
+        .unwrap_or_default();
+    let sel = state
+        .settings
+        .get(&MOD_SELECT)
+        .copied()
+        .unwrap_or(0.0)
+        .round()
+        .clamp(0.0, (PATCH_MODS - 1) as f32) as usize;
+
+    let painter = ui.painter();
+    let bg = cx.theme.colors.menu_fill.to_color32();
+    let text_col = cx.theme.colors.text.to_color32();
+    let active_bg = Color32::from_rgb(
+        ((u16::from(bg.r()) * 3 + u16::from(ink.r())) / 4) as u8,
+        ((u16::from(bg.g()) * 3 + u16::from(ink.g())) / 4) as u8,
+        ((u16::from(bg.b()) * 3 + u16::from(ink.b())) / 4) as u8,
+    );
+    let font = cx.m.font_id(FontSize::Pt8);
+    let gap = (3.0 * px).max(0.08 * u);
+    let cw = (area.width() - 3.0 * gap) / 4.0;
+    let ch = (area.height() - gap) / 2.0;
+    let rad = (3.5 * px).min(ch * 0.25);
+
+    for (i, pm) in sf2m.mods.iter().enumerate() {
+        let col = (i % 4) as f32;
+        let row = (i / 4) as f32;
+        let cell = Rect::from_min_size(
+            pos2(area.left() + col * (cw + gap), area.top() + row * (ch + gap)),
+            vec2(cw, ch),
+        );
+        let resp = ui.interact(cell, id.with(("slot", i)), Sense::click());
+        if resp.clicked() && i != sel {
+            state.settings.insert(MOD_SELECT, i as f32);
+            state.flags.remove(MOD_SEEDED);
+            ui.ctx().request_repaint();
+        }
+        let active = pm.dest != 0;
+        let selected = i == sel;
+        if selected {
+            painter.rect_filled(cell, rad, if active { ink } else { text_col });
+            painter.rect_filled(
+                cell.shrink(1.5 * px),
+                (rad - 1.5 * px).max(0.0),
+                if active { active_bg } else { bg },
+            );
+        } else {
+            painter.rect_filled(cell, rad, if active { active_bg } else { bg });
+        }
+        let src = MOD_SRC_ITEMS.get(usize::from(pm.src)).copied().unwrap_or("?");
+        let dest = MOD_DEST_ITEMS.get(usize::from(pm.dest)).copied().unwrap_or("Off");
+        let label = if active {
+            format!("{}: {src} > {dest}", i + 1)
+        } else {
+            format!("{}: Off", i + 1)
+        };
+        painter.text(
+            cell.center(),
+            Align2::CENTER_CENTER,
+            label,
+            font.clone(),
+            if active || selected { text_col } else { ink },
+        );
+    }
+    Vec::new()
+}
+
 fn zone_piano(
     ui: &mut Ui,
     cx: &UiCtx,
@@ -695,7 +920,7 @@ pub fn panel() -> Option<Panel> {
             .show(Show::Flag(SHOWN[slot], 1))
     });
     Some(Panel::new(vstack([
-        tabs(TABS, "PATCH · VIBRATO · FILTER · ZONES")
+        tabs(TABS, "PATCH · VIBRATO · FILTER · MODS · ZONES")
             .h(Size::U(1.25))
             .show(NO_CONTROLS),
         tabs(TABS_SFZ, "PATCH · VIBRATO · FILTER · CONTROLS")
@@ -755,6 +980,46 @@ pub fn panel() -> Option<Panel> {
                 .value_fn(quality_text),
         ])
         .show(FILTER_SHOWN),
+        vstack([
+            hstack([
+                text_toggle(MOD_PREV, "<")
+                    .momentary()
+                    .w(Size::U(0.9))
+                    .margins(0.06, 0.05, 0.06, 0.05),
+                text(MOD_LABEL, "Mod 1/8")
+                    .align(Align2::CENTER_CENTER)
+                    .ink(Ink::Text)
+                    .w(Size::U(4.5)),
+                text_toggle(MOD_NEXT, ">")
+                    .momentary()
+                    .w(Size::U(0.9))
+                    .margins(0.06, 0.05, 0.06, 0.05),
+                spacer(7208).w(Size::Flex(1.0)),
+                text_toggle(MOD_CLEAR, "Clear")
+                    .momentary()
+                    .w(Size::U(2.2))
+                    .margins(0.06, 0.1, 0.06, 0.1),
+            ])
+            .h(Size::U(1.1))
+            .margins(0.12, 0.35, 0.08, 0.35),
+            hstack([
+                spinner(7210, "Source")
+                    .items(&MOD_SRC_ITEMS)
+                    .items_per_column(5),
+                spinner(7211, "Curve").items(&MOD_CURVE_ITEMS),
+                spinner(7212, "Dest")
+                    .items(&MOD_DEST_ITEMS)
+                    .items_per_column(6),
+                knob(7213, "Amount").default(0.5).value_fn(mod_amt_text),
+            ])
+            .ml(0.3)
+            .mr(0.3),
+            display(MOD_GRID)
+                .h(Size::U(2.0))
+                .margins(0.0, 0.0, 0.0, 0.0)
+                .draw(mod_grid),
+        ])
+        .show(MODS_SHOWN),
         vstack([
             hstack([
                 text_toggle(ZONE_PREV, "<")

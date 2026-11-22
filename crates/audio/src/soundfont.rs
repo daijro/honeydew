@@ -118,6 +118,99 @@ pub const ZONE_SELECT_KEY: u32 = 7000;
 pub const ZONE_RESET_KEY: u32 = 7005;
 pub const ZONE_CTL_BASE: u32 = 7100;
 
+pub const PATCH_MODS: usize = 8;
+pub const MOD_SELECT_KEY: u32 = 7200;
+pub const MOD_CLEAR_KEY: u32 = 7205;
+pub const MOD_CTL_BASE: u32 = 7210;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PatchMod {
+    pub src: u8,
+    pub curve: u8,
+    pub dest: u8,
+    pub amount: f32,
+}
+
+impl Default for PatchMod {
+    fn default() -> Self {
+        Self {
+            src: 0,
+            curve: 0,
+            dest: 0,
+            amount: 0.5,
+        }
+    }
+}
+
+impl PatchMod {
+    fn to_mod(self) -> Option<Mod> {
+        let (cc, index) = match self.src {
+            0 => (false, 2),  // Vel
+            1 => (false, 3),  // Key
+            2 => (true, 1),   // ModWhl
+            3 => (false, 13), // AfterT
+            4 => (false, 14), // PitchWhl
+            5 => (true, 2),   // CC 2
+            6 => (true, 11),  // CC 11
+            7 => (true, 71),  // CC 71
+            8 => (true, 72),  // CC 72
+            9 => (true, 73),  // CC 73
+            10 => (true, 74), // CC 74
+            11 => (true, 75), // CC 75
+            12 => (true, 76), // CC 76
+            13 => (true, 77), // CC 77
+            _ => (false, 0),  // Const
+        };
+        let (invert, bipolar, kind) = match self.curve {
+            1 => (true, false, 0),
+            2 => (false, false, 1),
+            3 => (true, false, 1),
+            4 => (false, false, 2),
+            5 => (false, true, 0),
+            6 => (false, false, 3),
+            _ => (false, false, 0),
+        };
+        let (dest, scale) = match self.dest {
+            1 => (FINE, 2400.0),
+            2 => (FILTER_FC, 12000.0),
+            3 => (FILTER_Q, 400.0),
+            4 => (ATTENUATION, 480.0),
+            5 => (PAN, 500.0),
+            6 => (VIB_LFO_TO_PITCH, 1200.0),
+            7 => (FREQ_VIB_LFO, 4800.0),
+            8 => (MOD_LFO_TO_PITCH, 1200.0),
+            9 => (MOD_LFO_TO_FILTER_FC, 12000.0),
+            10 => (MOD_LFO_TO_VOLUME, 240.0),
+            11 => (FREQ_MOD_LFO, 4800.0),
+            12 => (ATTACK, 6000.0),
+            13 => (DECAY, 6000.0),
+            14 => (RELEASE, 6000.0),
+            15 => (ATTACK_MOD_ENV, 6000.0),
+            16 => (DECAY_MOD_ENV, 6000.0),
+            _ => return None,
+        };
+        Some(Mod {
+            src: ModSrc {
+                index,
+                cc,
+                invert,
+                bipolar,
+                kind,
+            },
+            dest: dest as u16,
+            amount: ((2.0 * self.amount.clamp(0.0, 1.0) - 1.0) * scale).round() as i16,
+            amt_src: ModSrc {
+                index: 0,
+                cc: false,
+                invert: false,
+                bipolar: false,
+                kind: 0,
+            },
+            trans: 0,
+        })
+    }
+}
+
 /// A zone's generator amounts by operator. Ranges (43, 44) hold their low and high bytes.
 type Gens = [i16; GENERATORS];
 
@@ -233,6 +326,22 @@ fn table<'a>(pdta: &'a [u8], id: &[u8; 4], size: usize) -> Result<&'a [u8], Pars
         .ok_or(ParseError::Corrupted)
 }
 
+fn opt_table<'a>(pdta: &'a [u8], id: &[u8; 4], size: usize) -> Result<Option<&'a [u8]>, ParseError> {
+    let mut list = pdta;
+    while list.len() >= 8 {
+        let len = le32(list, 4) as usize;
+        let end = len.checked_add(8).filter(|&end| end <= list.len());
+        let body = &list[8..end.ok_or(ParseError::Corrupted)?];
+        if &list[..4] == id {
+            return (body.len() % size == 0 && body.len() >= size)
+                .then_some(Some(body))
+                .ok_or(ParseError::Corrupted);
+        }
+        list = list.get(8 + len + len % 2..).unwrap_or_default();
+    }
+    Ok(None)
+}
+
 /// `phdr`, which needs a patch besides its terminal record (the standard rejects less).
 fn phdr(pdta: &[u8]) -> Result<&[u8], ParseError> {
     let phdr = table(pdta, b"phdr", PHDR_SIZE)?;
@@ -280,6 +389,176 @@ fn gens(table: &[u8]) -> Vec<Gen> {
         amount: [r[2], r[3]],
     };
     table.as_chunks::<4>().0.iter().map(generator).collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ModSrc {
+    index: u8,
+    cc: bool,
+    invert: bool,
+    bipolar: bool,
+    kind: u8,
+}
+
+impl ModSrc {
+    fn from_u16(raw: u16) -> Self {
+        Self {
+            index: (raw & 0x7F) as u8,
+            cc: (raw & 0x80) != 0,
+            invert: (raw & 0x0100) != 0,
+            bipolar: (raw & 0x0200) != 0,
+            kind: ((raw >> 10) & 0x3F) as u8,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Mod {
+    src: ModSrc,
+    dest: u16,
+    amount: i16,
+    amt_src: ModSrc,
+    trans: u16,
+}
+
+fn mods(table: &[u8]) -> Vec<Mod> {
+    let modulator = |r: &[u8; 10]| Mod {
+        src: ModSrc::from_u16(le16(r, 0)),
+        dest: le16(r, 2),
+        amount: i16::from_le_bytes([r[4], r[5]]),
+        amt_src: ModSrc::from_u16(le16(r, 6)),
+        trans: le16(r, 8),
+    };
+    table.as_chunks::<10>().0.iter().map(modulator).collect()
+}
+
+fn same_mod(a: &Mod, b: &Mod) -> bool {
+    a.src == b.src && a.dest == b.dest && a.amt_src == b.amt_src && a.trans == b.trans
+}
+
+fn push_replace_mods(dst: &mut Vec<Mod>, src: &[Mod]) {
+    for &m in src {
+        if let Some(slot) = dst.iter_mut().find(|existing| same_mod(existing, &m)) {
+            slot.amount = m.amount;
+        } else {
+            dst.push(m);
+        }
+    }
+}
+
+fn add_mods(dst: &mut Vec<Mod>, src: &[Mod]) {
+    for &m in src {
+        if let Some(slot) = dst.iter_mut().find(|existing| same_mod(existing, &m)) {
+            slot.amount = slot.amount.saturating_add(m.amount);
+        } else {
+            dst.push(m);
+        }
+    }
+}
+
+fn zone_mods<'a>(bags: &[u16], list: &'a [Mod], zone: usize) -> &'a [Mod] {
+    let (Some(&a), Some(&b)) = (bags.get(zone), bags.get(zone + 1)) else {
+        return &[];
+    };
+    list.get(usize::from(a)..usize::from(b)).unwrap_or(&[])
+}
+
+fn sf2_concave(u: f32) -> f32 {
+    if u <= 0.0 {
+        0.0
+    } else if u >= 1.0 {
+        1.0
+    } else {
+        let d = 1.0 - u;
+        if d <= 1e-4 {
+            1.0
+        } else {
+            (-20.0 / 96.0 * (d * d).log10()).clamp(0.0, 1.0)
+        }
+    }
+}
+
+struct ModInputs<'a> {
+    key: u8,
+    vel: f32,
+    cc: &'a [f32; 128],
+    aftertouch: f32,
+    wheel: f32,
+}
+
+impl ModSrc {
+    fn eval(self, inp: &ModInputs) -> f32 {
+        if !self.cc && self.index == 0 {
+            return 1.0;
+        }
+        let x = if self.cc {
+            inp.cc[usize::from(self.index)]
+        } else {
+            match self.index {
+                2 => inp.vel,
+                3 => f32::from(inp.key) / 127.0,
+                10 | 13 => inp.aftertouch,
+                14 => (0.5 * (inp.wheel + 1.0)).clamp(0.0, 1.0),
+                16 => 2.0 / 127.0,
+                _ => return 0.0,
+            }
+        }
+        .clamp(0.0, 1.0);
+        let u = if self.invert { 1.0 - x } else { x };
+        if self.bipolar {
+            let s = 2.0 * u - 1.0;
+            match self.kind {
+                1 => s.signum() * sf2_concave(s.abs()),
+                2 => s.signum() * (1.0 - sf2_concave(1.0 - s.abs())),
+                3 => {
+                    if u >= 0.5 { 1.0 } else { -1.0 }
+                }
+                _ => s,
+            }
+        } else {
+            match self.kind {
+                1 => sf2_concave(u),
+                2 => 1.0 - sf2_concave(1.0 - u),
+                3 => {
+                    if u >= 0.5 { 1.0 } else { 0.0 }
+                }
+                _ => u,
+            }
+        }
+    }
+}
+
+impl Mod {
+    fn eval(self, inp: &ModInputs) -> f32 {
+        let mut v = self.src.eval(inp) * self.amt_src.eval(inp);
+        if self.trans == 2 {
+            v = v.abs();
+        }
+        f32::from(self.amount) * v
+    }
+}
+
+fn has_default_mod(mods: &[Mod], cc: bool, index: u8, invert: bool, kind: u8, dest: usize) -> bool {
+    let target = Mod {
+        src: ModSrc {
+            index,
+            cc,
+            invert,
+            bipolar: false,
+            kind,
+        },
+        dest: dest as u16,
+        amount: 0,
+        amt_src: ModSrc {
+            index: 0,
+            cc: false,
+            invert: false,
+            bipolar: false,
+            kind: 0,
+        },
+        trans: 0,
+    };
+    mods.iter().any(|m| same_mod(m, &target))
 }
 
 /// `base` with the generators of `zone` set; a later generator wins over an earlier one.
@@ -351,6 +630,10 @@ pub struct SoundFont {
     /// before any is played (the first `sw_default`).
     switches: Option<[u8; 2]>,
     switch: Option<u8>,
+    pmod_ndx: Vec<u16>,
+    pmod: Vec<Mod>,
+    imod_ndx: Vec<u16>,
+    imod: Vec<Mod>,
 }
 
 /// The tables of a SoundFont file, checked: everything [`SoundFont`] keeps besides the file.
@@ -364,6 +647,10 @@ struct Tables {
     igen: Vec<Gen>,
     samples: Vec<SampleHeader>,
     smpl: Range<usize>,
+    pmod_ndx: Vec<u16>,
+    pmod: Vec<Mod>,
+    imod_ndx: Vec<u16>,
+    imod: Vec<Mod>,
 }
 
 impl Tables {
@@ -375,11 +662,31 @@ impl Tables {
         let phdr = phdr(pdta)?;
         let presets = headers(phdr);
         let preset_bags = column(&phdr[..(presets.len() + 1) * PHDR_SIZE], PHDR_SIZE, 24);
-        let pbag = column(table(pdta, b"pbag", 4)?, 4, 0);
+        let pbag_raw = table(pdta, b"pbag", 4)?;
+        let pbag = column(pbag_raw, 4, 0);
         let pgen = gens(table(pdta, b"pgen", 4)?);
+        let (pmod_ndx, pmod) = match opt_table(pdta, b"pmod", 10)? {
+            Some(t) => {
+                let ndx = column(pbag_raw, 4, 2);
+                let list = mods(t);
+                ordered(&ndx, list.len())?;
+                (ndx, list)
+            }
+            None => (Vec::new(), Vec::new()),
+        };
         let inst_bags = column(table(pdta, b"inst", 22)?, 22, 20);
-        let ibag = column(table(pdta, b"ibag", 4)?, 4, 0);
+        let ibag_raw = table(pdta, b"ibag", 4)?;
+        let ibag = column(ibag_raw, 4, 0);
         let igen = gens(table(pdta, b"igen", 4)?);
+        let (imod_ndx, imod) = match opt_table(pdta, b"imod", 10)? {
+            Some(t) => {
+                let ndx = column(ibag_raw, 4, 2);
+                let list = mods(t);
+                ordered(&ndx, list.len())?;
+                (ndx, list)
+            }
+            None => (Vec::new(), Vec::new()),
+        };
         ordered(&preset_bags, pbag.len() - 1)?;
         ordered(&pbag, pgen.len())?;
         ordered(&inst_bags, ibag.len() - 1)?;
@@ -410,6 +717,10 @@ impl Tables {
             igen,
             samples,
             smpl,
+            pmod_ndx,
+            pmod,
+            imod_ndx,
+            imod,
         })
     }
 }
@@ -429,6 +740,10 @@ impl SoundFont {
             samples: t.samples,
             bytes,
             smpl: t.smpl,
+            pmod_ndx: t.pmod_ndx,
+            pmod: t.pmod,
+            imod_ndx: t.imod_ndx,
+            imod: t.imod,
             sfz_regions: Vec::new(),
             pcm: Vec::new(),
             curves: Vec::new(),
@@ -463,6 +778,10 @@ impl SoundFont {
             samples: Vec::new(),
             bytes: Vec::new(),
             smpl: 0..0,
+            pmod_ndx: Vec::new(),
+            pmod: Vec::new(),
+            imod_ndx: Vec::new(),
+            imod: Vec::new(),
             sfz_regions: Vec::new(),
             pcm: Vec::new(),
             curves: Vec::new(),
@@ -554,28 +873,51 @@ impl SoundFont {
         };
         let mut budget = WORK_BUDGET;
         let mut preset_global = defaults(false);
+        let mut preset_global_mods: &[Mod] = &[];
         let preset_zones = zones(&self.pbag, &self.pgen, first, last);
         for (i, preset_zone) in preset_zones.enumerate() {
             let preset = with(preset_global, preset_zone);
+            let pbag_idx = usize::from(first) + i;
             let Some(instrument) = index(preset_zone, INSTRUMENT) else {
                 if i == 0 {
                     preset_global = preset;
+                    preset_global_mods = zone_mods(&self.pmod_ndx, &self.pmod, pbag_idx);
                 }
                 continue;
             };
-            let Some(&[first, last]) = self.inst_bags.get(instrument..instrument + 2) else {
+            let mut pmods = preset_global_mods.to_vec();
+            push_replace_mods(&mut pmods, zone_mods(&self.pmod_ndx, &self.pmod, pbag_idx));
+            let Some(&[inst_first, inst_last]) = self.inst_bags.get(instrument..instrument + 2)
+            else {
                 continue;
             };
             let mut global = defaults(true);
-            for (j, zone) in zones(&self.ibag, &self.igen, first, last).enumerate() {
-                budget = budget.saturating_sub(1 + zone.len());
+            let mut inst_global_mods: &[Mod] = &[];
+            for (j, zone) in zones(&self.ibag, &self.igen, inst_first, inst_last).enumerate() {
+                let ibag_idx = usize::from(inst_first) + j;
+                let local_imods = zone_mods(&self.imod_ndx, &self.imod, ibag_idx);
+                budget = budget.saturating_sub(1 + zone.len() + local_imods.len());
                 if budget == 0 || regions.len() == MAX_REGIONS {
                     return regions;
                 }
                 let gens = with(global, zone);
                 match index(zone, SAMPLE) {
-                    Some(sample) => regions.extend(self.region(&preset, &gens, sample)),
-                    None if j == 0 => global = gens,
+                    Some(sample) => {
+                        let mut rmods = inst_global_mods.to_vec();
+                        push_replace_mods(&mut rmods, local_imods);
+                        let defs = [
+                            !has_default_mod(&rmods, false, 2, true, 1, ATTENUATION),
+                            !has_default_mod(&rmods, false, 2, true, 0, FILTER_FC),
+                            !has_default_mod(&rmods, true, 1, false, 0, VIB_LFO_TO_PITCH),
+                            !has_default_mod(&rmods, false, 13, false, 0, VIB_LFO_TO_PITCH),
+                        ];
+                        add_mods(&mut rmods, &pmods);
+                        regions.extend(self.region(&preset, &gens, sample, rmods, defs));
+                    }
+                    None if j == 0 => {
+                        global = gens;
+                        inst_global_mods = local_imods;
+                    }
                     None => {}
                 }
             }
@@ -584,7 +926,14 @@ impl SoundFont {
     }
 
     /// The region of preset values `preset` (added) over instrument values `gens` playing sample `sample`.
-    fn region(&self, preset: &Gens, gens: &Gens, sample: usize) -> Option<Region> {
+    fn region(
+        &self,
+        preset: &Gens,
+        gens: &Gens,
+        sample: usize,
+        mods: Vec<Mod>,
+        [def_vel_atten, def_vel_filter, def_cc1_vib, def_at_vib]: [bool; 4],
+    ) -> Option<Region> {
         let header = self.samples.get(sample)?;
         let end_n = header.name.iter().position(|&b| b == 0).unwrap_or(20);
         let name = String::from_utf8_lossy(&header.name[..end_n]).into_owned();
@@ -708,6 +1057,11 @@ impl SoundFont {
             filter,
             mod_lfo_fx: [mod_lfo_to_filter, mod_lfo_to_vol],
             mod_env,
+            mods,
+            def_vel_atten,
+            def_vel_filter,
+            def_cc1_vib,
+            def_at_vib,
             sfz: None,
         })
     }
@@ -1061,6 +1415,11 @@ pub struct Region {
     filter: Option<[f32; 2]>,
     mod_lfo_fx: [f32; 2],
     mod_env: ModEnv,
+    mods: Vec<Mod>,
+    def_vel_atten: bool,
+    def_vel_filter: bool,
+    def_cc1_vib: bool,
+    def_at_vib: bool,
     /// An SFZ region's sample and rules (its frames above are the sample's, its tune 0 and its scale the key
     /// tracking); `None` for a SoundFont's.
     sfz: Option<Rules>,
@@ -1270,6 +1629,11 @@ fn sfz_region(
         filter: None,
         mod_lfo_fx: [0.0; 2],
         mod_env: ModEnv::default(),
+        mods: Vec::new(),
+        def_vel_atten: true,
+        def_vel_filter: false,
+        def_cc1_vib: true,
+        def_at_vib: false,
         sfz: Some(Rules {
             sample,
             cents: f64::from(r.transpose) * 100.0 + f64::from(r.tune),
@@ -1365,6 +1729,7 @@ const WHEEL_CENTS: f32 = 50.0;
 const LFO_HZ: f32 = 8.176;
 /// Channel param 4, Pitch Bend: v = 1 is 2 semitones up.
 const PITCH_BEND: usize = 4;
+const AFTERTOUCH: usize = 5;
 const BEND_RANGE: f32 = 2.0;
 // The SFZ's DAHDSR law: a linear attack; decay and release fall exponentially, e^−9 (−78 dB) in their time.
 /// Below this level an SFZ voice's release ends: e^−9.
@@ -1423,8 +1788,8 @@ struct ModEnvState {
 }
 
 impl ModEnvState {
-    fn start(me: &ModEnv, key: u8) -> Self {
-        if me.to_pitch == 0.0 && me.to_filter == 0.0 {
+    fn start_with(me: &ModEnv, key: u8, extra: [f32; 6]) -> Self {
+        if me.to_pitch == 0.0 && me.to_filter == 0.0 && extra[4] == 0.0 {
             return Self::default();
         }
         let tc_secs = |tc: f32| {
@@ -1437,12 +1802,12 @@ impl ModEnvState {
         let key_delta = 60.0 - f32::from(key);
         let mut s = Self {
             stage: ModStage::Delay,
-            wait: tc_secs(me.delay),
-            attack: tc_secs(me.attack),
-            hold: tc_secs(me.hold + me.key_hold * key_delta),
-            decay: tc_secs(me.decay + me.key_decay * key_delta),
-            sustain: me.sustain.clamp(0.0, 1.0),
-            release: tc_secs(me.release),
+            wait: tc_secs(me.delay + extra[0]),
+            attack: tc_secs(me.attack + extra[1]),
+            hold: tc_secs(me.hold + me.key_hold * key_delta + extra[2]),
+            decay: tc_secs(me.decay + me.key_decay * key_delta + extra[3]),
+            sustain: (me.sustain - extra[4] / 1000.0).clamp(0.0, 1.0),
+            release: tc_secs(me.release + extra[5]),
             level: 0.0,
         };
         s.advance(0.0, false);
@@ -1800,7 +2165,10 @@ impl Voice {
     fn vibrato(
         &mut self,
         region: &Region,
-        wheel: f32,
+        vib_extra: f32,
+        vib_hz_scale: f32,
+        mod_extra: f32,
+        mod_hz_scale: f32,
         module: [f32; 3],
         custom: bool,
         dt: f32,
@@ -1808,11 +2176,15 @@ impl Voice {
         let [depth, hz, delay] = region.vibrato;
         let [mod_depth, mod_hz, mod_delay] = region.mod_lfo;
         let lfos = if custom {
-            [(0, [0.0; 3]), (0, [0.0, mod_hz, mod_delay]), (1, module)]
+            [
+                (0, [0.0; 3]),
+                (0, [0.0, mod_hz * mod_hz_scale, mod_delay]),
+                (1, module),
+            ]
         } else {
             [
-                (0, [depth + wheel, hz, delay]),
-                (0, [mod_depth, mod_hz, mod_delay]),
+                (0, [depth + vib_extra, hz * vib_hz_scale, delay]),
+                (0, [mod_depth + mod_extra, mod_hz * mod_hz_scale, mod_delay]),
                 (1, module),
             ]
         };
@@ -2000,7 +2372,7 @@ impl Voice {
             true => ctl.bend * def.bend[0],
             false => -ctl.bend * def.bend[1],
         };
-        let (vibrato, _) = self.vibrato(region, 0.0, ctl.vibrato, false, dt);
+        let (vibrato, _) = self.vibrato(region, 0.0, 1.0, 0.0, 1.0, ctl.vibrato, false, dt);
         let cents = pitch + self.m.pitch + bend + ctl.fine + vibrato + 100.0 * self.slide[0];
         // `min` also turns an infinite or NaN step into the cap.
         let step = (self.step * 2f64.powf(f64::from(cents) / 1200.0)).min(MAX_STEP);
@@ -2160,10 +2532,14 @@ pub struct SoundFontPlayer {
     /// The frames rendered.
     clock: u64,
     /// The CCs (0…1): as last set, where their smoothing stood at the last block's start, and where at its end.
+    aftertouch: f32,
     cc: [f32; 128],
     cc_then: [f32; 128],
     cc_now: [f32; 128],
     base_regions: Vec<Region>,
+    patch_specs: [PatchMod; PATCH_MODS],
+    patch_mods: [Option<Mod>; PATCH_MODS],
+    mod_slot: usize,
     zone: usize,
 }
 
@@ -2207,10 +2583,14 @@ impl SoundFontPlayer {
             previous: None,
             random: 0x9E37_79B9,
             clock: 0,
+            aftertouch: 0.0,
             cc,
             cc_then: cc,
             cc_now: cc,
             base_regions,
+            patch_specs: [PatchMod::default(); PATCH_MODS],
+            patch_mods: [None; PATCH_MODS],
+            mod_slot: 0,
             zone: 0,
         }
     }
@@ -2434,6 +2814,16 @@ impl SoundFontPlayer {
     }
 
     fn vol_env(rate: f32, params: &[f32], region: &Region, key: u8) -> ([f32; 4], u32, u32) {
+        Self::vol_env_with(rate, params, region, key, [0.0; 6])
+    }
+
+    fn vol_env_with(
+        rate: f32,
+        params: &[f32],
+        region: &Region,
+        key: u8,
+        extra: [f32; 6],
+    ) -> ([f32; 4], u32, u32) {
         if params[5] > 0.5 {
             let time = |v: f32| (10.0 * 0.95f32.mul_add(v, 0.05).powi(3)).max(MIN_TIME);
             let x = (127.0 * params[3]).round().clamp(1.0, 127.0) / 127.0;
@@ -2457,15 +2847,18 @@ impl SoundFontPlayer {
             }
         };
         let key_delta = 60.0 - f32::from(key);
-        let delay = frames(region.vol_delay);
-        let hold = frames(region.vol_hold + region.key_vol_hold * key_delta);
-        let decay_tc = (region.decay + region.key_vol_decay * key_delta).clamp(-12000.0, 8000.0);
+        let delay = frames(region.vol_delay + extra[0]);
+        let hold = frames(region.vol_hold + region.key_vol_hold * key_delta + extra[2]);
+        let attack_tc = (region.attack + extra[1]).clamp(-12000.0, 8000.0);
+        let decay_tc = (region.decay + region.key_vol_decay * key_delta + extra[3]).clamp(-12000.0, 8000.0);
+        let release_tc = (region.release + extra[5]).clamp(-12000.0, 8000.0);
+        let sustain = (region.sustain * 10f32.powf(-extra[4].clamp(-1440.0, 1440.0) / 200.0)).clamp(0.0, 1.0);
         (
             [
-                stage(1.25f32.ln(), region.attack).min(1.0),
+                stage(1.25f32.ln(), attack_tc).min(1.0),
                 stage(ORIGINAL_RATE, decay_tc).min(1.0),
-                region.sustain,
-                stage(ORIGINAL_RATE, region.release).min(1.0),
+                sustain,
+                stage(ORIGINAL_RATE, release_tc).min(1.0),
             ],
             delay,
             hold,
@@ -2478,6 +2871,13 @@ impl SoundFontPlayer {
 
     fn envelope(&self, region: &Region) -> [f32; 4] {
         self.vol_envelope(region, 60).0
+    }
+
+    pub fn apply_patch_mods(&mut self, mods: &[PatchMod]) {
+        for (i, &pm) in mods.iter().take(PATCH_MODS).enumerate() {
+            self.patch_specs[i] = pm;
+            self.patch_mods[i] = pm.to_mod();
+        }
     }
 
     pub fn apply_zone_overrides(&mut self, overrides: &[ZoneOverride]) {
@@ -2560,24 +2960,70 @@ impl Instrument for SoundFontPlayer {
         for (index, region) in regions.filter(|(_, r)| r.plays(key, steps)).skip(skip) {
             let eff_key = region.fixed_key.unwrap_or(key);
             let eff_vel = region.fixed_vel.map_or(velocity, |v| f32::from(v) / 127.0);
+            let (mut vol_extra, mut mod_extra, mut fc_mod, mut q_mod, mut has_mod_env_amt) =
+                ([0.0; 6], [0.0; 6], 0.0_f32, 0.0_f32, false);
+            if !region.mods.is_empty() || self.patch_mods.iter().any(Option::is_some) {
+                let inp = ModInputs {
+                    key: eff_key,
+                    vel: eff_vel,
+                    cc: &self.cc_now,
+                    aftertouch: self.aftertouch,
+                    wheel: self.wheel,
+                };
+                for m in region
+                    .mods
+                    .iter()
+                    .copied()
+                    .chain(self.patch_mods.iter().flatten().copied())
+                {
+                    let val = m.eval(&inp);
+                    match usize::from(m.dest) {
+                        DELAY_VOL_ENV => vol_extra[0] += val,
+                        ATTACK => vol_extra[1] += val,
+                        HOLD_VOL_ENV => vol_extra[2] += val,
+                        DECAY => vol_extra[3] += val,
+                        SUSTAIN => vol_extra[4] += val,
+                        RELEASE => vol_extra[5] += val,
+                        DELAY_MOD_ENV => mod_extra[0] += val,
+                        ATTACK_MOD_ENV => mod_extra[1] += val,
+                        HOLD_MOD_ENV => mod_extra[2] += val,
+                        DECAY_MOD_ENV => mod_extra[3] += val,
+                        SUSTAIN_MOD_ENV => mod_extra[4] += val,
+                        RELEASE_MOD_ENV => mod_extra[5] += val,
+                        MOD_ENV_TO_PITCH | MOD_ENV_TO_FILTER_FC => {
+                            if val != 0.0 {
+                                has_mod_env_amt = true;
+                            }
+                        }
+                        FILTER_FC => fc_mod += val,
+                        FILTER_Q => q_mod += val / 10.0,
+                        _ => {}
+                    }
+                }
+            }
+            if region.def_vel_filter {
+                fc_mod += -2400.0 * (1.0 - eff_vel);
+            }
             let ([attack, decay, sustain, release], delay, hold) =
-                self.vol_envelope(region, eff_key);
+                Self::vol_env_with(self.sample_rate, &self.params, region, eff_key, vol_extra);
             let octaves =
                 (f64::from(eff_key) - f64::from(region.root) + region.tune) * region.scale / 1200.0;
             let step = 2f64.powf(octaves) * region.rate / f64::from(self.sample_rate);
             let slot = slot(&self.voices, None, None);
             self.started += 1;
-            let mod_env = ModEnvState::start(&region.mod_env, eff_key);
+            let mut mod_env = ModEnvState::start_with(&region.mod_env, eff_key, mod_extra);
+            if has_mod_env_amt && mod_env.stage == ModStage::Done {
+                let mut me = region.mod_env;
+                me.to_filter = 1.0;
+                mod_env = ModEnvState::start_with(&me, eff_key, mod_extra);
+            }
             let mut filter = Filter::default();
-            if let Some([hz, resonance]) = region.filter {
-                let hz = hz * 2f32.powf((mod_env.level * region.mod_env.to_filter) / 1200.0);
-                filter.tune(
-                    (FilterShape::LowPass, 2),
-                    hz,
-                    resonance,
-                    0.0,
-                    self.sample_rate,
-                );
+            let default_fc_hz = LFO_HZ * 2f32.powf(13500.0 / 1200.0);
+            let [base_hz, base_q] = region.filter.unwrap_or([default_fc_hz, 0.0]);
+            let hz = base_hz * 2f32.powf((fc_mod + mod_env.level * region.mod_env.to_filter) / 1200.0);
+            let q = (base_q + q_mod).clamp(0.0, 40.0);
+            if region.filter.is_some() || hz < 19_800.0 || q > 0.0 {
+                filter.tune((FilterShape::LowPass, 2), hz, q, 0.0, self.sample_rate);
             }
             
             self.voices[slot] = Voice {
@@ -2685,7 +3131,6 @@ impl Instrument for SoundFontPlayer {
             cubic,
             rate: self.sample_rate,
         };
-        let wheel = WHEEL_CENTS * self.cc_now[1];
         for (slot, voice) in self.voices.iter_mut().enumerate().filter(|(_, v)| v.on) {
             let region = &self.regions[voice.region];
             if let Some(rules) = &region.sfz {
@@ -2695,15 +3140,8 @@ impl Instrument for SoundFontPlayer {
                 );
                 continue;
             }
-            let p = (voice.pan + voice.slide[1] + region.pan).clamp(0.0, 1.0);
             let vel = (voice.velocity + voice.slide[2]).clamp(0.0, 1.0);
-            let gain = vel * vel * region.gain;
-            let (gain_l, gain_r) = (gain * (2.0 - 2.0 * p).min(1.0), gain * (2.0 * p).min(1.0));
-            // A control block at a time, which the vibratos move.
-            let blocks = left.chunks_mut(CONTROL).zip(right.chunks_mut(CONTROL));
-
-            let mod_filter =
-                !custom_filter && (region.mod_lfo_fx[0] != 0.0 || region.mod_env.to_filter != 0.0);
+            let default_fc_hz = LFO_HZ * 2f32.powf(13500.0 / 1200.0);
             if custom_filter {
                 voice.m.filter.tune(
                     (FilterShape::LowPass, 2),
@@ -2712,71 +3150,130 @@ impl Instrument for SoundFontPlayer {
                     0.0,
                     self.sample_rate,
                 );
-            } else if let Some([hz, resonance]) = region.filter {
-                if !mod_filter {
-                    voice.m.filter.tune(
-                        (FilterShape::LowPass, 2),
-                        hz,
-                        resonance,
-                        0.0,
-                        self.sample_rate,
-                    );
-                }
-            } else {
-                voice.m.filter.stages = 0;
             }
 
+            let blocks = left.chunks_mut(CONTROL).zip(right.chunks_mut(CONTROL));
             let looping = region.looping && (!region.loop_sustain || !voice.released);
-
             'voice: for (left, right) in blocks {
                 let dt = left.len() as f32 / self.sample_rate;
-                let (vibrato, mod_val) =
-                    voice.vibrato(region, wheel, controls.vibrato, custom_vib, dt);
+                let (
+                    mut pitch_mod,
+                    mut fc_mod,
+                    mut q_mod,
+                    mut atten_mod_cb,
+                    mut pan_mod,
+                    mut vib_pitch_mod,
+                    mut vib_freq_mod,
+                    mut mod_lfo_pitch_mod,
+                    mut mod_lfo_filter_mod,
+                    mut mod_lfo_vol_mod,
+                    mut mod_lfo_freq_mod,
+                    mut mod_env_pitch_mod,
+                    mut mod_env_filter_mod,
+                ) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+
+                if !region.mods.is_empty() || self.patch_mods.iter().any(Option::is_some) {
+                    let inp = ModInputs {
+                        key: region.fixed_key.unwrap_or(voice.key),
+                        vel,
+                        cc: &self.cc_now,
+                        aftertouch: self.aftertouch,
+                        wheel: self.wheel,
+                    };
+                    for m in region
+                        .mods
+                        .iter()
+                        .copied()
+                        .chain(self.patch_mods.iter().flatten().copied())
+                    {
+                        let val = m.eval(&inp);
+                        match usize::from(m.dest) {
+                            MOD_LFO_TO_PITCH => mod_lfo_pitch_mod += val,
+                            VIB_LFO_TO_PITCH => vib_pitch_mod += val,
+                            MOD_ENV_TO_PITCH => mod_env_pitch_mod += val,
+                            FILTER_FC => fc_mod += val,
+                            FILTER_Q => q_mod += val / 10.0,
+                            MOD_LFO_TO_FILTER_FC => mod_lfo_filter_mod += val,
+                            MOD_ENV_TO_FILTER_FC => mod_env_filter_mod += val,
+                            MOD_LFO_TO_VOLUME => mod_lfo_vol_mod += val,
+                            PAN => pan_mod += val / 1000.0,
+                            FREQ_MOD_LFO => mod_lfo_freq_mod += val,
+                            FREQ_VIB_LFO => vib_freq_mod += val,
+                            ATTENUATION => atten_mod_cb += val,
+                            COARSE => pitch_mod += 100.0 * val,
+                            FINE => pitch_mod += val,
+                            _ => {}
+                        }
+                    }
+                }
+                if region.def_vel_filter {
+                    fc_mod += -2400.0 * (1.0 - vel);
+                }
+                let vib_extra = vib_pitch_mod
+                    + if region.def_cc1_vib { WHEEL_CENTS * self.cc_now[1] } else { 0.0 }
+                    + if region.def_at_vib { WHEEL_CENTS * self.aftertouch } else { 0.0 };
+                let vib_hz_scale = 2f32.powf(vib_freq_mod.clamp(-12000.0, 12000.0) / 1200.0);
+                let mod_hz_scale = 2f32.powf(mod_lfo_freq_mod.clamp(-12000.0, 12000.0) / 1200.0);
+
+                let (vibrato, mod_val) = voice.vibrato(
+                    region,
+                    vib_extra,
+                    vib_hz_scale,
+                    mod_lfo_pitch_mod,
+                    mod_hz_scale,
+                    controls.vibrato,
+                    custom_vib,
+                    dt,
+                );
                 let env_val = voice.mod_env.level;
                 voice.mod_env.advance(dt, voice.released);
 
-                if mod_filter {
-                    if let Some([base_hz, res]) = region.filter {
-                        let fc_delta =
-                            mod_val * region.mod_lfo_fx[0] + env_val * region.mod_env.to_filter;
-                        let hz = base_hz * 2f32.powf(fc_delta / 1200.0);
-                        voice.m.filter.tune(
-                            (FilterShape::LowPass, 2),
-                            hz,
-                            res,
-                            0.0,
-                            self.sample_rate,
-                        );
+                if !custom_filter {
+                    let [base_hz, base_q] = region.filter.unwrap_or([default_fc_hz, 0.0]);
+                    let fc_delta = fc_mod
+                        + mod_val * (region.mod_lfo_fx[0] + mod_lfo_filter_mod)
+                        + env_val * (region.mod_env.to_filter + mod_env_filter_mod);
+                    let hz = base_hz * 2f32.powf(fc_delta / 1200.0);
+                    let q = (base_q + q_mod).clamp(0.0, 40.0);
+                    if region.filter.is_some() || hz < 19_800.0 || q > 0.0 {
+                        voice.m.filter.tune((FilterShape::LowPass, 2), hz, q, 0.0, self.sample_rate);
+                    } else {
+                        voice.m.filter.stages = 0;
                     }
                 }
 
-                let lfo_gain = if region.mod_lfo_fx[1] != 0.0 {
-                    10f32.powf((mod_val * region.mod_lfo_fx[1]).clamp(-96.0, 24.0) / 20.0)
-                } else {
-                    1.0
-                };
-                let prev_lfo = voice.m.gain.map_or(lfo_gain, |[g, _]| g);
-                let gain_ramp = (lfo_gain - prev_lfo) / left.len() as f32;
-                let mut mod_gain = prev_lfo;
-                voice.m.gain = Some([lfo_gain, lfo_gain]);
+                let p = (voice.pan + voice.slide[1] + region.pan + pan_mod).clamp(0.0, 1.0);
+                let base_vel_gain = if region.def_vel_atten { vel * vel } else { 1.0 };
+                let total_db = mod_val * (region.mod_lfo_fx[1] + mod_lfo_vol_mod / 10.0)
+                    - atten_mod_cb.clamp(-240.0, 1440.0) / 10.0;
+                let gain = base_vel_gain * region.gain * 10f32.powf(total_db.clamp(-144.0, 24.0) / 20.0);
+                let target = [
+                    gain * (2.0 - 2.0 * p).min(1.0),
+                    gain * (2.0 * p).min(1.0),
+                ];
+                let mut g = voice.m.gain.unwrap_or(target);
+                let ramp = [0, 1].map(|c| (target[c] - g[c]) / left.len() as f32);
+                voice.m.gain = Some(target);
 
-                let env_pitch = env_val * region.mod_env.to_pitch;
-                let semitones = self.bend + voice.slide[0] + (fine + vibrato + env_pitch) / 100.0;
-                // `min` also turns a hostile file's infinite or NaN step into the cap.
+                let env_pitch = env_val * (region.mod_env.to_pitch + mod_env_pitch_mod);
+                let semitones =
+                    self.bend + voice.slide[0] + (fine + vibrato + env_pitch + pitch_mod) / 100.0;
                 let step = (voice.step * 2f64.powf(f64::from(semitones) / 12.0)).min(MAX_STEP);
+
                 for (l, r) in left.iter_mut().zip(right.iter_mut()) {
                     if !voice.envelope() {
                         break 'voice;
                     }
-                    mod_gain += gain_ramp;
+                    g[0] += ramp[0];
+                    g[1] += ramp[1];
                     if voice.stage == Stage::Delay {
                         continue;
                     }
                     let at = |k| font.frame(k);
                     let sample = interpolate(region, looping, voice.position, cubic, at);
                     let sample = voice.m.filter.run_mono(sample);
-                    *l += sample * voice.level * mod_gain * gain_l;
-                    *r += sample * voice.level * mod_gain * gain_r;
+                    *l += sample * voice.level * g[0];
+                    *r += sample * voice.level * g[1];
                     voice.advance(region, looping, step);
                 }
             }
@@ -2802,6 +3299,8 @@ impl Instrument for SoundFontPlayer {
         if index == PITCH_BEND {
             self.wheel = 2.0 * value - 1.0;
             self.bend = BEND_RANGE * self.wheel;
+        } else if index == AFTERTOUCH {
+            self.aftertouch = value;
         } else if let Some(cc) = index.checked_sub(7).and_then(|n| self.cc.get_mut(n)) {
             *cc = value;
         }
@@ -2827,6 +3326,23 @@ impl Instrument for SoundFontPlayer {
                 apply_zone_field(r, field as usize, value);
                 self.refresh_zone_voices(self.zone);
             }
+        } else if key == MOD_SELECT_KEY {
+            self.mod_slot = (value.round().max(0.0) as usize).min(PATCH_MODS - 1);
+        } else if key == MOD_CLEAR_KEY {
+            self.patch_specs[self.mod_slot] = PatchMod::default();
+            self.patch_mods[self.mod_slot] = None;
+        } else if let Some(field) = key.checked_sub(MOD_CTL_BASE)
+            && field < 4
+        {
+            let pm = &mut self.patch_specs[self.mod_slot];
+            match field {
+                0 => pm.src = value.round().clamp(0.0, 14.0) as u8,
+                1 => pm.curve = value.round().clamp(0.0, 6.0) as u8,
+                2 => pm.dest = value.round().clamp(0.0, 16.0) as u8,
+                3 => pm.amount = value.clamp(0.0, 1.0),
+                _ => {}
+            }
+            self.patch_mods[self.mod_slot] = pm.to_mod();
         }
     }
 }
