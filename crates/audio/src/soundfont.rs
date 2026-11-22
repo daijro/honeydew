@@ -3112,6 +3112,11 @@ impl Instrument for SoundFontPlayer {
         };
         let frames = left.len();
         self.clock += frames as u64;
+        if !self.voices.iter().any(|v| v.on) {
+            self.cc_now = self.cc;
+            self.cc_then = self.cc;
+            return;
+        }
         // The CCs' smoothing, one block on: the voices read them between where this block starts and ends.
         self.cc_then = self.cc_now;
         let smoothing = (self.cc_now.iter_mut()).zip(&self.cc).zip(&font.cc_smooth);

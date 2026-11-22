@@ -442,6 +442,12 @@ impl PadSampler {
             self.voices[pad * VOICES_PER_PAD..][..VOICES_PER_PAD].fill(Voice::default());
             return;
         };
+        if !self.voices[pad * VOICES_PER_PAD..][..VOICES_PER_PAD]
+            .iter()
+            .any(|v| v.active)
+        {
+            return;
+        }
         let params = &p.params;
         let audible = params[MUTE] <= 0.5 && (!soloed || params[SOLO] > 0.5);
         let level = if audible {

@@ -2897,7 +2897,7 @@ impl HoneydewApp {
                     .peak_left
                     .max(m.value.peak_right)
                     .max(m.value.input_peak)
-                    > 0.0
+                    > 1e-6
             })
         };
         // Issue #72: at rest, the audio can still move with no input to repaint for while a key sounds or for a while

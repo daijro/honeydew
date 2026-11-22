@@ -299,6 +299,15 @@ pub struct AudioEffect {
     meter: MeterSnapshot,
     probe: analysis::Probe,
     external: Option<External>,
+    sleeping: bool,
+    silent_frames: usize,
+}
+
+const IDLE_SILENCE: f32 = 1e-7;
+const IDLE_SECONDS: f32 = 4.0;
+
+fn block_silent(buf: &[f32]) -> bool {
+    buf.iter().all(|&s| s.abs() <= IDLE_SILENCE)
 }
 
 impl AudioEffect {
@@ -546,6 +555,8 @@ impl AudioEffect {
             meter: MeterSnapshot::default(),
             probe: analysis::Probe::new(id, sample_rate),
             external: None,
+            sleeping: true,
+            silent_frames: 0,
         };
         effect.refresh_coefficients();
         effect.reset();
@@ -580,6 +591,8 @@ impl AudioEffect {
                 dry_left: vec![0.0; max_block.max(1)],
                 dry_right: vec![0.0; max_block.max(1)],
             }),
+            sleeping: false,
+            silent_frames: 0,
         })
     }
 
@@ -771,6 +784,8 @@ impl AudioEffect {
     }
 
     pub fn reset(&mut self) {
+        self.sleeping = true;
+        self.silent_frames = 0;
         if let Some(external) = &mut self.external {
             external.effect.reset();
         }
@@ -822,6 +837,18 @@ impl AudioEffect {
             self.meter = external.process(&mut self.common, runs, left, right, key, context);
             return Ok(());
         }
+        let input_silent = block_silent(left)
+            && block_silent(right)
+            && key.is_none_or(|(kl, kr)| block_silent(kl) && block_silent(kr));
+        if input_silent && (!runs || self.sleeping) {
+            if !runs {
+                if let Processor::TapeStop(state) = &mut self.processor {
+                    state.prepare_block(context.tempo_bpm);
+                }
+            }
+            self.meter = MeterSnapshot::default();
+            return Ok(());
+        }
         // A bypassed processor stands still: MultiFX's free LFO, too, advanced by each prepared block. Tape Stop still
         // takes the tempo, which a synced stop pressed as it comes back times its ramp by.
         if runs {
@@ -845,8 +872,20 @@ impl AudioEffect {
         }
         self.probe.block(&self.processor);
         // A bypassed processor reduces nothing, whatever it last measured.
-        if runs {
+        if runs && !matches!(self.processor, Processor::Modulator(_)) {
             peak.gain_reduction_db = self.processor.gain_reduction_db();
+            if input_silent
+                && peak.peak_left <= IDLE_SILENCE
+                && peak.peak_right <= IDLE_SILENCE
+            {
+                self.silent_frames = self.silent_frames.saturating_add(frames);
+                if self.silent_frames as f32 >= IDLE_SECONDS * self.sample_rate {
+                    self.sleeping = true;
+                }
+            } else {
+                self.sleeping = false;
+                self.silent_frames = 0;
+            }
         }
         self.meter = peak;
         Ok(())
