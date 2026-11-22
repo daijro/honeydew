@@ -1082,6 +1082,15 @@ const SOUNDFONT_PLAYER: &[P] = &[
         items: &["Instrument", "Global"],
         index: |v| usize::from(v > 0.5),
     }),
+    P::cont(
+        "Fine Range",
+        0.0,
+        Display::Steps {
+            min: 1,
+            count: 24,
+            fmt: Fmt::new(0, "x"),
+        },
+    ),
 ];
 
 pub static MODULES: &[ModuleSpec] = &[

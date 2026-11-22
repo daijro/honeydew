@@ -56,6 +56,7 @@ const ZONE_PAGE: u32 = 7004;
 const ZONE_RESET: u32 = ZONE_RESET_KEY; // 7005
 const HAS_ZONES: &str = "sf2_zones";
 const ZONE_SEEDED: &str = "sf2_zone_seeded";
+const ZONE_PAGE_FLAG: &str = "sf2_zone_page";
 
 const ZONE_PIANO: u32 = 7007;
 const ZONE_KEY_LO: &str = "sf2_key_lo";
@@ -291,7 +292,7 @@ pub fn wire(
     let zones = current_zones(module, fonts).map(|(_, z)| z).unwrap_or(&[]);
     state.flags.insert(HAS_ZONES, usize::from(!zones.is_empty()));
     if !zones.is_empty() {
-        state.settings.entry(ZONE_PAGE).or_insert(0.0);
+        state.flags.entry(ZONE_PAGE_FLAG).or_insert(0);
         let sel = state.settings.get(&ZONE_SELECT).copied().unwrap_or(0.0).round().clamp(0.0, (zones.len() - 1) as f32) as usize;
         state.settings.insert(ZONE_SELECT, sel as f32);
         let z = &zones[sel];
@@ -336,6 +337,18 @@ pub fn wire(
             for (f, v) in vals.into_iter().enumerate() {
                 state.settings.insert(ZONE_CTL_BASE + f as u32, v);
             }
+        }
+        let f_norm = state.settings.get(&(ZONE_CTL_BASE + 13)).copied().unwrap_or(0.5);
+        let m_norm = state.settings.get(&(ZONE_CTL_BASE + 38)).copied().unwrap_or(0.0);
+        let zmult = (23.0 * m_norm).round() + 1.0;
+        if zmult > 1.0 {
+            let zcents = ((200.0 * f_norm - 100.0) * zmult).round() as i32;
+            let label = if zcents == 0 {
+                "Fine 0c".into()
+            } else {
+                format!("Fine {zcents:+}c")
+            };
+            state.texts.insert(ZONE_CTL_BASE + 13, label);
         }
     }
     
@@ -572,6 +585,24 @@ fn mod_filter_text(v: f32) -> String { format!("{:+} c", (24000.0 * v - 12000.0)
 fn mod_vol_text(v: f32) -> String { format!("{:+.1} dB", 48.0 * v - 24.0) }
 fn mod_key_text(v: f32) -> String { format!("{:+} c", (2400.0 * v - 1200.0).round() as i32) }
 
+fn fine_tune_label(params: &[f32]) -> String {
+    let mult = (23.0 * params.get(16).copied().unwrap_or(0.0)).round() + 1.0;
+    if mult <= 1.0 {
+        "Fine Tune".into()
+    } else {
+        let cents = ((200.0 * params.get(6).copied().unwrap_or(0.5) - 100.0) * mult).round() as i32;
+        if cents == 0 {
+            "Fine 0c".into()
+        } else {
+            format!("Fine {cents:+}c")
+        }
+    }
+}
+
+fn zone_mult_text(v: f32) -> String {
+    format!("{}x", (23.0 * v.clamp(0.0, 1.0)).round() as i32 + 1)
+}
+
 const ZONE_TABS: [&str; 7] = [
     "Vol Env",
     "Mod Env",
@@ -620,13 +651,16 @@ fn zone_tabs(
     state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
+    if !state.flags.contains_key(ZONE_PAGE_FLAG) {
+        state.flags.insert(ZONE_PAGE_FLAG, 0);
+        ui.ctx().request_repaint();
+    }
     let selected = state
-        .settings
-        .get(&ZONE_PAGE)
+        .flags
+        .get(ZONE_PAGE_FLAG)
         .copied()
-        .unwrap_or(0.0)
-        .round()
-        .clamp(0.0, (ZONE_TABS.len() - 1) as f32) as usize;
+        .unwrap_or(0)
+        .min(ZONE_TABS.len() - 1);
     
     if !state.settings.contains_key(&ZONE_PAGE) {
         state.settings.insert(ZONE_PAGE, 0.0);
@@ -656,7 +690,7 @@ fn zone_tabs(
                 );
                 let resp = ui.interact(cell, id.with(("tab", i)), Sense::click());
                 if resp.clicked() && i != selected {
-                    state.settings.insert(ZONE_PAGE, i as f32);
+                    state.flags.insert(ZONE_PAGE_FLAG, i);
                     ui.ctx().request_repaint();
                 }
                 let active = i == selected;
@@ -935,11 +969,12 @@ pub fn panel() -> Option<Panel> {
                 text_toggle(1300, "Next")
                     .momentary()
                     .margins(0.75, 0.75, 0.75, 0.75),
+                knob(2800, "Fine Range").p(16).w(Size::U(2.5)),
             ])
             .h(Size::U(2.596)),
             hstack([
                 knob(2600, "Transpose").p(11),
-                knob(2700, "Fine Tune").p(6),
+                knob(2700, "Fine Tune").p(6).label_fn(fine_tune_label),
                 toggle(2100, "Envelope")
                     .p(5)
                     .value_text()
@@ -956,7 +991,10 @@ pub fn panel() -> Option<Panel> {
                 .p(15)
                 .value_text()
                 .value_fn(envelope_text),
-            knob(3200, "Vib Rate").p(7).enabled(VIB_CUSTOM),
+            v_slider(3200, "Vib Rate")
+                .p(7)
+                .value_text()
+                .enabled(VIB_CUSTOM),
             v_slider(3300, "Vib Depth")
                 .p(8)
                 .value_text()
@@ -972,8 +1010,14 @@ pub fn panel() -> Option<Panel> {
                 .p(12)
                 .value_text()
                 .value_fn(envelope_text),
-            knob(3600, "Cutoff").p(13).enabled(FILTER_CUSTOM),
-            knob(3700, "Resonance").p(14).enabled(FILTER_CUSTOM),
+            v_slider(3600, "Cutoff")
+                .p(13)
+                .value_text()
+                .enabled(FILTER_CUSTOM),
+            v_slider(3700, "Resonance")
+                .p(14)
+                .value_text()
+                .enabled(FILTER_CUSTOM),
             toggle(3800, "Quality")
                 .p(10)
                 .value_text()
@@ -1056,7 +1100,7 @@ pub fn panel() -> Option<Panel> {
             ])
             .ml(0.2)
             .mr(0.2)
-            .show(Show::Setting(ZONE_PAGE, 0)),
+            .show(Show::Flag(ZONE_PAGE_FLAG, 0)),
             hstack([
                 knob(7118, "Delay").value_fn(mod_time_text),
                 v_slider(7119, "Attack").value_text().value_fn(mod_time_text),
@@ -1067,7 +1111,7 @@ pub fn panel() -> Option<Panel> {
             ])
             .ml(0.2)
             .mr(0.2)
-            .show(Show::Setting(ZONE_PAGE, 1)),
+            .show(Show::Flag(ZONE_PAGE_FLAG, 1)),
             hstack([
                 knob(7124, "Mod->Pit").default(0.5).value_fn(mod_env_pitch_text),
                 knob(7125, "Mod->Fil").default(0.5).value_fn(mod_filter_text),
@@ -1078,7 +1122,7 @@ pub fn panel() -> Option<Panel> {
             ])
             .ml(0.2)
             .mr(0.2)
-            .show(Show::Setting(ZONE_PAGE, 2)),
+            .show(Show::Flag(ZONE_PAGE_FLAG, 2)),
             hstack([
                 knob(7104, "Rate").default(8.176 / 20.0).value_fn(zone_rate_text),
                 v_slider(7105, "Depth").default(0.5).value_text().value_fn(zone_cents_text),
@@ -1086,7 +1130,7 @@ pub fn panel() -> Option<Panel> {
             ])
             .ml(0.2)
             .mr(0.2)
-            .show(Show::Setting(ZONE_PAGE, 3)),
+            .show(Show::Flag(ZONE_PAGE_FLAG, 3)),
             hstack([
                 knob(7107, "Rate").default(8.176 / 20.0).value_fn(zone_rate_text),
                 v_slider(7109, "Delay").value_text().value_fn(zone_delay_text),
@@ -1096,18 +1140,19 @@ pub fn panel() -> Option<Panel> {
             ])
             .ml(0.2)
             .mr(0.2)
-            .show(Show::Setting(ZONE_PAGE, 4)),
+            .show(Show::Flag(ZONE_PAGE_FLAG, 4)),
             hstack([
                 knob(7110, "Cutoff").default(1.0).value_fn(zone_cutoff_text),
                 knob(7111, "Resonance").value_fn(zone_res_text),
                 knob(7112, "Tune").default(0.5).value_fn(zone_tune_text),
                 knob(7113, "Fine").default(0.5).value_fn(zone_cents_text),
+                knob(7138, "Fine x").value_fn(zone_mult_text),
                 knob(7114, "Pan").default(0.5).value_fn(zone_pan_text),
                 knob(7115, "Level").default(0.8).value_fn(zone_db_text),
             ])
             .ml(0.2)
             .mr(0.2)
-            .show(Show::Setting(ZONE_PAGE, 5)),
+            .show(Show::Flag(ZONE_PAGE_FLAG, 5)),
             hstack([
                 knob(7134, "Start").value_fn(zone_pct1_text),
                 knob(7135, "End").default(1.0).value_fn(zone_pct1_text),
@@ -1120,7 +1165,7 @@ pub fn panel() -> Option<Panel> {
             ])
             .ml(0.2)
             .mr(0.2)
-            .show(Show::Setting(ZONE_PAGE, 6)),
+            .show(Show::Flag(ZONE_PAGE_FLAG, 6)),
             display(ZONE_PIANO)
                 .h(Size::U(1.45))
                 .margins(0.0, 0.0, 0.0, 0.0)

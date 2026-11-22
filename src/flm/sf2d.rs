@@ -100,7 +100,7 @@ impl Sf2z {
             }
             return Some(Self { patch, zones });
         }
-        for &n in &[28usize, 32, 34] {
+        for &n in &[28usize, 32, 34, 38] {
             let s = 10 + 4 * n;
             if count > 0 && b.len() == 8 + count * s {
                 let mut zones = Vec::with_capacity(count);

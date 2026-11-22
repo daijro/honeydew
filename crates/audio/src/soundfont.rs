@@ -113,7 +113,7 @@ const ROOT: usize = 58;
 /// Operators 0..=60 are defined; others are ignored.
 const GENERATORS: usize = 61;
 
-pub const ZONE_FIELDS: usize = 38;
+pub const ZONE_FIELDS: usize = 39;
 pub const ZONE_SELECT_KEY: u32 = 7000;
 pub const ZONE_RESET_KEY: u32 = 7005;
 pub const ZONE_CTL_BASE: u32 = 7100;
@@ -1011,6 +1011,10 @@ impl SoundFont {
             to_pitch: add(MOD_ENV_TO_PITCH).clamp(-12000, 12000) as f32,
             to_filter: mod_env_to_filter,
         };
+        let tune_coarse = f64::from(add(COARSE));
+        let tune_fine = f64::from(add(FINE) + i32::from(header.correction));
+        let fine_mult = 1.0_f32;
+        let tune = tune_coarse + tune_fine / 100.0;
         Some(Region {
             name,
             keys: overlap(preset[KEYS], gens[KEYS])?,
@@ -1031,8 +1035,10 @@ impl SoundFont {
             exclusive: gens[EXCLUSIVE_CLASS].max(0) as u16,
             rate: f64::from(header.rate),
             root,
-            tune: f64::from(add(COARSE))
-                + f64::from(add(FINE) + i32::from(header.correction)) / 100.0,
+            tune,
+            tune_coarse,
+            tune_fine,
+            fine_mult,
             scale: f64::from(gens[SCALE]),
             pan: add(PAN).clamp(-500, 500) as f32 / 1000.0,
             gain: 10f32.powf(-centibels(ATTENUATION) / 500.0 - q_attenuation / 200.0),
@@ -1185,8 +1191,6 @@ fn region_defaults(r: &Region) -> [f32; ZONE_FIELDS] {
     let default_hz = LFO_HZ * 2f32.powf(13500.0 / 1200.0);
     let (f_hz, f_q) = r.filter.map_or((default_hz, 0.0), |[hz, q]| (hz, q));
     let cutoff = ((1200.0 * (f_hz / LFO_HZ).max(1.0).log2() - 1500.0) / 12000.0).clamp(0.0, 1.0);
-    let coarse = r.tune.round();
-    let fine_cents = (r.tune - coarse) * 100.0;
     let gain_db = 20.0 * r.gain.max(1e-4).log10();
     let sample_mode = f32::from(r.loop_mode);
     let span = (r.raw_end.saturating_sub(r.raw_start)).max(1) as f32;
@@ -1207,8 +1211,8 @@ fn region_defaults(r: &Region) -> [f32; ZONE_FIELDS] {
         (r.mod_lfo[2] / 5.0).clamp(0.0, 1.0),
         cutoff,
         (f_q / 40.0).clamp(0.0, 1.0),
-        ((coarse as f32 + 24.0) / 48.0).clamp(0.0, 1.0),
-        ((fine_cents as f32 + 100.0) / 200.0).clamp(0.0, 1.0),
+        ((r.tune_coarse as f32 + 24.0) / 48.0).clamp(0.0, 1.0),
+        ((r.tune_fine as f32 + 100.0) / 200.0).clamp(0.0, 1.0),
         (r.pan + 0.5).clamp(0.0, 1.0),
         ((gain_db + 48.0) / 60.0).clamp(0.0, 1.0),
         ((r.mod_lfo_fx[0] + 12000.0) / 24000.0).clamp(0.0, 1.0),
@@ -1232,7 +1236,8 @@ fn region_defaults(r: &Region) -> [f32; ZONE_FIELDS] {
         start_norm,
         end_norm,
         fixed_key,
-        fixed_vel
+        fixed_vel,
+        ((r.fine_mult - 1.0) / 23.0).clamp(0.0, 1.0),
     ]
 }
 
@@ -1260,12 +1265,12 @@ fn apply_zone_field(r: &mut Region, field: usize, raw: f32) {
             r.filter = Some([hz, 40.0 * v]);
         }
         12 => {
-            let fine = r.tune - r.tune.round();
-            r.tune = f64::from((48.0 * v).round() - 24.0) + fine;
+            r.tune_coarse = f64::from((48.0 * v).round() - 24.0);
+            r.tune = r.tune_coarse + r.tune_fine * f64::from(r.fine_mult) / 100.0;
         }
         13 => {
-            let coarse = r.tune.round();
-            r.tune = coarse + f64::from(200.0 * v - 100.0) / 100.0;
+            r.tune_fine = f64::from(200.0 * v - 100.0);
+            r.tune = r.tune_coarse + r.tune_fine * f64::from(r.fine_mult) / 100.0;
         }
         14 => r.pan = v - 0.5,
         15 => r.gain = 10f32.powf((60.0 * v - 48.0) / 20.0),
@@ -1349,6 +1354,10 @@ fn apply_zone_field(r: &mut Region, field: usize, raw: f32) {
             let idx = (128.0 * v).round() as i32;
             r.fixed_vel = (idx > 0).then_some((idx - 1).clamp(0, 127) as u8);
         }
+        38 => {
+            r.fine_mult = (23.0 * v).round() + 1.0;
+            r.tune = r.tune_coarse + r.tune_fine * f64::from(r.fine_mult) / 100.0;
+        }
         _ => {}
     }
 }
@@ -1392,6 +1401,9 @@ pub struct Region {
     root: u8,
     /// Coarse and fine tune and the sample's correction, in semitones.
     tune: f64,
+    tune_coarse: f64,
+    tune_fine: f64,
+    fine_mult: f32,
     /// Cents per key.
     scale: f64,
     /// −0.5..0.5, added to the note pan.
@@ -1613,6 +1625,9 @@ fn sfz_region(
         rate,
         root,
         tune: 0.0,
+        tune_coarse: 0.0,
+        tune_fine: 0.0,
+        fine_mult: 1.0,
         scale: f64::from(r.pitch_keytrack),
         pan: r.pan / 200.0,
         gain: 10f32.powf(r.volume / 20.0) * r.amplitude / 100.0,
@@ -1707,8 +1722,8 @@ const SILENT: f32 = 0.01;
 const END_FADE: f32 = 0.01;
 /// The param defaults: Enable, Attack, Decay, Sustain, Release, Envelope (Original), Fine Tune (0 cents), Vib Rate
 /// (5 Hz), Vib Depth (0 cents), Vib Delay (0 s), Quality (Linear), Transpose (0).
-const DEFAULTS: [f32; 16] = [
-    1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.0,
+const DEFAULTS: [f32; 17] = [
+    1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0,
 ];
 /// Fine Tune, 200v − 100 cents on every voice: a Honeydew addition (#90).
 const FINE_TUNE: usize = 6;
@@ -1723,6 +1738,7 @@ const FILTER_MODE: usize = 12;
 const CUTOFF: usize = 13;
 const RESONANCE: usize = 14;
 const VIBRATO_MODE: usize = 15;
+const FINE_RANGE: usize = 16;
 /// SoundFont 2's default modulator: the mod wheel (MIDI CC 1) deepens the vibrato LFO's pitch by up to 50 cents.
 const WHEEL_CENTS: f32 = 50.0;
 /// The vibrato LFO's rate at freqVibLFO 0 absolute cents.
@@ -3109,7 +3125,8 @@ impl Instrument for SoundFontPlayer {
             };
         }
         let transpose = 100.0 * ((48.0 * self.params[TRANSPOSE]).round() - 24.0);
-        let fine = 200.0 * self.params[FINE_TUNE] - 100.0 + transpose;
+        let fine_mult = (23.0 * self.params[FINE_RANGE]).round() + 1.0;
+        let fine = (200.0 * self.params[FINE_TUNE] - 100.0) * fine_mult + transpose;
         let [rate, depth, delay] = [VIBRATO, VIBRATO + 1, VIBRATO + 2].map(|p| self.params[p]);
         let cubic = self.params[QUALITY] > 0.5;
 

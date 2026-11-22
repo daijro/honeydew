@@ -218,6 +218,7 @@ pub(crate) mod tests {
                 preset,
                 bank,
                 controls: Vec::new(),
+                zones: Vec::new(),
             })
             .collect();
         assert_eq!(got, want);
