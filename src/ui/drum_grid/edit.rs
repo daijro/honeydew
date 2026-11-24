@@ -47,8 +47,15 @@ pub fn marks(t0: f64, t1: f64, beat_w: f32, u: f32, sig: TimeSig, gap: f32) -> V
     let n = timeline::units_per_beat(fine, sig.steps_per_beat());
     let unit = BEAT / f64::from(n);
     let b = f64::from(sig.bar_beats());
-    let widths = if fine <= b {
+    let step = 1.0 / f64::from(sig.steps_per_beat());
+    let widths = if fine < step {
+        let mid = if fine * 4.0 < step { fine * 4.0 } else { step };
+        let top = if fine * 16.0 <= step { step } else { 1.0 };
+        [fine, mid, top]
+    } else if fine < 1.0 {
         [fine, 1.0, b]
+    } else if fine < b {
+        [fine, b, top.max(b * 2.0)]
     } else {
         [fine, mid, top]
     };
