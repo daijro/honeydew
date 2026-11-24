@@ -466,6 +466,7 @@ impl HoneydewApp {
             ..Self::default()
         };
         app.audio.set_multi_core(app.settings.multi_core);
+        app.audio.set_truncated_notes(app.settings.play_truncated_notes);
         sample_cache::set_memory_limit(app.settings.sample_memory_limit);
         app.history.limit = history::set_size_limit(app.settings.version_size_limit);
         // The song the app starts with is created now (MET`created`).
@@ -565,6 +566,9 @@ impl HoneydewApp {
             }
             if self.settings.multi_core != self.settings_saved.multi_core {
                 self.audio.set_multi_core(self.settings.multi_core);
+            }
+            if self.settings.play_truncated_notes != self.settings_saved.play_truncated_notes {
+                self.audio.set_truncated_notes(self.settings.play_truncated_notes);
             }
             // The next loads plan with it.
             sample_cache::set_memory_limit(self.settings.sample_memory_limit);

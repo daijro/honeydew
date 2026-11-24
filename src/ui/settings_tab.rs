@@ -265,7 +265,7 @@ const fn row(label: &'static str, kind: Kind) -> Row {
 }
 
 /// Every row of the SETTINGS tab, in order.
-const ROWS: [Row; 56] = {
+const ROWS: [Row; 57] = {
     use Kind::*;
     [
         row("MIDI:", Header),
@@ -281,6 +281,10 @@ const ROWS: [Row; 56] = {
         row("Scan Bluetooth MIDI Devices", Scan),
         row("Audio:", Header),
         row("Multi core processing", Toggle(|s| &mut s.multi_core)),
+        row(
+            "Play truncated notes",
+            Toggle(|s| &mut s.play_truncated_notes),
+        ),
         row("Audio buffer size", BufferSize),
         row(
             "Enable background audio (iOS Only)",
