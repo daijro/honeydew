@@ -114,6 +114,7 @@ pub struct SongAudioEngine {
     mixer: Mixer,
     /// Enabled by the audio command; the pool itself is prepared by the UI.
     multi_core: bool,
+    truncated_notes: bool,
     /// Per channel, its instruments in rack order, by instance id.
     instruments: Vec<Vec<(i32, InstrumentModule)>>,
     /// Per channel, its pad sampler; `None` without drum slots.
@@ -152,6 +153,7 @@ pub struct SongAudioEngine {
     held_keys: Vec<u128>,
     /// Scratch for a re-sync ([`Self::resync`]), shaped as `held`: what covers the new beat ([`cover`]).
     cover: Vec<Vec<[u8; 128]>>,
+    cover_vels: Vec<Vec<[(f32, f32); 128]>>,
     cover_pads: Vec<Vec<u8>>,
     cover_keys: Vec<u128>,
     /// The re-syncs that replayed the events for their cover: a seek or Mute change that found something held.
@@ -439,10 +441,15 @@ impl SongAudioEngine {
             bridge.audio.effect(channel, id).is_some()
         });
         let checkpoints = Checkpoints::new(&actions, &instruments, &held, &held_pads);
+        let cover_vels: Vec<Vec<[(f32, f32); 128]>> = held
+            .iter()
+            .map(|rows| vec![[(0.0, 0.5); 128]; rows.len()])
+            .collect();
         let mut engine = Self {
             audio: bridge.audio,
             mixer,
             multi_core: false,
+            truncated_notes: true,
             instruments,
             kits,
             clips,
@@ -478,6 +485,7 @@ impl SongAudioEngine {
             routing,
             midi_sends,
             cover: held.clone(),
+            cover_vels,
             cover_pads: held_pads.clone(),
             cover_keys: vec![0; count],
             cover_replays: 0,
@@ -791,7 +799,7 @@ impl SongAudioEngine {
             }
             let instruments = &self.instruments;
             let (keys, pads, input) = (&mut self.held, &mut self.held_pads, &mut self.held_keys);
-            hold(&event, instruments, keys, pads, input, true);
+            hold(&event, instruments, keys, pads, input, None, true);
             self.action_index += 1;
         }
     }
@@ -961,6 +969,9 @@ fn tap_keys(
 impl AudioRenderer for SongAudioEngine {
     fn set_multi_core(&mut self, on: bool) {
         self.multi_core = on;
+    }
+    fn set_truncated_notes(&mut self, on: bool) {
+        self.truncated_notes = on;
     }
     fn render(&mut self, output: &mut [f32], channels: usize) {
         output.fill(0.0);
@@ -1533,10 +1544,16 @@ impl SongAudioEngine {
             &mut self.cover,
             &mut self.cover_pads,
             &mut self.cover_keys,
+            &mut self.cover_vels,
         );
         for event in &self.actions[from..index] {
-            let (keys, pads, input) = (&mut self.cover, &mut self.cover_pads, &mut self.cover_keys);
-            hold(event, &self.instruments, keys, pads, input, false);
+            let (keys, pads, input, vels) = (
+                &mut self.cover,
+                &mut self.cover_pads,
+                &mut self.cover_keys,
+                &mut self.cover_vels,
+            );
+            hold(event, &self.instruments, keys, pads, input, Some(vels), false);
         }
         self.cover_events += (index - from) as u64;
     }
@@ -1700,14 +1717,82 @@ impl SongAudioEngine {
     fn resync(&mut self) {
         let frame = self.frame;
         self.action_index = self.actions.partition_point(|event| event.frame < frame);
-        if self.holds_any() {
-            self.note_off_params_to_initial();
-            self.cover_replays += 1;
-            self.cover_to(self.action_index);
-            self.release_uncovered(true, true);
+        let had_held = self.holds_any();
+        if had_held || self.truncated_notes {
+            if had_held {
+                self.note_off_params_to_initial();
+            }
+            if had_held || self.action_index > 0 {
+                self.cover_replays += 1;
+                self.cover_to(self.action_index);
+            } else {
+                let (keys, pads, input) =
+                    (&mut self.cover, &mut self.cover_pads, &mut self.cover_keys);
+                cover(&[], &self.instruments, keys, pads, input);
+            }
+            if had_held {
+                self.release_uncovered(true, true);
+            }
         }
         self.restore_params(frame, true);
+        if self.truncated_notes {
+            self.trigger_covered();
+        }
         self.relaunch_clips();
+    }
+
+    fn trigger_covered(&mut self) {
+        for channel in 0..self.cover.len() {
+            let mut covered_keys = self.cover_keys[channel];
+            for key in 0..=127u8 {
+                if covered_keys >> key & 1 == 1 {
+                    let starts =
+                        |action| matches!(action, Action::Key { key: k, on: true } if k == key);
+                    if self.starts_now(channel, starts) {
+                        covered_keys &= !(1 << key);
+                    }
+                }
+            }
+            self.sounding[channel] |= covered_keys;
+            self.held_keys[channel] |= covered_keys;
+
+            for row in 0..self.cover[channel].len() {
+                let id = self.instruments[channel]
+                    .get(row)
+                    .map_or(KIT, |(id, _)| *id);
+                for key in 0..=127u8 {
+                    let k = usize::from(key);
+                    let covered = self.cover[channel][row][k];
+                    let held = self.held[channel][row][k];
+                    if covered == 0 || held > 0 {
+                        continue;
+                    }
+                    let starts = |action| match action {
+                        Action::NoteOn {
+                            instance_id,
+                            key: k,
+                            ..
+                        } => instance_id == id && k == key,
+                        _ => false,
+                    };
+                    if self.starts_now(channel, starts) {
+                        continue;
+                    }
+                    let (velocity, pan) = self.cover_vels[channel][row][k];
+                    if id == KIT {
+                        if let Some(kit) = self.kit(channel) {
+                            kit.note_on(key, velocity, 0.5);
+                        }
+                    } else if let Some(module) = self
+                        .instrument(channel, id)
+                        .filter(|module| module.hears(key))
+                    {
+                        module.instrument.note_on(key, velocity, pan);
+                    }
+                    self.held[channel][row][k] = covered;
+                }
+            }
+        }
     }
 
     /// Step 1 of the re-sync for what the note-offs of step 3 read: every instrument's params (a MiniSynth latches its
@@ -2058,6 +2143,7 @@ struct Checkpoints {
     keys: Vec<[u8; 128]>,
     pads: Vec<u8>,
     input: Vec<u128>,
+    vels: Vec<[(f32, f32); 128]>,
 }
 
 impl Checkpoints {
@@ -2070,15 +2156,20 @@ impl Checkpoints {
     ) -> Self {
         let (mut keys, mut pads) = (keys.to_vec(), pads.to_vec());
         let mut input = vec![0; keys.len()];
+        let mut vels: Vec<Vec<[(f32, f32); 128]>> = keys
+            .iter()
+            .map(|rows| vec![[(0.0, 0.5); 128]; rows.len()])
+            .collect();
         cover(&[], instruments, &mut keys, &mut pads, &mut input);
         let mut checkpoints = Self::default();
         for span in actions.as_chunks::<CHECKPOINT_SPAN>().0 {
             for event in span {
-                hold(event, instruments, &mut keys, &mut pads, &mut input, false);
+                hold(event, instruments, &mut keys, &mut pads, &mut input, Some(&mut vels), false);
             }
             checkpoints.keys.extend(keys.iter().flatten());
             checkpoints.pads.extend(pads.iter().flatten());
             checkpoints.input.extend(&input);
+            checkpoints.vels.extend(vels.iter().flatten().copied());
         }
         checkpoints
     }
@@ -2091,16 +2182,22 @@ impl Checkpoints {
         keys: &mut [Vec<[u8; 128]>],
         pads: &mut [Vec<u8>],
         input: &mut [u128],
+        vels: &mut [Vec<[(f32, f32); 128]>]
     ) -> usize {
         let Some(at) = (index / CHECKPOINT_SPAN).checked_sub(1) else {
             keys.iter_mut().flatten().for_each(|row| *row = [0; 128]);
             pads.iter_mut().flatten().for_each(|count| *count = 0);
             input.fill(0);
+            vels.iter_mut().flatten().for_each(|row| *row = [(0.0, 0.5); 128]);
             return 0;
         };
         let width = keys.iter().map(Vec::len).sum::<usize>();
         let rows = keys.iter_mut().flatten();
         rows.zip(&self.keys[at * width..])
+            .for_each(|(row, saved)| *row = *saved);
+        vels.iter_mut()
+            .flatten()
+            .zip(&self.vels[at * width..])
             .for_each(|(row, saved)| *row = *saved);
         let width = pads.iter().map(Vec::len).sum::<usize>();
         let counts = pads.iter_mut().flatten();
@@ -2124,7 +2221,7 @@ fn cover(
     pads.iter_mut().flatten().for_each(|count| *count = 0);
     input.fill(0);
     for event in actions {
-        hold(event, instruments, keys, pads, input, false);
+        hold(event, instruments, keys, pads, input, None, false);
     }
 }
 
@@ -2140,6 +2237,7 @@ fn hold(
     keys: &mut [Vec<[u8; 128]>],
     pads: &mut [Vec<u8>],
     input: &mut [u128],
+    mut vels: Option<&mut [Vec<[(f32, f32); 128]>]>,
     played: bool,
 ) {
     let channel = event.channel;
@@ -2157,13 +2255,24 @@ fn hold(
         }
         (
             Action::NoteOn {
-                instance_id, key, ..
+                instance_id,
+                key,
+                velocity,
+                pan,
             },
             _,
-        ) => (
-            row(instance_id).and_then(|r| keys[channel][r].get_mut(usize::from(key))),
-            up,
-        ),
+        ) => {
+            let r = row(instance_id);
+            if let (Some(r), Some(v)) = (r, vels.as_deref_mut()) {
+                if let Some(slot) = v[channel][r].get_mut(usize::from(key)) {
+                    *slot = (velocity, pan);
+                }
+            }
+            (
+                r.and_then(|r| keys[channel][r].get_mut(usize::from(key))),
+                up,
+            )
+        }
         (Action::NoteOff { instance_id, key }, _) => (
             row(instance_id).and_then(|r| keys[channel][r].get_mut(usize::from(key))),
             down,

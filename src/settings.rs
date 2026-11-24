@@ -129,6 +129,10 @@ const DEFAULT_SOUND_MODE: u8 = 0;
 #[cfg(not(desktop))]
 const DEFAULT_SOUND_MODE: u8 = 3;
 
+fn default_true() -> bool {
+    true
+}
+
 /// Every SETTINGS value the app keeps. For the defaults see [`Settings::default`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -142,6 +146,8 @@ pub struct Settings {
     /// Android. Our own key: the older `multithreaded` moves here once, off on Android ([`migrate_keys`]).
     #[serde(rename = "multiCore")]
     pub multi_core: bool,
+    #[serde(default = "default_true")]
+    pub play_truncated_notes: bool,
     #[serde(rename = "mcpEnabled")]
     pub mcp_enabled: bool,
     #[serde(rename = "mcpPort")]
@@ -388,6 +394,7 @@ impl Default for Settings {
         Self {
             midi_device: ANY.to_owned(),
             multi_core: false,
+            play_truncated_notes: true,
             mcp_enabled: false,
             mcp_port: MCP_DEFAULT_PORT,
             mcp_token: String::new(),

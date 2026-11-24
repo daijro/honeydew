@@ -210,6 +210,7 @@ pub struct AudioLink {
     metronome_flag: Option<(bool, f32)>,
     /// Effective desktop multi-core setting; new renderers receive it too.
     multi_core: bool,
+    truncated_notes: bool,
     /// The beats of the count-in last sent (`AudioCommand::CountIn`), armed or running, until Stop, `CountIn(0)` or
     /// a poll that sees it end: a new engine counts in again before it plays.
     count_in: Option<u32>,
@@ -263,6 +264,13 @@ impl AudioLink {
             self.send(AudioCommand::SetMultiCore(enabled));
         }
     }
+
+    pub fn set_truncated_notes(&mut self, on: bool) {
+    if self.truncated_notes != on {
+        self.truncated_notes = on;
+        self.send(AudioCommand::SetTruncatedNotes(on));
+    }
+}
 
     /// The song the last engine was built from.
     #[cfg(test)]
@@ -854,6 +862,7 @@ impl AudioLink {
         match (built, edit, last) {
             (Ok(mut engine), Some(edit), Some(last)) => {
                 engine.set_multi_core(self.multi_core);
+                engine.set_truncated_notes(self.truncated_notes);
                 // The new engine takes over the playing one, its transport and state included. Play keeps the
                 // output's own Play/Stop record.
                 (self.song, self.tempo) = (Some(song.clone()), None);
@@ -1099,6 +1108,7 @@ pub(crate) mod testing {
                 }
                 (AudioCommand::Play, Some(engine)) => engine.play(),
                 (AudioCommand::SetMultiCore(on), Some(engine)) => engine.set_multi_core(on),
+                (AudioCommand::SetTruncatedNotes(on), Some(engine)) => engine.set_truncated_notes(on),
                 (AudioCommand::Stop, Some(engine)) => engine.stop(),
                 (AudioCommand::Seek(tick), Some(engine)) => engine.seek(tick),
                 (AudioCommand::ResetSound, Some(engine)) => engine.reset_sound(),
