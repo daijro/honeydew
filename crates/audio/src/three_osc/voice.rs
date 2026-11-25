@@ -110,6 +110,8 @@ pub(super) struct Voice<M> {
     /// Per osc, per channel (left, right).
     phase: [[f64; 2]; 3],
     step: [[f64; 2]; 3],
+    step_inc: [[f64; 2]; 3],
+    step_target: [[f64; 2]; 3],
     level: [[Option<u8>; 2]; 3],
     gain: [[f32; 2]; 3],
     am: bool,
@@ -225,7 +227,18 @@ impl<M: VoiceMod> Voice<M> {
                 } else {
                     f64::from(hz) / f64::from(c.fs)
                 };
-                self.step[i][ch] = step;
+                let prev = if self.fresh {
+                    step
+                } else {
+                    self.step_target[i][ch]
+                };
+                self.step[i][ch] = prev;
+                self.step_target[i][ch] = step;
+                self.step_inc[i][ch] = if self.fresh || c.n <= 0.0 {
+                    0.0
+                } else {
+                    (step - prev) / f64::from(c.n)
+                };
                 self.level[i][ch] = (hq && shape.has_mips() && step > osc::MIP_MIN_STEP)
                     .then(|| osc::mip_level(hz) as u8);
                 if self.fresh && toggle(p[146 + i]) {
@@ -296,6 +309,7 @@ impl<M: VoiceMod> Voice<M> {
                     *o = waves[i].read(self.phase[i][ch], self.level[i][ch]);
                     let next = self.phase[i][ch] + self.step[i][ch];
                     self.phase[i][ch] = next - next.floor();
+                    self.step[i][ch] += self.step_inc[i][ch];
                 }
                 let sum = gain[0][ch] * o[0] + gain[1][ch] * o[1];
                 *x = if self.am {

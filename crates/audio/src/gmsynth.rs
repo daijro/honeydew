@@ -554,7 +554,7 @@ pub struct GmSynth {
     /// The key table: keys down, for MONO's fallback and AUTO.
     held: [bool; 128],
     /// The previously played key, where the next note's glide starts (none after reset).
-    last_key: Option<u8>,
+    last_key: Option<f32>,
     serial: u64,
     wave_a: Option<Arc<Wavetable>>,
     wave_b: Option<Arc<Wavetable>>,
@@ -904,9 +904,8 @@ impl Instrument for GmSynth {
         self.held[usize::from(key)] = true;
         let velocity = velocity.clamp(0.0, 1.0);
         let mono = self.params[SINGLE_VOICE] != 0.0;
-        let glide_from = match self.last_key.replace(key) {
-            // AUTO (v31, on at any nonzero v): no glide unless another key is held.
-            Some(last) if self.params[31] == 0.0 || others_held => f32::from(last),
+        let glide_from = match self.last_key.replace(f32::from(key)) {
+            Some(last) if self.params[31] == 0.0 || others_held => last,
             _ => f32::from(key),
         };
         if mono && self.voices[0].held() {
@@ -993,6 +992,7 @@ impl Instrument for GmSynth {
 
     fn all_notes_off(&mut self) {
         self.held = [false; 128];
+        self.last_key = None;
         for voice in &mut self.voices {
             voice.release();
         }
@@ -1041,9 +1041,16 @@ impl Instrument for GmSynth {
     /// Slides add to every voice's pitch (from the next block), velocity gain (smoothed as a velocity is) and pan.
     fn set_slide(&mut self, pitch: f32, pan: f32, velocity: f32) {
         let finite = |value: f32| if value.is_finite() { value } else { 0.0 };
+        let p = finite(pitch);
         for voice in &mut self.voices {
-            voice.slide = [finite(pitch), finite(pan), finite(velocity)];
+            voice.slide = [p, finite(pan), finite(velocity)];
             voice.pan = pan_gains((voice.note_pan + voice.slide[1]).clamp(0.0, 1.0));
+        }
+        if let Some(anchor) = (0..128u8)
+            .rev()
+            .find(|&k| self.held[usize::from(k)])
+        {
+            self.last_key = Some(f32::from(anchor) + p);
         }
     }
 

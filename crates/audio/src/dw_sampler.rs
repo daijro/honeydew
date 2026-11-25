@@ -717,6 +717,7 @@ impl Instrument for DwSampler {
 
     fn all_notes_off(&mut self) {
         self.held_count = 0;
+        self.last = None;
         self.voices.iter_mut().for_each(Voice::release);
     }
 
@@ -908,12 +909,16 @@ impl Instrument for DwSampler {
     /// Slides add to every voice's pitch, velocity and note pan.
     fn set_slide(&mut self, pitch: f32, pan: f32, velocity: f32) {
         let finite = |value: f32| if value.is_finite() { value } else { 0.0 };
+        let p = finite(pitch);
         for voice in &mut self.voices {
-            voice.slide = [finite(pitch), finite(pan), finite(velocity)];
+            voice.slide = [p, finite(pan), finite(velocity)];
             voice.pan = pan_gains((voice.note_pan + voice.slide[1]).clamp(0.0, 1.0));
         }
+        if let Some(&anchor) = self.held[..self.held_count].iter().max() {
+            self.last = Some(f32::from(anchor) + p);
+        }
     }
-
+    
     /// PB Range, as the panel's codec reads it: round(12v) within 1…12.
     fn set_setting(&mut self, key: u32, value: f32) {
         if key == PB_RANGE_SETTING && value.is_finite() {
