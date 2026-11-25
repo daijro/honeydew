@@ -187,7 +187,7 @@ pub struct SuperSaw {
     held: [Option<f32>; 128],
     held_count: usize,
     /// The previously played note: the glide source and the Flip reference.
-    last_note: Option<u8>,
+    last_note: Option<f32>,
     /// Frames into the current control tick.
     tick_pos: usize,
     /// Channel Pitch Bend and mod wheel (CC #1), normalized.
@@ -342,7 +342,7 @@ impl SuperSaw {
         let source = self
             .last_note
             .filter(|_| slide > GLIDE_OFF_S && (!self.on(LEGATO) || others_held));
-        let flipped = p[FLIP] > 0.5 && self.last_note.is_some_and(|last| key <= last);
+        let flipped = p[FLIP] > 0.5 && self.last_note.is_some_and(|last| f32::from(key) <= last);
         let supersaw = p[SUPERSYNC] <= 0.5;
         let retrig = self.on(RETRIG);
         let spread = PHASE_SPREAD * p[UNISON_PHASE] * p[UNISON_PHASE];
@@ -357,9 +357,9 @@ impl SuperSaw {
         voice.flip = if flipped { -1.0 } else { 1.0 };
         match source {
             Some(from) => {
-                let distance = (f32::from(key) - f32::from(from)).abs();
+                let distance = (f32::from(key) - from).abs();
                 let ticks = slide * self.sample_rate / TICK as f32;
-                voice.pitch = f32::from(from);
+                voice.pitch = from;
                 voice.glide_step = if p[CONSTANT] > 0.5 {
                     distance / ticks
                 } else {
@@ -402,7 +402,7 @@ impl SuperSaw {
             };
             voice.lfo_random = voice.rng.unit();
         }
-        self.last_note = Some(key);
+        self.last_note = Some(f32::from(key));
         voice.compute(&self.params, &c, self.sample_rate);
     }
 
@@ -565,6 +565,7 @@ impl Instrument for SuperSaw {
         self.held = [None; 128];
         self.held_count = 0;
         self.arp = Arp::default();
+        self.last_note = None;
         self.release_all();
     }
 
@@ -629,8 +630,15 @@ impl Instrument for SuperSaw {
     /// Slides add to every voice's pitch, velocity and pan from the next control tick.
     fn set_slide(&mut self, pitch: f32, pan: f32, velocity: f32) {
         let finite = |value: f32| if value.is_finite() { value } else { 0.0 };
+        let p = finite(pitch);
         for voice in &mut self.voices {
-            voice.slide = [finite(pitch), finite(pan), finite(velocity)];
+            voice.slide = [p, finite(pan), finite(velocity)];
+        }
+        if let Some(anchor) = (0..128u8)
+            .rev()
+            .find(|&k| self.held[usize::from(k)].is_some())
+        {
+            self.last_note = Some(f32::from(anchor) + p);
         }
     }
 }

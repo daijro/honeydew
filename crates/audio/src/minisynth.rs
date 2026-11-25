@@ -626,7 +626,7 @@ pub struct MiniSynth {
     /// Note-on count, for the voices' start order.
     serial: u64,
     /// The previously pressed key: every note-on glides from it (none after reset).
-    last_key: Option<u8>,
+    last_key: Option<f32>,
     /// Each held key's velocity, or [`NOT_HELD`]: LEAD's legato and note-off fall back on held keys.
     held: [f32; 128],
     /// Channel Pitch Bend, 4w − 2 semitones (fixed ±2, unsmoothed).
@@ -766,6 +766,12 @@ impl MiniSynth {
             for voice in &mut self.voices {
                 voice.slide = [pitch, pan, velocity];
             }
+            if let Some(anchor) = (0..128u8)
+                .rev()
+                .find(|&k| self.held[usize::from(k)] != NOT_HELD)
+            {
+                self.last_key = Some(f32::from(anchor) + pitch);
+            }
         }
     }
 
@@ -806,10 +812,10 @@ impl MiniSynth {
         self.held[key] = velocity;
         let mode = self.mode();
         let start = match mode {
-            Mode::Lead if !others_held => note,
-            _ => self.last_key.unwrap_or(note),
+            Mode::Lead if !others_held => f32::from(note),
+            _ => self.last_key.unwrap_or(f32::from(note)),
         };
-        self.last_key = Some(note);
+        self.last_key = Some(f32::from(note));
         let index = match mode {
             Mode::Poly => (0..VOICES)
                 .rev()
@@ -822,8 +828,10 @@ impl MiniSynth {
         let voice = &mut self.voices[index];
         // Honeydew change (#143): every new note clears the slide offsets, a busy voice's too (MONO's, a LEAD legato,
         // a stolen one), so it starts at its own pitch. They used to clear only on an idle voice.
+        let slide_pitch = voice.slide[0];
         voice.slide = [0.0; 3];
         if mode == Mode::Lead && others_held && voice.busy && voice.amp.stage != Stage::Release {
+            voice.pitch += slide_pitch;
             (voice.key, voice.velocity) = (note, velocity);
             return;
         }
@@ -838,7 +846,7 @@ impl MiniSynth {
         voice.busy = true;
         (voice.key, voice.velocity, voice.pan) = (note, velocity, pan);
         voice.started = self.serial;
-        voice.pitch = f32::from(start);
+        voice.pitch = start;
         voice.amp.attack(attack);
         voice.filter_env.level = 0.0;
         voice.filter_env.attack(filter_attack);
@@ -884,6 +892,7 @@ impl MiniSynth {
 
     pub fn all_notes_off(&mut self) {
         self.held = [NOT_HELD; 128];
+        self.last_key = None;
         let (release, filter_release) = (
             amp_release_rate(self.params[25]),
             decay_rate(self.params[16]),

@@ -566,6 +566,7 @@ impl ThreeOsc {
             }
         }
         if std::mem::take(&mut self.all_off) {
+            pool.last = None;
             sched.reset();
             pool.held.clear();
             for v in pool.voices.iter_mut().filter(|v| v.active) {
@@ -636,6 +637,7 @@ impl Instrument for ThreeOsc {
         self.keys.clear();
         self.slide = None;
         self.all_off = true;
+        self.pool.last = None;
     }
 
     fn reset(&mut self) {
@@ -703,6 +705,25 @@ impl Instrument for ThreeOsc {
             voice.slide = value;
         }
         self.slide = (!self.keys.is_empty()).then_some((self.keys.len(), value));
+        if let Some(v) = self
+            .pool
+            .voices
+            .iter()
+            .filter(|v| v.active && v.held)
+            .max_by_key(|v| v.note.key)
+        {
+            self.pool.last = Some([
+                f32::from(v.note.key) + v.note.pitch + value[0],
+                (v.note.velocity + value[2]).clamp(0.0, 1.0),
+                (v.note.pan + value[1]).clamp(0.0, 1.0),
+            ]);
+        } else if let Some(k) = self.keys.iter().filter(|k| k.on).max_by_key(|k| k.key) {
+            self.pool.last = Some([
+                f32::from(k.key) + value[0],
+                (k.velocity + value[2]).clamp(0.0, 1.0),
+                (k.pan + value[1]).clamp(0.0, 1.0),
+            ]);
+        }
     }
 
     /// Enable off freezes the voices; On resumes them.
