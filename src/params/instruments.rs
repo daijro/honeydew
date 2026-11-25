@@ -1015,11 +1015,32 @@ const THREE_OSC: &[P] = &[
 /// An envelope time: t = max(0.005, 10·(0.95v + 0.05)³) s, "%.2f s" from one second up, else round(1000t) "ms".
 /// In f32.
 fn soundfont_time(v: f32) -> String {
-    let t = (10.0 * 0.95f32.mul_add(v, 0.05).powi(3)).max(0.005);
+    if v <= 0.004 {
+        return "Disabled".into();
+    }
+    let u = ((v - 0.004) / 0.996).clamp(0.0, 1.0);
+    let t = (10.0 * 0.95f32.mul_add(u, 0.05).powi(3)).max(0.005);
     if t >= 1.0 {
         format!("{t:.2} s")
     } else {
         format!("{} ms", (1000.0 * t).round())
+    }
+}
+
+fn soundfont_sustain(v: f32) -> String {
+    if v <= 0.004 {
+        return "Disabled".into();
+    }
+    let u = ((v - 0.004) / 0.996).clamp(0.0, 1.0);
+    format!("{} %", (100.0 * u).round())
+}
+
+fn soundfont_cutoff(v: f32) -> String {
+    let hz = 8.176 * 2f32.powf((1500.0 + 12000.0 * v) / 1200.0);
+    if hz >= 1000.0 {
+        format!("{:.2} kHz", hz / 1000.0)
+    } else {
+        format!("{} Hz", hz.round())
     }
 }
 
@@ -1032,14 +1053,10 @@ const SOUNDFONT_PLAYER: &[P] = &[
     P::ENABLE,
     P::cont("Attack", 0.0, SOUNDFONT_TIME),
     P::cont("Decay", 0.0, SOUNDFONT_TIME),
-    P::cont(
-        "Sustain",
-        1.0,
-        Display::Custom(|v| format!("{} %", (100.0 * v).round())),
-    ),
+    P::cont("Sustain", 0.0, Display::Custom(soundfont_sustain)),
     P::cont("Release", 0.0, SOUNDFONT_TIME),
     P::toggle("Envelope", 0.0).with_automation(ParamKind::MenuBy {
-        items: &["Original", "Custom"],
+        items: &["Instrument", "Global"],
         index: |v| usize::from(v > 0.5),
     }),
     P::cont(
@@ -1061,6 +1078,25 @@ const SOUNDFONT_PLAYER: &[P] = &[
             min: -24,
             count: 49,
             fmt: Fmt::new(0, " st").sign(Sign::Positive),
+        },
+    ),
+    P::toggle("Filter", 0.0).with_automation(ParamKind::MenuBy {
+        items: &["Instrument", "Global"],
+        index: |v| usize::from(v > 0.5),
+    }),
+    P::cont("Cutoff", 1.0, Display::Custom(soundfont_cutoff)),
+    P::cont("Resonance", 0.0, Display::linear(0.0, 40.0, 1, " dB")),
+    P::toggle("Vibrato", 0.0).with_automation(ParamKind::MenuBy {
+        items: &["Instrument", "Global"],
+        index: |v| usize::from(v > 0.5),
+    }),
+    P::cont(
+        "Fine Range",
+        0.0,
+        Display::Steps {
+            min: 1,
+            count: 24,
+            fmt: Fmt::new(0, "x"),
         },
     ),
 ];
