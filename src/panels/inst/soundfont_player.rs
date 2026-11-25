@@ -516,7 +516,6 @@ const ZONE_LIST: Show = Show::All(&[ZONES_SHOWN, Show::Flag(HAS_ZONES, 1)]);
 const NO_ZONES: Show = Show::All(&[ZONES_SHOWN, Show::Flag(HAS_ZONES, 0)]);
 
 /// `Envelope` is `Custom` (above 0.5): the sliders' envelope, which only then takes their input.
-const CUSTOM: Show = Show::Above(5, 0.5);
 const VIB_CUSTOM: Show = Show::Above(15, 0.5);
 const FILTER_CUSTOM: Show = Show::Above(12, 0.5);
 
@@ -975,14 +974,10 @@ pub fn panel() -> Option<Panel> {
             hstack([
                 knob(2600, "Transpose").p(11),
                 knob(2700, "Fine Tune").p(6).label_fn(fine_tune_label),
-                toggle(2100, "Envelope")
-                    .p(5)
-                    .value_text()
-                    .value_fn(envelope_text),
-                v_slider(2200, "Attack").p(1).value_text().enabled(CUSTOM),
-                v_slider(2300, "Decay").p(2).value_text().enabled(CUSTOM),
-                v_slider(2400, "Sustain").p(3).value_text().enabled(CUSTOM),
-                v_slider(2500, "Release").p(4).value_text().enabled(CUSTOM),
+                v_slider(2200, "Attack").p(1).value_text(),
+                v_slider(2300, "Decay").p(2).value_text(),
+                v_slider(2400, "Sustain").p(3).value_text(),
+                v_slider(2500, "Release").p(4).value_text(),
             ]),
         ])
         .show(PATCH_SHOWN),

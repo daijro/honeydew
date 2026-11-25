@@ -1723,7 +1723,7 @@ const END_FADE: f32 = 0.01;
 /// The param defaults: Enable, Attack, Decay, Sustain, Release, Envelope (Original), Fine Tune (0 cents), Vib Rate
 /// (5 Hz), Vib Depth (0 cents), Vib Delay (0 s), Quality (Linear), Transpose (0).
 const DEFAULTS: [f32; 17] = [
-    1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0,
+    1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.0, 0.0,
 ];
 /// Fine Tune, 200v − 100 cents on every voice: a Honeydew addition (#90).
 const FINE_TUNE: usize = 6;
@@ -2739,9 +2739,8 @@ impl SoundFontPlayer {
         }
         let cents = (f64::from(key) - f64::from(region.root)) * region.scale + rules.cents;
         let step = 2f64.powf(cents / 1200.0) * region.rate / f64::from(rate);
-        let custom = self.params[5] > 0.5;
-        // The stages as velocity (`ampeg_vel2*`) and the CCs (`ampeg_*ccN`) move them; sustain is a level, the rest
-        // seconds.
+        let custom_stage = |p: f32| (p > 0.004).then(|| ((p - 0.004) / 0.996).clamp(0.0, 1.0));
+        let slider_time = |u: f32| (10.0 * 0.95f32.mul_add(u, 0.05).powi(3)).max(MIN_TIME);
         let mut ampeg = rules.ampeg;
         let scale = |stage: usize| if stage == 4 { 0.01 } else { 1.0 };
         for (stage, add) in def.ampeg_vel2.iter().enumerate() {
@@ -2750,18 +2749,36 @@ impl SoundFontPlayer {
         for &(stage, cc, add) in &def.ampeg_cc {
             ampeg[stage] += add * self.cc[usize::from(cc.min(127))] * scale(stage);
         }
-        let [delay, attack, hold, decay, sustain, release_time] = ampeg.map(|x| x.max(0.0));
-        let start = if custom { 0.0 } else { def.ampeg_start / 100.0 };
-        let frames = |seconds: f32| (seconds * rate) as u32;
-        let envelope = match custom {
-            true => self.envelope(region),
-            false => [
-                ((1.0 - start) / (attack * rate)).min(1.0),
-                fall(decay, rate),
-                sustain.min(1.0),
-                fall(release_time.max(SFZ_MIN_RELEASE), rate),
-            ],
+        let [delay, attack_s, hold_s, decay_s, sustain_l, release_s] = ampeg.map(|x| x.max(0.0));
+        let delay = if custom_stage(self.params[1]).is_some() { 0.0 } else { delay };
+        let hold_s = if custom_stage(self.params[2]).is_some() { 0.0 } else { hold_s };
+        let start = if custom_stage(self.params[1]).is_some() {
+            0.0
+        } else {
+            def.ampeg_start / 100.0
         };
+        let frames = |seconds: f32| (seconds * rate) as u32;
+        let envelope = [
+            match custom_stage(self.params[1]) {
+                Some(u) => (1.0 / (slider_time(u) * rate)).min(1.0),
+                None => ((1.0 - start) / (attack_s * rate)).min(1.0),
+            },
+            match custom_stage(self.params[2]) {
+                Some(u) => fall(slider_time(u), rate),
+                None => fall(decay_s, rate),
+            },
+            match custom_stage(self.params[3]) {
+                Some(u) => {
+                    let x = (127.0 * u).round().clamp(1.0, 127.0) / 127.0;
+                    10f32.powf(5.0 * x.powf(0.2) - 5.0)
+                }
+                None => sustain_l.min(1.0),
+            },
+            match custom_stage(self.params[4]) {
+                Some(u) => fall(slider_time(u), rate),
+                None => fall(release_s.max(SFZ_MIN_RELEASE), rate),
+            },
+        ];
         let mut spread = |x: f32| x * (2.0 * dice(&mut self.random) - 1.0);
         let [amp_random, pitch_random, fil_random, pan_random] = def.random;
         let from_center = |center: i32| f32::from(key) - center as f32;
@@ -2794,8 +2811,8 @@ impl SoundFontPlayer {
             step,
             velocity,
             pan,
-            level: if custom || delay > 0.0 { 0.0 } else { start },
-            stage: if custom || delay <= 0.0 {
+            level: if delay > 0.0 { 0.0 } else { start },
+            stage: if delay <= 0.0 {
                 Stage::Attack
             } else {
                 Stage::Delay
@@ -2804,9 +2821,9 @@ impl SoundFontPlayer {
             decay: envelope[1],
             sustain: envelope[2],
             release: envelope[3],
-            dahdsr: !custom,
+            dahdsr: true,
             wait: frames(delay),
-            hold: frames(hold),
+            hold: frames(hold_s),
             one_shot: held.is_some() || rules.mode == LoopMode::OneShot,
             released: held.is_some(),
             crossfade: rules.crossfade((127.0 * velocity).round() as u8),
@@ -2840,20 +2857,8 @@ impl SoundFontPlayer {
         key: u8,
         extra: [f32; 6],
     ) -> ([f32; 4], u32, u32) {
-        if params[5] > 0.5 {
-            let time = |v: f32| (10.0 * 0.95f32.mul_add(v, 0.05).powi(3)).max(MIN_TIME);
-            let x = (127.0 * params[3]).round().clamp(1.0, 127.0) / 127.0;
-            return (
-                [
-                    (1.25f32.ln() / (rate * time(params[1]))).min(1.0),
-                    (100f32.ln() / (rate * time(params[2]))).min(1.0),
-                    10f32.powf(5.0 * x.powf(0.2) - 5.0),
-                    (100f32.ln() / (rate * time(params[4]))).min(1.0),
-                ],
-                0,
-                0,
-            );
-        }
+        let custom_stage = |p: f32| (p > 0.004).then(|| ((p - 0.004) / 0.996).clamp(0.0, 1.0));
+        let time = |u: f32| (10.0 * 0.95f32.mul_add(u, 0.05).powi(3)).max(MIN_TIME);
         let stage = |num: f32, tc: f32| num / (rate * 2f32.powf(tc / 1200.0).max(MIN_TIME));
         let frames = |tc: f32| {
             if tc <= -11950.0 {
@@ -2863,30 +2868,42 @@ impl SoundFontPlayer {
             }
         };
         let key_delta = 60.0 - f32::from(key);
-        let delay = frames(region.vol_delay + extra[0]);
-        let hold = frames(region.vol_hold + region.key_vol_hold * key_delta + extra[2]);
-        let attack_tc = (region.attack + extra[1]).clamp(-12000.0, 8000.0);
-        let decay_tc = (region.decay + region.key_vol_decay * key_delta + extra[3]).clamp(-12000.0, 8000.0);
-        let release_tc = (region.release + extra[5]).clamp(-12000.0, 8000.0);
-        let sustain = (region.sustain * 10f32.powf(-extra[4].clamp(-1440.0, 1440.0) / 200.0)).clamp(0.0, 1.0);
-        (
-            [
-                stage(1.25f32.ln(), attack_tc).min(1.0),
-                stage(ORIGINAL_RATE, decay_tc).min(1.0),
-                sustain,
-                stage(ORIGINAL_RATE, release_tc).min(1.0),
-            ],
-            delay,
-            hold,
-        )
-    }
 
-    fn vol_envelope(&self, region: &Region, key: u8) -> ([f32; 4], u32, u32) {
-        Self::vol_env(self.sample_rate, &self.params, region, key)
-    }
-
-    fn envelope(&self, region: &Region) -> [f32; 4] {
-        self.vol_envelope(region, 60).0
+        let (attack, delay) = match custom_stage(params[1]) {
+            Some(u) => ((1.25f32.ln() / (rate * time(u))).min(1.0), 0),
+            None => (
+                stage(1.25f32.ln(), (region.attack + extra[1]).clamp(-12000.0, 8000.0)).min(1.0),
+                frames(region.vol_delay + extra[0]),
+            ),
+        };
+        let (decay, hold) = match custom_stage(params[2]) {
+            Some(u) => ((100f32.ln() / (rate * time(u))).min(1.0), 0),
+            None => (
+                stage(
+                    ORIGINAL_RATE,
+                    (region.decay + region.key_vol_decay * key_delta + extra[3])
+                        .clamp(-12000.0, 8000.0),
+                )
+                .min(1.0),
+                frames(region.vol_hold + region.key_vol_hold * key_delta + extra[2]),
+            ),
+        };
+        let sustain = match custom_stage(params[3]) {
+            Some(u) => {
+                let x = (127.0 * u).round().clamp(1.0, 127.0) / 127.0;
+                10f32.powf(5.0 * x.powf(0.2) - 5.0)
+            }
+            None => (region.sustain
+                * 10f32.powf(-extra[4].clamp(-1440.0, 1440.0) / 200.0))
+            .clamp(0.0, 1.0),
+        };
+        let release = match custom_stage(params[4]) {
+            Some(u) => (100f32.ln() / (rate * time(u))).min(1.0),
+            None => {
+                stage(ORIGINAL_RATE, (region.release + extra[5]).clamp(-12000.0, 8000.0)).min(1.0)
+            }
+        };
+        ([attack, decay, sustain, release], delay, hold)
     }
 
     pub fn apply_patch_mods(&mut self, mods: &[PatchMod]) {
